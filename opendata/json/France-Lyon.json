@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "country": "France",
+    "name": "Lyon",
+    "producer": "Métropole de Lyon",
+    "licenceName": "Licence Ouverte",
+    "licenceUrl": "https://download.data.grandlyon.com/licences/ETALAB-Licence-Ouverte-v2.0.pdf",
+    "sourceUrl": "https://data.grandlyon.com/jeux-de-donnees/chantiers-perturbants-metropole-lyon/info",
+    "url": "https://download.data.grandlyon.com/wfs/grandlyon?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=pvo_patrimoine_voirie.pvochantierperturbant&outputFormat=application/json;%20subtype=geojson&SRSNAME=EPSG:4171&startIndex=0&count=1000",
+    "center": {
+     "lat": 45.75627,
+     "lon": 4.85115
+    },
+    "locale": "fr_FR"
+  },
+  "roadworkArray": "$.features",
+  "id": "@.properties.gid",
+  "latitude": "@.geometry.coordinates[0][0][1]",
+  "longitude": "@.geometry.coordinates[0][0][0]",
+  "polygon": "@.geometry.coordinates",
+  "road": "@.properties.nom",
+  "impactCirculationDetail": "@.properties.typeperturbation",
+  "locationDetails": "@.properties.precisionlocalisation",
+  "from": {
+    "path": "@.properties.debutchantier",
+    "parsers": [
+      {
+        "matcher": ".*",
+        "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+      }
+    ]
+  },
+  "to": {
+    "path": "@.properties.finchantier",
+    "parsers": [
+      {
+        "matcher": ".*",
+        "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+      }
+    ]
+  }
+}

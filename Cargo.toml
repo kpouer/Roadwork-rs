@@ -1,0 +1,41 @@
+[package]
+name = "Roadwork-rs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "Roadwork-rs"
+path = "src/main.rs"
+
+[lib]
+name = "roadworkapp_lib"
+crate-type = ["rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+base64 = "0.22"
+chrono = "0.4"
+chrono-tz = "0.10"
+crossbeam-channel = "0.5.15"
+derive_builder = "0.20.2"
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["svg"] }
+eframe = "0.31"
+env_logger = "0.11"
+home = "0.5.11"
+jsonpath-rust = "1.0.1"
+log = "0.4"
+regex = "1.11"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+roadwork-sync = { path = "crates/sync"}
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+unicode-normalization = "0.1.24"
+urlencoding = "2.1.3" # maybe a better lib
+walkers = "0.36.0"
+wkt = "0.13.0"
+
+[workspace]
+members = ["crates/sync"]
