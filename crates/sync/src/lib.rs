@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use strum_macros::{Display, IntoStaticStr};
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct SyncData {
     #[serde(rename = "localUpdateTime")]
     pub(crate) local_update_time: u64,
@@ -14,18 +14,14 @@ pub struct SyncData {
     pub(crate) dirty: bool,
 }
 
-impl Default for SyncData {
-    fn default() -> Self {
-        SyncData {
-            local_update_time: 0,
-            server_update_time: 0,
-            status: Status::New,
+impl SyncData {
+    pub fn new_from(src: &SyncData) -> Self {
+        Self {
             dirty: false,
+            ..src.clone()
         }
     }
-}
-
-impl SyncData {
+    
     pub fn copy(&mut self, other: &SyncData) {
         self.local_update_time = other.local_update_time;
         self.server_update_time = other.server_update_time;
@@ -38,24 +34,12 @@ impl SyncData {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Debug, Default, Display, Clone, Copy, Deserialize, Serialize, Ord, PartialOrd, PartialEq, Eq, IntoStaticStr)]
 pub enum Status {
+    #[default]
     New,
     Later,
     Ignored,
     Finished,
     Treated,
-}
-
-impl Display for Status {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let str = match self {
-            Status::New => "New",
-            Status::Later => "Later",
-            Status::Ignored => "Ignored",
-            Status::Finished => "Finished",
-            Status::Treated => "Treated",
-        };
-        write!(f, "{}", str)
-    }
 }

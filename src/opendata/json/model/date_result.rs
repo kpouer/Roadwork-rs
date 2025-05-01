@@ -1,12 +1,18 @@
-use crate::opendata::json::model::parser::Parser;
+use chrono::DateTime;
+use chrono_tz::Tz;
 
 pub(crate) struct DateResult {
-    pub(crate) date: i64,
-    pub(crate) parser: Parser,
+    pub(crate) date: DateTime<Tz>,
+    pub(crate) add_year: bool,
+    pub(crate) reset_hour: bool,
 }
 
 impl DateResult {
-    pub(crate) fn new(date: i64, parser: Parser) -> Self {
-        Self { date, parser }
+    pub(crate) fn new(date: DateTime<Tz>, add_year: bool, reset_hour: bool) -> Self {
+        Self {
+            date,
+            add_year,
+            reset_hour,
+        }
     }
 }

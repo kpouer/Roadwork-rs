@@ -1,64 +1,76 @@
+use crate::json_tools::JsonTools;
 use crate::model::date_range::DateRange;
-use crate::model::roadwork::{Roadwork, RoadworkBuilder};
+use crate::model::roadwork::Roadwork;
 use crate::model::roadwork_data::RoadworkData;
-use crate::model::wkt::polygon::Polygon;
 use crate::opendata::json::model::date_parser::DateParser;
 use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
 use crate::service::http_service::HttpService;
-use chrono::{Datelike, Timelike};
-use jsonpath_rust::JsonPath;
-use log::{debug, error, info, warn};
-use roadwork_sync::SyncData;
-use serde::Deserialize;
-use serde_json::Value;
 use crate::MyError;
-use crate::MyError::{JsonParsingError, RoadworkBuilderError, RoadworkParsingError};
+use crate::MyError::RoadworkParsingError;
+use chrono::{DateTime, Datelike, Timelike};
+use chrono_tz::Tz;
+use jsonpath_rust::JsonPath;
+use log::{error, info, warn};
+use serde_json::Value;
+use std::fs;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub(crate) struct OpendataService {
-    serviceName: String,
-    httpService: HttpService,
-    pub(crate) serviceDescriptor: ServiceDescriptor,
+    service_name: String,
+    http_service: HttpService,
+    pub(crate) service_descriptor: ServiceDescriptor,
 }
 
 impl OpendataService {
     pub(crate) fn new(service_name: String, service_descriptor: ServiceDescriptor) -> Self {
         Self {
-            serviceName: service_name,
-            serviceDescriptor: service_descriptor,
-            httpService: HttpService::default(),
+            service_name,
+            service_descriptor,
+            http_service: HttpService,
         }
     }
 }
 
 impl OpendataService {
     pub(crate) fn get_data(&self) -> Result<RoadworkData, MyError> {
-        let url = self.buildUrl();
+        let url = self.build_url();
         info!("getData {url}");
-        let json = self.httpService.getUrl(&url)?;
-        self.parse_json(json)
+        let json = if cfg!(debug_assertions) {
+            fs::read_to_string("test/example.json").expect("Unable to read file")
+        } else {
+            self.http_service.get_url(&url)?
+        };
+        self.parse_json(&json)
     }
 
-    fn parse_json(&self, json: String) -> Result<RoadworkData, MyError> {
-        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let roadwork_array = json
-            .query(&self.serviceDescriptor.roadworkArray)?;
-        let roadworks = roadwork_array
-            .into_iter()
-            .flat_map(|node| self.buildRoadwork(node))
-            .filter(|roadwork| Self::isValid(roadwork))
-            .collect();
-        Ok(RoadworkData::new(&self.serviceName, roadworks))
+    fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
+        let json: serde_json::Value = serde_json::from_str(json)?;
+        let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;
+        info!("Found {} roadworks", roadwork_array.len());
+        let mut roadworks = Vec::with_capacity(roadwork_array.len());
+        for value in roadwork_array {
+            match self.build_roadwork(value) {
+                Ok(roadwork) => {
+                    if Self::is_valid(&roadwork) {
+                        roadworks.push(roadwork);
+                    } else {
+                        warn!("{roadwork:?} is invalid");
+                    }
+                }
+                Err(e) => warn!("Unable to build roadwork {}", e),
+            }
+        }
+        Ok(RoadworkData::new(&self.service_name, roadworks))
     }
 
-    fn buildUrl(&self) -> String {
-        let metadata = &self.serviceDescriptor.metadata;
+    fn build_url(&self) -> String {
+        let metadata = &self.service_descriptor.metadata;
 
-        match &metadata.urlParams {
+        match &metadata.url_params {
             None => metadata.url.clone(),
-            Some(urlParams) => {
-                let query_string = urlParams
+            Some(url_params) => {
+                let query_string = url_params
                     .iter()
                     .map(|(key, value)| format!("{key}={}", urlencoding::encode(value)))
                     .reduce(|acc, s| format!("{acc}&{s}"))
@@ -72,7 +84,7 @@ impl OpendataService {
         }
     }
 
-    fn isValid(roadwork: &Roadwork) -> bool {
+    fn is_valid(roadwork: &Roadwork) -> bool {
         if roadwork.longitude == 0.0 && roadwork.latitude == 00.0 {
             warn!("{roadwork:?} is invalid because it has no location");
             return false;
@@ -88,210 +100,156 @@ impl OpendataService {
         true
     }
 
-    fn buildRoadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
-        let mut roadworkBuilder = RoadworkBuilder::default();
-        roadworkBuilder.syncData(Some(SyncData::default()));
-        let id = Self::get_path(node, &self.serviceDescriptor.id)?;
-        roadworkBuilder.id(id);
-        let latitude_path = match &self.serviceDescriptor.latitude {
-            None => return Err(RoadworkParsingError(format!("Unable to get latitude from {}", node))),
+    fn build_roadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
+        let mut roadwork_builder = Roadwork::default();
+        roadwork_builder.id = node.get_path(&self.service_descriptor.id)?;
+        let latitude_path = match &self.service_descriptor.latitude {
+            None => {
+                return Err(RoadworkParsingError(format!(
+                    "Unable to get latitude from {}",
+                    node
+                )));
+            }
             Some(latitudePath) => {
                 if latitudePath.is_empty() {
-                    return Err(RoadworkParsingError(format!("Unable to get latitude from {}", node)));
+                    return Err(RoadworkParsingError(format!(
+                        "Unable to get latitude from {}",
+                        node
+                    )));
                 } else {
-                    Some(Self::getPathAsDouble(node, latitudePath)?)
+                    Some(node.get_path_as_double(latitudePath)?)
                 }
             }
         };
         if let Some(latitude_path) = latitude_path {
-            roadworkBuilder.latitude(latitude_path);
+            roadwork_builder.latitude = latitude_path;
         } else {
             warn!("Unable to get latitude as it's path is empty");
         }
-        let longitude_path = match &self.serviceDescriptor.longitude {
-            None => return Err(RoadworkParsingError(format!("Unable to get latitude from {}", node))),
+        let longitude_path = match &self.service_descriptor.longitude {
+            None => {
+                return Err(RoadworkParsingError(format!(
+                    "Unable to get latitude from {}",
+                    node
+                )));
+            }
             Some(longitude_path) => {
                 if longitude_path.is_empty() {
-                    return Err(RoadworkParsingError(format!("Unable to get latitude from {}", node)));
+                    return Err(RoadworkParsingError(format!(
+                        "Unable to get latitude from {}",
+                        node
+                    )));
                 } else {
-                    Some(Self::getPathAsDouble(node, longitude_path)?)
+                    Some(node.get_path_as_double(longitude_path)?)
                 }
             }
         };
         if let Some(longitude_path) = longitude_path {
-            roadworkBuilder.longitude(longitude_path);
+            roadwork_builder.longitude = (longitude_path);
         } else {
             warn!("Unable to get longitude as it's path is empty");
         }
-        if let Some(polygon_path) = &self.serviceDescriptor.polygon {
+        if let Some(polygon_path) = &self.service_descriptor.polygon {
             if !polygon_path.is_empty() {
-                roadworkBuilder.polygons(self.getPathAsPolygons(node, polygon_path));
+                roadwork_builder.polygons = node.get_path_as_polygons(polygon_path);
             }
         }
-        if let Some(road) = &self.serviceDescriptor.road {
-            roadworkBuilder.road(Self::get_path(node, road)?);
+        if let Some(road) = &self.service_descriptor.road {
+            roadwork_builder.road = node.get_path(road).ok();
         }
-        if let Some(description) = &self.serviceDescriptor.description {
-            roadworkBuilder.description(Self::get_path(node, description)?);
+        if let Some(description) = &self.service_descriptor.description {
+            roadwork_builder.description = node.get_path(description).ok();
         }
 
-        if let Some(locationDetails) = &self.serviceDescriptor.locationDetails {
-            roadworkBuilder.locationDetails(Self::get_path(node, locationDetails)?);
+        if let Some(locationDetails) = &self.service_descriptor.location_details {
+            roadwork_builder.location_details = node.get_path(locationDetails).ok();
         }
-        let dateRange = self.getDateRange(node);
-        roadworkBuilder.start(dateRange.from as u64);
-        roadworkBuilder.end(dateRange.to as u64);
-        if let Some(impactCirculationDetail) = &self.serviceDescriptor.impactCirculationDetail {
-            roadworkBuilder.impactCirculationDetail(Self::get_path(node, impactCirculationDetail)?);
+        let date_range = self.get_date_range(node)?;
+        roadwork_builder.start = date_range.from.timestamp_millis();
+        roadwork_builder.end = date_range
+            .to
+            .map(|date| date.timestamp_millis())
+            .unwrap_or(0);
+        if let Some(impactCirculationDetail) = &self.service_descriptor.impact_circulation_detail {
+            roadwork_builder.impact_circulation_detail =
+                (node.get_path(impactCirculationDetail).ok());
         }
-        if let Some(locationDetails) = &self.serviceDescriptor.locationDetails {
-            roadworkBuilder.locationDetails(Self::get_path(node, locationDetails)?);
+        if let Some(url) = &self.service_descriptor.url {
+            roadwork_builder.url = node.get_path(url)?;
         }
-        if let Some(url) = &self.serviceDescriptor.url {
-            roadworkBuilder.url(Self::get_path(node, url)?);
-        }
-        roadworkBuilder.build().map_err(RoadworkBuilderError)
+        Ok(roadwork_builder)
     }
 
-    fn parseDate(
+    fn parse_date(
         &self,
         node: &Value,
-        dateParser: &Option<DateParser>,
+        date_parser: &Option<DateParser>,
     ) -> Result<DateResult, MyError> {
-        if dateParser.is_none() {
-            return Err(MyError::ParsingError("Cannot parse date as dateParse is null".to_string()));
+        if date_parser.is_none() {
+            return Err(MyError::ParsingError(
+                "Cannot parse date as dateParse is null".to_string(),
+            ));
         }
-        let currentYear = chrono::Local::now().year();
-        let dateParser = dateParser.as_ref().unwrap();
-        let value = Self::get_path(node, &dateParser.path)?;
-        let mut result = dateParser.parse(&value, self.serviceDescriptor.metadata.getLocale())?;
-        if result.parser.resetHour {
-            result.date = Self::fixTime(result.date);
+        let current_year = chrono::Local::now().year();
+        let dateParser = date_parser.as_ref().unwrap();
+        let value = node.get_path(&dateParser.path)?;
+        let mut result = dateParser.parse(&value, self.service_descriptor.metadata.getLocale())?;
+        if result.reset_hour {
+            match Self::drop_time(&result.date) {
+                None => warn!("Unable to add year to date {}", result.date),
+                Some(date) => result.date = date,
+            }
         }
-        if result.parser.addYear {
-            result.date = Self::addYear(currentYear, result.date);
+        if result.add_year {
+            match Self::add_year(current_year, &result.date) {
+                None => warn!("Unable to add year to date {}", result.date),
+                Some(date) => result.date = date,
+            }
         }
         Ok(result)
     }
 
-    fn addYear(year: i32, date: i64) -> i64 {
-        chrono::DateTime::from_timestamp_millis(date)
-            .unwrap()
-            .with_year(year)
-            .unwrap()
-            .timestamp_millis()
+    fn add_year(year: i32, date: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        date.with_year(year)
     }
 
-    fn fixTime(date: i64) -> i64 {
-        chrono::DateTime::from_timestamp_millis(date)
-            .unwrap()
-            .with_hour(0)
+    fn drop_time(date: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        date.with_hour(0)
             .unwrap()
             .with_minute(0)
             .unwrap()
             .with_second(0)
             .unwrap()
             .with_nanosecond(0)
-            .unwrap()
-            .timestamp_millis()
     }
 
-    fn getDateRange(&self, node: &Value) -> DateRange {
-        let currentYear = chrono::Local::now().year();
-        let startTime = self
-            .parseDate(node, &self.serviceDescriptor.from)
+    fn get_date_range(&self, node: &Value) -> Result<DateRange, MyError> {
+        let current_year = chrono::Local::now().year();
+        let start_time = self
+            .parse_date(node, &self.service_descriptor.from)
             .map(|date_result| date_result.date)
-            .inspect_err(|e| error!("Error parsing start date {}", e))
-            .unwrap_or_default();
-        let mut endDate;
-        match self.parseDate(node, &self.serviceDescriptor.to) {
+            .inspect_err(|e| error!("Error parsing start date {}", e))?;
+        match self.parse_date(node, &self.service_descriptor.to) {
             Ok(end) => {
-                endDate = end.date;
-                if end.parser.addYear {
-                    endDate = Self::addYear(currentYear, endDate);
-                    if startTime > endDate {
-                        endDate = Self::addYear(currentYear + 1, endDate);
+                let mut end_date = end.date;
+                if end.add_year {
+                    match Self::add_year(current_year, &end_date) {
+                        None => {}
+                        Some(date_time) => end_date = date_time,
+                    }
+                    if start_time > end_date {
+                        match Self::add_year(current_year, &end_date) {
+                            None => {}
+                            Some(date_time) => end_date = date_time,
+                        }
                     }
                 }
+                Ok(DateRange::new(start_time, end_date))
             }
             Err(e) => {
                 error!("Error parsing end date {}", e);
-                endDate = 0
+                Ok(DateRange::without_end(start_time))
             }
-        }
-
-        DateRange::new(startTime, endDate)
-    }
-
-    fn getPathAsPolygons(&self, node: &Value, path: &str) -> Option<Vec<Polygon>> {
-        match node.query(path) {
-            Ok(value) => {
-                if Self::isMultiPolygon(&value) {
-                    let polygons = value
-                        .into_iter()
-                        .flat_map(|polygon_array| {
-                            if let Value::Array(polygonArray) = polygon_array {
-                                Some(Self::getPolygon(polygonArray))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    return Some(polygons);
-                } else {
-                    if let Some(Value::Array(polygonArray)) = value.get(0) {
-                        return Some(vec![Self::getPolygon(polygonArray)]);
-                    }
-                }
-            }
-            Err(e) => error!("Error parsing polygon {e}"),
-        }
-        None
-    }
-
-    fn isMultiPolygon(value: &Vec<&Value>) -> bool {
-        if let Some(Value::Array(firstLevel)) = value.get(0) {
-            if let Some(Value::Array(_)) = firstLevel.get(0) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn getPolygon(polygonArray: &Vec<Value>) -> Polygon {
-        let mut xpoints = Vec::with_capacity(polygonArray.len());
-        let mut ypoints = Vec::with_capacity(polygonArray.len());
-        for point in polygonArray {
-            xpoints.push(point[0].as_f64().unwrap()); // todo clean this unwrap
-            ypoints.push(point[1].as_f64().unwrap());
-        }
-        Polygon::new(xpoints, ypoints)
-    }
-
-    fn get_path(node: &Value, path: &str) -> Result<String, MyError> {
-        debug!("get_path path:{path}");
-        let result = node.query(path)?;
-        if result.is_empty() {
-            return Err(JsonParsingError(format!("Unable to get path {} from {}", path, node)));
-        }
-        result[0]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| JsonParsingError(format!("Unable to get path {} from {}", path, node)))
-    }
-
-    fn getPathAsDouble(node: &Value, path: &str) -> Result<f64, MyError> {
-        let result = node.query(path)?;
-        if result.is_empty() {
-            return Err(JsonParsingError(format!("Unable to get path {} from {}", path, node)));
-        }
-        let value = result[0];
-        match value {
-            Value::Number(number) => Ok(number.as_f64().unwrap()),
-            Value::String(string) => string
-                .parse::<f64>()
-                .or(Err(JsonParsingError(format!("Unable to parse {} as a double", string)))),
-            _ => Err(JsonParsingError(format!("Unable to get path {} from {}", path, node))),
         }
     }
 }

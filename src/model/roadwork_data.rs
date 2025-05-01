@@ -27,23 +27,19 @@ impl<'a> IntoIterator for &'a mut RoadworkData {
 
 impl RoadworkData {
     pub(crate) fn new(source: &str, roadworks: Vec<Roadwork>) -> Self {
-        let mut roadworksMap = HashMap::new();
+        let mut roadworks_map = HashMap::new();
         roadworks.into_iter().for_each(|roadwork| {
-            roadworksMap.insert(roadwork.id.clone(), roadwork);
+            roadworks_map.insert(roadwork.id.clone(), roadwork);
         });
         Self {
             source: source.to_string(),
-            roadworks: roadworksMap,
+            roadworks: roadworks_map,
             created: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
         }
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Roadwork> {
         self.roadworks.values()
-    }
-
-    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Roadwork> {
-        self.roadworks.values_mut()
     }
 
     pub(crate) fn get_mut_roadwork(&mut self, id: &str) -> Option<&mut Roadwork> {

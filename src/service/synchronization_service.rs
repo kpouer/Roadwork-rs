@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) struct SynchronizationService {
     settings: Arc<Mutex<Settings>>,
-    httpService: HttpService,
+    http_service: HttpService,
     // localizationService: LocalizationService,
 }
 
@@ -18,7 +18,7 @@ impl SynchronizationService {
     pub(crate) fn new(settings: Arc<Mutex<Settings>>) -> SynchronizationService {
         Self {
             settings,
-            httpService: HttpService::default(),
+            http_service: HttpService::default(),
         }
     }
 }
@@ -27,42 +27,36 @@ impl SynchronizationService {
     /**
      * Synchronize the data with the server
      *
-     * @param roadworkData the data to synchronize. Status might be updated
+     * @param roadwork_data the data to synchronize. Status might be updated
      */
-    pub(crate) fn synchronize(&self, roadworkData: &mut RoadworkData) {
+    pub(crate) fn synchronize(&self, roadwork_data: &mut RoadworkData) {
         if self.settings.lock().unwrap().synchronizationEnabled {
             info!("synchronize");
-            let url = self.getUrl(&roadworkData.source);
+            let url = self.get_url(&roadwork_data.source);
             info!("Will synchronize with url {}", url);
             let mut body: HashMap<String, SyncData> = HashMap::new();
-            roadworkData.iter().for_each(|roadwork| {
+            roadwork_data.iter().for_each(|roadwork| {
                 body.insert(
                     roadwork.id.clone(),
-                    roadwork.syncData.as_ref().unwrap().clone(),
-                ); // todo remove this unwrap
+                    roadwork.sync_data.clone(),
+                );
             });
-            let headers = self.createHeaders();
-            let synchronizedData: HashMap<String, SyncData> = self
-                .httpService
-                .postJsonObject(&url, &body, &headers)
+            let headers = self.create_headers();
+            let synchronized_data: HashMap<String, SyncData> = self
+                .http_service
+                .post_json_object(&url, &body, &headers)
                 .unwrap();
 
-            for (id, serverSyncData) in synchronizedData {
-                match roadworkData.get_mut_roadwork(&id) {
-                    Some(roadwork) => {
-                        match &mut roadwork.syncData {
-                            None => warn!("Roadwork {id} has no sync data"),
-                            Some(sync_data) => sync_data.copy(&serverSyncData),
-                        }
-                        roadwork.updateMarker();
-                    }
+            for (id, server_sync_data) in synchronized_data {
+                match roadwork_data.get_mut_roadwork(&id) {
+                    Some(roadwork) => roadwork.sync_data.copy(&server_sync_data),
                     None => warn!("Roadwork {id} not found"),
                 }
             }
         }
     }
 
-    fn getUrl(&self, source: &str) -> String {
+    fn get_url(&self, source: &str) -> String {
         let settings = self.settings.lock().unwrap();
         let synchronization_team = &settings.synchronizationTeam;
         let mut url = settings.synchronizationUrl.clone();
@@ -72,7 +66,7 @@ impl SynchronizationService {
         format!("{url}/setData/{synchronization_team}/{source}")
     }
 
-    fn createHeaders(&self) -> HashMap<String, String> {
+    fn create_headers(&self) -> HashMap<String, String> {
         let auth = {
             let settings = self.settings.lock().unwrap();
             format!(
@@ -80,13 +74,10 @@ impl SynchronizationService {
                 settings.synchronizationLogin, settings.synchronizationPassword
             )
         };
-        let encodedAuth = BASE64_STANDARD.encode(&auth);
-        let authHeader = format!("Basic {encodedAuth}");
+        let encoded_auth = BASE64_STANDARD.encode(&auth);
+        let auth_header = format!("Basic {encoded_auth}");
         let mut headers = HashMap::new();
-        headers.insert("Authorization".to_string(), authHeader);
+        headers.insert("Authorization".to_string(), auth_header);
         headers
     }
-    //
-    //    private static class MapParameterizedTypeReference extends ParameterizedTypeReference<Map<String, SyncData>> {
-    //    }
 }

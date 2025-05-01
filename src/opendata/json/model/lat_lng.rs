@@ -3,8 +3,8 @@ use walkers::{Position, lat_lon};
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub(crate) struct LatLng {
-    lat: f64,
-    lon: f64,
+    pub(crate) lat: f64,
+    pub(crate) lon: f64,
 }
 
 impl Default for LatLng {
