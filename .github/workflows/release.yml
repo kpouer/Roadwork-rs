@@ -3,7 +3,10 @@ on:
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - "**"
   workflow_dispatch:
+
 
 jobs:
   build:
@@ -17,17 +20,23 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: Roadwork
+            artifact_name: Roadwork-rs
             asset_name: Roadwork-linux-amd64
             friendly_name: Roadwork
           - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: Roadwork-rs
+            asset_name: Roadwork-macos-aarch64
+            friendly_name: Roadwork.app
+          - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: Roadwork.app # Changed artifact name
-            asset_name: Roadwork-macos-amd64
-            friendly_name: Roadwork.app # Corrected friendly name to match artifact_name
+            artifact_name: Roadwnodeork-rs
+            asset_name: Roadwork-macos-x86_64
+            friendly_name: Roadwork
+            package_name: Roadwork.app
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: Roadwork.exe
+            artifact_name: Roadwork-rs.exe
             asset_name: Roadwork-windows-amd64.exe
             friendly_name: Roadwork.exe
 
@@ -91,35 +100,16 @@ jobs:
             tar -czf Roadwork-${{ github.ref_name }}-${{ matrix.asset_name }}.tar.gz Roadwork
           fi
           cd ..
-
       - name: Prepare artifact (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
-          APP_NAME="${{ matrix.friendly_name }}"
-          APP_DIR="target/${{ matrix.target }}/release/bundle/osx/$APP_NAME"
+          APP_DIR="target/${{ matrix.target }}/release/bundle/osx/${{ matrix.friendly_name }}"
           DMG_NAME="Roadwork-${{ github.ref_name }}-${{ matrix.asset_name }}.dmg"
-          VOL_NAME="Disk Mosaic ${{ github.ref_name }}"
-
-          # Ensure the app directory exists
-          if [ ! -d "$APP_DIR" ]; then
-            echo "Error: App directory not found at $APP_DIR"
-            exit 1
-          fi
-
-          # Create Resources directory if it doesn't exist
-          mkdir -p "$APP_DIR/Contents/Resources"
-
-          # Copy assets, license, readme, and third-party licenses
-          cp packaging/DiskMosaic.app/Contents/Info.plist "$APP_DIR/Contents/"
-          cp packaging/DiskMosaic.app/Contents/Resources/AppIcon.icns "$APP_DIR/Contents/Resources/"
-          cp LICENSE "$APP_DIR/Contents/Resources/" || cp LICENCE "$APP_DIR/Contents/Resources/" || echo "No license file found"
-          cp README.md "$APP_DIR/Contents/Resources/" || echo "No README.md file found"
-          cp THIRDPARTY.yml "$APP_DIR/Contents/Resources/" || echo "No THIRDPARTY.yml file found"
-
-          # Create DMG
-          mkdir -p release
+          VOL_NAME="Roadwork ${{ github.ref_name }}"
+          mkdir release
           hdiutil create -volname "$VOL_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "release/$DMG_NAME"
+#          hdiutil create -volname "Roadwork release" -srcfolder "target/aarch64-apple-darwin/release/bundle/osx/Roadwork.app" -ov -format UDZO "release/Roadwork-release-Roadwork-macos-aarch64.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -153,12 +143,13 @@ jobs:
           files: |
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-linux-amd64/Roadwork-${{ github.ref_name }}-Roadwork-linux-amd64.tar.gz
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-macos-amd64/Roadwork-${{ github.ref_name }}-Roadwork-macos-amd64.dmg
+            artifacts/Roadwork-${{ github.ref_name }}-Roadwork-macos-aarch64/Roadwork-${{ github.ref_name }}-Roadwork-macos-aarch64.dmg
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-windows-amd64.exe/Roadwork-${{ github.ref_name }}-Roadwork-windows-amd64.exe.zip
-          name: Disk Mosaic ${{ github.ref_name }}
+          name: Roadwork ${{ github.ref_name }}
           body: |
-            # Disk Mosaic ${{ github.ref_name }}
+            # Roadwork ${{ github.ref_name }}
 
-            Disk Mosaic is a utility tool that helps you visually identify how your disk space is used and where.
+            Roadwork is a utility tool that helps you visually identify how your disk space is used and where.
           draft: true
           prerelease: false
         env:

@@ -12,7 +12,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_app_id("Roadwork")
-            // .with_icon(icon_data())
+            .with_icon(icon_data())
             .with_min_inner_size([320.0, 200.0]),
         persist_window: true,
         ..Default::default()
@@ -29,11 +29,11 @@ fn main() -> eframe::Result {
     )
 }
 
-// fn icon_data() -> egui::IconData {
-//     let app_icon_png_bytes = include_bytes!("../media/icon.png");
-//
-//     match eframe::icon_data::from_png_bytes(app_icon_png_bytes) {
-//         Ok(icon_data) => icon_data,
-//         Err(err) => panic!("Failed to load app icon: {err}"),
-//     }
-// }
+fn icon_data() -> egui::IconData {
+    let app_icon_png_bytes = include_bytes!("../media/icon.png");
+
+    match eframe::icon_data::from_png_bytes(app_icon_png_bytes) {
+        Ok(icon_data) => icon_data,
+        Err(err) => panic!("Failed to load app icon: {err}"),
+    }
+}

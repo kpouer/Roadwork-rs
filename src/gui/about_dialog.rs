@@ -19,10 +19,10 @@ impl<'a> AboutDialog<'a> {
     }
 
     fn show(&mut self, ctx: &Context) {
-        egui::Window::new("About Disk Mosaic")
+        egui::Window::new("About Roadwork")
             .open(self.open)
             .show(ctx, |ui| {
-                ui.label("Disk Mosaic");
+                ui.label("Roadwork");
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                 ui.label("Created by Matthieu Casanova");
             });

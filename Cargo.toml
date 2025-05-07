@@ -13,6 +13,11 @@ name = "roadworkapp_lib"
 crate-type = ["rlib"]
 path = "src/lib.rs"
 
+[package.metadata.bundle]
+name = "Roadwork"
+identifier = "com.kpouer.roadwork"
+icon = ["media/1024x1024.png", "media/AppIcon.icns"]
+
 [dependencies]
 base64 = "0.22"
 chrono = "0.4"
