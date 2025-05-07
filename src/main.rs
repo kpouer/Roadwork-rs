@@ -5,7 +5,6 @@ use log::LevelFilter;
 use roadworkapp_lib::roadwork_app::RoadworkApp;
 
 fn main() -> eframe::Result {
-    // env_logger::init();
     egui_logger::builder()
         .max_level(LevelFilter::Info)
         .init()

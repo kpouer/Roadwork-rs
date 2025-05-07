@@ -257,6 +257,7 @@ impl App for RoadworkApp {
         }
     }
 
+    
     fn save(&mut self, _storage: &mut dyn Storage) {
         info!("Saving data");
         if let Some(roadwork_data) = &self.roadwork_data {
@@ -264,5 +265,9 @@ impl App for RoadworkApp {
         }
         let settings = self.settings.lock().unwrap();
         settings.save().expect("Unable to save settings");
+    }
+
+    fn persist_egui_memory(&self) -> bool {
+        true
     }
 }

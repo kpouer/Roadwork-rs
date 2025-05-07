@@ -20,7 +20,7 @@ chrono-tz = "0.10"
 egui = "0.31"
 egui_extras = { version = "0.31", features = ["svg"] }
 egui_logger = "0.7.0"
-eframe = "0.31"
+eframe = { version = "0.31", features = ["persistence"] }
 home = "0.5.11"
 jsonpath-rust = "1.0.1"
 log = "0.4"
