@@ -1,8 +1,11 @@
+use crate::gui::logs_panel::LogsPanel;
 use crate::gui::roadwork_marker::RoadworkMarker;
+use crate::gui::status_panel::StatusPanel;
 use crate::model::roadwork_data::RoadworkData;
 use crate::opendata::json::model::lat_lng::LatLng;
 use crate::opendata::open_data_service_manager::OpenDataServiceManager;
 use crate::settings::Settings;
+use chrono::{DateTime, Local, TimeZone, Utc};
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
@@ -11,8 +14,6 @@ use log::info;
 use std::sync::{Arc, Mutex};
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpOptions, HttpTiles, Map, MapMemory, Projector};
-use crate::gui::logs_panel::LogsPanel;
-use crate::gui::status_panel::StatusPanel;
 
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
@@ -113,10 +114,10 @@ impl RoadworkApp {
                                 ui.end_row();
                             });
                         if ui.button("WME").clicked() {
-                            let url = url.replace("${lat}", &format!("{}", roadwork.latitude))
+                            let url = url
+                                .replace("${lat}", &format!("{}", roadwork.latitude))
                                 .replace("${lon}", &format!("{}", roadwork.longitude));
                             open::that(url).expect("failed to open url");
-
                         }
                     });
 
@@ -125,15 +126,19 @@ impl RoadworkApp {
                         .spacing([4.0, 4.0])
                         .show(ui, |ui| {
                             ui.label(RichText::new("Start:").strong());
-                            ui.add(
-                                Label::new(roadwork.start.to_string())
-                                    .wrap_mode(TextWrapMode::Truncate),
+                            ui.label(
+                                DateTime::from_timestamp_millis(roadwork.start)
+                                    .expect("Parsed start date")
+                                    .format("%d/%m/%Y %H:%M")
+                                    .to_string(),
                             );
                             ui.end_row();
                             ui.label(RichText::new("End:").strong());
-                            ui.add(
-                                Label::new(roadwork.end.to_string())
-                                    .wrap_mode(TextWrapMode::Truncate),
+                            ui.label(
+                                DateTime::from_timestamp_millis(roadwork.end)
+                                    .expect("Parsed start date")
+                                    .format("%d/%m/%Y %H:%M")
+                                    .to_string(),
                             );
                             ui.end_row();
                         });
@@ -161,7 +166,7 @@ impl RoadworkApp {
                     {
                         open::that(&roadwork.url).expect("failed to open url");
                     }
-                    
+
                     StatusPanel::new(roadwork).show(ui);
                 });
             });
@@ -186,7 +191,10 @@ impl RoadworkApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_label("")
-                    .selected_text(format!("{}", self.settings.lock().unwrap().opendata_service))
+                    .selected_text(format!(
+                        "{}",
+                        self.settings.lock().unwrap().opendata_service
+                    ))
                     .show_ui(ui, |ui| {
                         // todo : remove this ugly clone
                         let services = self.open_data_service_manager.services().to_owned();
@@ -248,7 +256,7 @@ impl App for RoadworkApp {
             }
         });
     }
-    
+
     fn save(&mut self, _storage: &mut dyn Storage) {
         info!("Saving data");
         if let Some(roadwork_data) = &self.roadwork_data {
