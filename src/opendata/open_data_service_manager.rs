@@ -35,7 +35,7 @@ impl OpenDataServiceManager {
     }
 
     pub(crate) fn get_center(&self) -> LatLng {
-        let service_name = &self.settings.lock().unwrap().opendataService;
+        let service_name = &self.settings.lock().unwrap().opendata_service;
         self.opendata_services
             .get(service_name)
             .map(|service| service.service_descriptor.metadata.center)
@@ -80,7 +80,7 @@ impl OpenDataServiceManager {
      * @return an optional that should contain Roadwork data
      */
     fn get_roadworks(&self) -> Option<RoadworkData> {
-        let current_path = self.get_path(&self.settings.lock().unwrap().opendataService);
+        let current_path = self.get_path(&self.settings.lock().unwrap().opendata_service);
         if let Some(current_path) = &current_path {
             info!("getData {current_path:?}");
             match Self::load_cache(&current_path) {
@@ -129,7 +129,7 @@ impl OpenDataServiceManager {
 
     pub(crate) fn get_opendata_service(&self) -> Option<&OpendataService> {
         debug!("get_opendata_service");
-        let opendata_service = &self.settings.lock().unwrap().opendataService;
+        let opendata_service = &self.settings.lock().unwrap().opendata_service;
         debug!("opendata_service: {opendata_service}");
         self.opendata_services.get(opendata_service)
     }
@@ -201,7 +201,7 @@ impl OpenDataServiceManager {
     }
 
     pub(crate) fn delete_cache(&self) {
-        if let Some(current_path) = self.get_path(&self.settings.lock().unwrap().opendataService) {
+        if let Some(current_path) = self.get_path(&self.settings.lock().unwrap().opendata_service) {
             info!("delete_cache {current_path:?}");
             fs::remove_file(&current_path).ok();
         }

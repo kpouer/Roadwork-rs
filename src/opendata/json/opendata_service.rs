@@ -110,14 +110,14 @@ impl OpendataService {
                     node
                 )));
             }
-            Some(latitudePath) => {
-                if latitudePath.is_empty() {
+            Some(latitude_path) => {
+                if latitude_path.is_empty() {
                     return Err(RoadworkParsingError(format!(
                         "Unable to get latitude from {}",
                         node
                     )));
                 } else {
-                    Some(node.get_path_as_double(latitudePath)?)
+                    Some(node.get_path_as_double(latitude_path)?)
                 }
             }
         };
@@ -145,7 +145,7 @@ impl OpendataService {
             }
         };
         if let Some(longitude_path) = longitude_path {
-            roadwork_builder.longitude = (longitude_path);
+            roadwork_builder.longitude = longitude_path;
         } else {
             warn!("Unable to get longitude as it's path is empty");
         }
@@ -161,8 +161,8 @@ impl OpendataService {
             roadwork_builder.description = node.get_path(description).ok();
         }
 
-        if let Some(locationDetails) = &self.service_descriptor.location_details {
-            roadwork_builder.location_details = node.get_path(locationDetails).ok();
+        if let Some(location_details) = &self.service_descriptor.location_details {
+            roadwork_builder.location_details = node.get_path(location_details).ok();
         }
         let date_range = self.get_date_range(node)?;
         roadwork_builder.start = date_range.from.timestamp_millis();
@@ -170,9 +170,9 @@ impl OpendataService {
             .to
             .map(|date| date.timestamp_millis())
             .unwrap_or(0);
-        if let Some(impactCirculationDetail) = &self.service_descriptor.impact_circulation_detail {
+        if let Some(impact_circulation_detail) = &self.service_descriptor.impact_circulation_detail {
             roadwork_builder.impact_circulation_detail =
-                (node.get_path(impactCirculationDetail).ok());
+                node.get_path(impact_circulation_detail).ok();
         }
         if let Some(url) = &self.service_descriptor.url {
             roadwork_builder.url = node.get_path(url)?;
@@ -191,9 +191,9 @@ impl OpendataService {
             ));
         }
         let current_year = chrono::Local::now().year();
-        let dateParser = date_parser.as_ref().unwrap();
-        let value = node.get_path(&dateParser.path)?;
-        let mut result = dateParser.parse(&value, self.service_descriptor.metadata.getLocale())?;
+        let date_parser = date_parser.as_ref().unwrap();
+        let value = node.get_path(&date_parser.path)?;
+        let mut result = date_parser.parse(&value, self.service_descriptor.metadata.get_locale())?;
         if result.reset_hour {
             match Self::drop_time(&result.date) {
                 None => warn!("Unable to add year to date {}", result.date),

@@ -30,7 +30,7 @@ impl SynchronizationService {
      * @param roadwork_data the data to synchronize. Status might be updated
      */
     pub(crate) fn synchronize(&self, roadwork_data: &mut RoadworkData) {
-        if self.settings.lock().unwrap().synchronizationEnabled {
+        if self.settings.lock().unwrap().synchronization_enabled {
             info!("synchronize");
             let url = self.get_url(&roadwork_data.source);
             info!("Will synchronize with url {}", url);
@@ -58,8 +58,8 @@ impl SynchronizationService {
 
     fn get_url(&self, source: &str) -> String {
         let settings = self.settings.lock().unwrap();
-        let synchronization_team = &settings.synchronizationTeam;
-        let mut url = settings.synchronizationUrl.clone();
+        let synchronization_team = &settings.synchronization_team;
+        let mut url = settings.synchronization_url.clone();
         if !url.ends_with("/") {
             url.push_str("/");
         }
@@ -71,7 +71,7 @@ impl SynchronizationService {
             let settings = self.settings.lock().unwrap();
             format!(
                 "{}:{}",
-                settings.synchronizationLogin, settings.synchronizationPassword
+                settings.synchronization_login, settings.synchronization_password
             )
         };
         let encoded_auth = BASE64_STANDARD.encode(&auth);

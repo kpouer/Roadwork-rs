@@ -7,18 +7,21 @@ use std::string::ToString;
 const DEFAULT_OPENDATA_SERVICE: &str = "France-Paris";
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct Settings {
-    pub(crate) opendataService: String,
-    pub(crate) synchronizationUrl: String,
-    pub(crate) synchronizationTeam: String,
-    frameX: u32,
-    frameY: u32,
-    frameWidth: u16,
-    frameHeight: u16,
-    pub(crate) synchronizationEnabled: bool,
-    pub(crate) synchronizationLogin: String,
-    pub(crate) synchronizationPassword: String,
+pub struct Settings {
+    #[serde(rename = "opendataService")]
+    pub(crate) opendata_service: String,
+    #[serde(rename = "synchronizationUrl")]
+    pub(crate) synchronization_url: String,
+    #[serde(rename = "synchronizationTeam")]
+    pub(crate) synchronization_team: String,
+    #[serde(rename = "synchronizationEnabled")]
+    pub(crate) synchronization_enabled: bool,
+    #[serde(rename = "synchronizationLogin")]
+    pub(crate) synchronization_login: String,
+    #[serde(rename = "synchronizationPassword")]
+    pub(crate) synchronization_password: String,
 
+    #[serde(rename = "hide_expired")]
     pub(crate) hide_expired: bool,
 }
 
@@ -29,16 +32,12 @@ impl Default for Settings {
             .and_then(|settings_file| File::open(settings_file).ok())
             .and_then(|settings_file| serde_json::from_reader::<File, Settings>(settings_file).ok())
             .unwrap_or(Self {
-                opendataService: DEFAULT_OPENDATA_SERVICE.to_string(),
-                synchronizationUrl: "".to_string(),
-                synchronizationTeam: "".to_string(),
-                frameX: 0,
-                frameY: 0,
-                frameWidth: 0,
-                frameHeight: 0,
-                synchronizationEnabled: false,
-                synchronizationLogin: "".to_string(),
-                synchronizationPassword: "".to_string(),
+                opendata_service: DEFAULT_OPENDATA_SERVICE.to_string(),
+                synchronization_url: "".to_string(),
+                synchronization_team: "".to_string(),
+                synchronization_enabled: false,
+                synchronization_login: "".to_string(),
+                synchronization_password: "".to_string(),
                 hide_expired: false,
             })
     }
@@ -56,7 +55,7 @@ impl Settings {
         Ok(())
     }
 
-    pub(crate) fn settings_folder() -> Option<PathBuf> {
+    pub fn settings_folder() -> Option<PathBuf> {
         home::home_dir().map(|mut home| {
             home.push(".roadwork");
             home

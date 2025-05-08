@@ -8,7 +8,6 @@ use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
 use egui::{Button, Context, Label, RichText};
 use log::info;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpOptions, HttpTiles, Map, MapMemory, Projector};
@@ -187,14 +186,14 @@ impl RoadworkApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_label("")
-                    .selected_text(format!("{}", self.settings.lock().unwrap().opendataService))
+                    .selected_text(format!("{}", self.settings.lock().unwrap().opendata_service))
                     .show_ui(ui, |ui| {
                         // todo : remove this ugly clone
                         let services = self.open_data_service_manager.services().to_owned();
                         for service in services {
                             if ui
                                 .selectable_value(
-                                    &mut self.settings.lock().unwrap().opendataService,
+                                    &mut self.settings.lock().unwrap().opendata_service,
                                     service.to_string(),
                                     service,
                                 )
@@ -218,7 +217,7 @@ impl RoadworkApp {
 }
 
 impl App for RoadworkApp {
-    fn update(&mut self, ctx: &Context, frame: &mut Frame) {
+    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         self.show_top_panel(ctx);
         self.show_left_panel(ctx);
 
@@ -248,15 +247,7 @@ impl App for RoadworkApp {
                 }
             }
         });
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if let Some(roadwork_data) = &self.roadwork_data {
-                self.open_data_service_manager.save(&roadwork_data);
-            }
-            let settings = self.settings.lock().unwrap();
-            settings.save().expect("Unable to save settings");
-        }
     }
-
     
     fn save(&mut self, _storage: &mut dyn Storage) {
         info!("Saving data");

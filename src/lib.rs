@@ -5,7 +5,7 @@ mod model;
 mod opendata;
 pub mod roadwork_app;
 mod service;
-mod settings;
+pub mod settings;
 mod json_tools;
 mod gui;
 

@@ -3,6 +3,7 @@
 use egui_extras::install_image_loaders;
 use log::LevelFilter;
 use roadworkapp_lib::roadwork_app::RoadworkApp;
+use roadworkapp_lib::settings::Settings;
 
 fn main() -> eframe::Result {
     egui_logger::builder()
@@ -14,6 +15,7 @@ fn main() -> eframe::Result {
             .with_app_id("Roadwork")
             .with_icon(icon_data())
             .with_min_inner_size([320.0, 200.0]),
+        persistence_path: Settings::settings_folder(), 
         persist_window: true,
         ..Default::default()
     };
