@@ -26,11 +26,11 @@ jobs:
             artifact_name: Roadwork-rs
             asset_name: Roadwork-macos-aarch64
             friendly_name: Roadwork.app
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: Roadwnodeork-rs
-            asset_name: Roadwork-macos-x86_64
-            friendly_name: Roadwork
+#          - os: macos-13
+#            target: x86_64-apple-darwin
+#            artifact_name: Roadwork-rs
+#            asset_name: Roadwork-macos-x86_64
+#            friendly_name: Roadwork
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: Roadwork-rs.exe
@@ -50,7 +50,7 @@ jobs:
           profile: minimal
 
       - name: Install cargo-bundle dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
         run: |
           brew install librsvg pango pkg-config
           # Install cargo-bundle and cargo-bundle-licenses
@@ -68,13 +68,13 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Generate licenses (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
         run: cargo bundle-licenses --format yaml --output THIRDPARTY.yml
 
       - name: Build release binary/bundle
         uses: actions-rs/cargo@v1
         with:
-          command: ${{ matrix.os == 'macos-latest' && 'bundle' || 'build' }}
+          command: ${{ (matrix.os == 'macos-latest' || matrix.os == 'macos-13') && 'bundle' || 'build' }}
           args: --release --target ${{ matrix.target }}
 
       - name: Prepare artifact (Linux/Windows)
@@ -98,15 +98,14 @@ jobs:
           fi
           cd ..
       - name: Prepare artifact (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
         shell: bash
         run: |
           APP_DIR="target/${{ matrix.target }}/release/bundle/osx/${{ matrix.friendly_name }}"
           DMG_NAME="Roadwork-${{ github.ref_name }}-${{ matrix.asset_name }}.dmg"
           VOL_NAME="Roadwork ${{ github.ref_name }}"
-          mkdir release
+          mkdir -p release
           hdiutil create -volname "$VOL_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "release/$DMG_NAME"
-#          hdiutil create -volname "Roadwork release" -srcfolder "target/aarch64-apple-darwin/release/bundle/osx/Roadwork.app" -ov -format UDZO "release/Roadwork-release-Roadwork-macos-aarch64.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -139,7 +138,7 @@ jobs:
         with:
           files: |
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-linux-amd64/Roadwork-${{ github.ref_name }}-Roadwork-linux-amd64.tar.gz
-            artifacts/Roadwork-${{ github.ref_name }}-Roadwork-macos-amd64/Roadwork-${{ github.ref_name }}-Roadwork-macos-amd64.dmg
+#            artifacts/Roadwork-${{ github.ref_name }}-Roadwork-macos-x86_64/Roadwork-${{ github.ref_name }}-Roadwork-macos-x86_64.dmg
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-macos-aarch64/Roadwork-${{ github.ref_name }}-Roadwork-macos-aarch64.dmg
             artifacts/Roadwork-${{ github.ref_name }}-Roadwork-windows-amd64.exe/Roadwork-${{ github.ref_name }}-Roadwork-windows-amd64.exe.zip
           name: Roadwork ${{ github.ref_name }}
