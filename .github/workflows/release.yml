@@ -31,7 +31,6 @@ jobs:
             artifact_name: Roadwnodeork-rs
             asset_name: Roadwork-macos-x86_64
             friendly_name: Roadwork
-            package_name: Roadwork.app
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: Roadwork-rs.exe
