@@ -22,7 +22,7 @@ egui_extras = { version = "0.31", features = ["svg"] }
 egui_logger = "0.7.0"
 eframe = { version = "0.31", features = ["persistence"] }
 home = "0.5.11"
-jsonpath-rust = "1.0.1"
+jsonpath-rust = "1.0.2"
 log = "0.4"
 open = "5.3.2"
 regex = "1.11"
