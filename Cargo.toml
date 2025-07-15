@@ -18,7 +18,7 @@ base64 = "0.22"
 chrono = "0.4"
 chrono-tz = "0.10"
 egui = "0.31"
-egui_extras = { version = "0.31", features = ["svg"] }
+egui_extras = { version = "0.32", features = ["svg"] }
 egui_logger = "0.7.0"
 eframe = { version = "0.31", features = ["persistence"] }
 home = "0.5.11"
