@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use egui::TextBuffer;
 use std::ops::Range;
 
@@ -46,4 +47,8 @@ impl TextBuffer for DummyTextBuffer<'_> {
     }
 
     fn delete_char_range(&mut self, _char_range: Range<usize>) {}
+
+    fn type_id(&self) -> TypeId {
+        std::any::TypeId::of::<&str>()
+    }
 }
