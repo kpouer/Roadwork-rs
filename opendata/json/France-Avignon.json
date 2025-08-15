@@ -14,14 +14,14 @@
     "locale": "fr_FR"
   },
   "roadworkArray": "$.features",
-  "id": "@.properties.idarrete",
-  "latitude": "@.geometry.coordinates[0][0][0][1]",
-  "longitude": "@.geometry.coordinates[0][0][0][0]",
-  "road": "@.properties.localisations",
-  "impactCirculationDetail": "@.properties.mesures",
-  "url": "@.properties.shorturl",
+  "id": "$.properties.idarrete",
+  "latitude": "$.geometry.coordinates[0][0][0][1]",
+  "longitude": "$.geometry.coordinates[0][0][0][0]",
+  "road": "$.properties.localisations",
+  "impactCirculationDetail": "$.properties.mesures",
+  "url": "$.properties.shorturl",
   "from": {
-    "path": "@.properties.arretedebut",
+    "path": "$.properties.arretedebut",
     "parsers": [
       {
         "matcher": ".*",
@@ -30,7 +30,7 @@
     ]
   },
   "to": {
-    "path": "@.properties.arretefin",
+    "path": "$.properties.arretefin",
     "parsers": [
       {
         "matcher": ".*",

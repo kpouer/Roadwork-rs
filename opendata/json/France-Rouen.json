@@ -16,18 +16,18 @@
     "tileServer" : "WazeINTL",
     "editorPattern" : "https://waze.com/fr/editor?env=row&lat=${lat}&lon=${lon}&zoomLevel=19"
   },
-  "id" : "@.nid",
-  "latitude" : "@.field_coordonnees.lat",
-  "longitude" : "@.field_coordonnees.lon",
+  "id" : "$.nid",
+  "latitude" : "$.field_coordonnees.lat",
+  "longitude" : "$.field_coordonnees.lon",
   "polygon" : null,
-  "road" : "@.title",
-  "description" : "@.field_corps_de_texte",
+  "road" : "$.title",
+  "description" : "$.field_corps_de_texte",
   "locationDetails" : null,
-  "impactCirculationDetail" :  "@.field_resume",
+  "impactCirculationDetail" :  "$.field_resume",
   "from" : {
-    "path" : "@.field_date_debut_1",
+    "path" : "$.field_date_debut_1",
     "parsers" : [ {
-      "format" : "yyyy-MM-dd",
+      "format" : "%Y-%m-%d",
       "matcher" : ".*",
       "addYear" : false,
       "resetHour" : true,
@@ -35,9 +35,9 @@
     } ]
   },
   "to" : {
-    "path" : "@.field_date_fin_1",
+    "path" : "$.field_date_fin_1",
     "parsers" : [ {
-      "format" : "yyyy-MM-dd",
+      "format" : "%Y-%m-%d",
       "matcher" : ".*",
       "addYear" : false,
       "resetHour" : true,
@@ -45,5 +45,5 @@
     } ]
   },
   "roadworkArray" : "$.results",
-  "url" : "@.documents"
+  "url" : "$.documents"
 }

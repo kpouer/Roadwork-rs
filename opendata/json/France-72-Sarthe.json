@@ -13,30 +13,30 @@
     },
     "locale": "fr_FR"
   },
-  "roadworkArray": "$.records",
-  "id": "@.recordid",
-  "latitude": "@.geometry.coordinates[1]",
-  "longitude": "@.geometry.coordinates[0]",
-  "road": "@.fields.voie",
-  "locationDetails": "@.fields.commune",
-  "impactCirculationDetail": "@.fields.mode_d_exploitation",
-  "description": "@.fields.nature_des_travaux",
-  "url": "@.fields.url",
+  "roadworkArray": "$.records[*]",
+  "id": "$.recordid",
+  "latitude": "$.geometry.coordinates[1]",
+  "longitude": "$.geometry.coordinates[0]",
+  "road": "$.fields.voie",
+  "locationDetails": "$.fields.commune",
+  "impactCirculationDetail": "$.fields.mode_d_exploitation",
+  "description": "$.fields.nature_des_travaux",
+  "url": "$.fields.url",
   "from": {
-    "path": "@.fields.debut",
+    "path": "$.fields.debut",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd"
+        "format": "%Y-%m-%d"
       }
     ]
   },
   "to": {
-    "path": "@.fields.fin",
+    "path": "$.fields.fin",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd"
+        "format": "%Y-%m-%d"
       }
     ]
   }

@@ -14,28 +14,28 @@
     "locale": "fr_FR"
   },
   "roadworkArray": "$.features",
-  "id": "@.properties.gid",
-  "latitude": "@.geometry.coordinates[0][0][1]",
-  "longitude": "@.geometry.coordinates[0][0][0]",
-  "polygon": "@.geometry.coordinates",
-  "road": "@.properties.nom",
-  "impactCirculationDetail": "@.properties.typeperturbation",
-  "locationDetails": "@.properties.precisionlocalisation",
+  "id": "$.properties.gid",
+  "latitude": "$.geometry.coordinates[0][0][1]",
+  "longitude": "$.geometry.coordinates[0][0][0]",
+  "polygon": "$.geometry.coordinates",
+  "road": "$.properties.nom",
+  "impactCirculationDetail": "$.properties.typeperturbation",
+  "locationDetails": "$.properties.precisionlocalisation",
   "from": {
-    "path": "@.properties.debutchantier",
+    "path": "$.properties.debutchantier",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        "format": "%Y-%m-%d'T'HH:mm:ss'Z'"
       }
     ]
   },
   "to": {
-    "path": "@.properties.finchantier",
+    "path": "$.properties.finchantier",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        "format": "%Y-%m-%d'T'HH:mm:ss'Z'"
       }
     ]
   }

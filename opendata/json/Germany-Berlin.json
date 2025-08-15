@@ -13,14 +13,14 @@
     "locale": "de_DE"
   },
   "roadworkArray": "$.features",
-  "id": "@.properties.id",
-  "latitude": "@.geometry.coordinates[1]",
-  "longitude": "@.geometry.coordinates[0]",
-  "road": "@.properties.street",
-  "locationDetails": "@.properties.section",
-  "impactCirculationDetail": "@.properties.content",
+  "id": "$.properties.id",
+  "latitude": "$.geometry.coordinates[1]",
+  "longitude": "$.geometry.coordinates[0]",
+  "road": "$.properties.street",
+  "locationDetails": "$.properties.section",
+  "impactCirculationDetail": "$.properties.content",
   "from": {
-    "path": "@.properties.validity.from",
+    "path": "$.properties.validity.from",
     "parsers": [
       {
         "matcher": ".*",
@@ -29,7 +29,7 @@
     ]
   },
   "to": {
-    "path": "@.properties.validity.from",
+    "path": "$.properties.validity.from",
     "parsers": [
       {
         "matcher": ".*",

@@ -13,16 +13,16 @@
     },
     "locale": "fr_FR"
   },
-  "roadworkArray": "$.records",
-  "id": "@.recordid",
-  "latitude": "@.geometry.coordinates[1]",
-  "longitude": "@.geometry.coordinates[0]",
-  "road": "@.fields.ligne2",
-  "description": "@.fields.ligne5",
-  "locationDetails": "@.fields.precision_localisation",
-  "impactCirculationDetail": "@.fields.ligne6",
+  "roadworkArray": "$.records[*]",
+  "id": "$.recordid",
+  "latitude": "$.geometry.coordinates[1]",
+  "longitude": "$.geometry.coordinates[0]",
+  "road": "$.fields.ligne2",
+  "description": "$.fields.ligne5",
+  "locationDetails": "$.fields.precision_localisation",
+  "impactCirculationDetail": "$.fields.ligne6",
   "from": {
-    "path": "@.fields.ligne4",
+    "path": "$.fields.ligne4",
     "parsers": [
       {
         "matcher": "Du (.*) au.*",
@@ -31,7 +31,7 @@
     ]
   },
   "to": {
-    "path": "@.fields.ligne4",
+    "path": "$.fields.ligne4",
     "parsers": [
       {
         "matcher": ".* au (.*)",

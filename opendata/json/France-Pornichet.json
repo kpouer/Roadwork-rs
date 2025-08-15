@@ -14,27 +14,27 @@
     "locale": "fr_FR"
   },
   "roadworkArray": "$.features",
-  "id": "@.properties.id",
-  "latitude": "@.geometry.coordinates[1]",
-  "longitude": "@.geometry.coordinates[0]",
-  "road": "@.properties.adresse_des_travaux",
-  "description": "@.properties.intitule_du_chantier",
-  "impactCirculationDetail": "@.properties.impact_circulation",
+  "id": "$.properties.id",
+  "latitude": "$.geometry.coordinates[1]",
+  "longitude": "$.geometry.coordinates[0]",
+  "road": "$.properties.adresse_des_travaux",
+  "description": "$.properties.intitule_du_chantier",
+  "impactCirculationDetail": "$.properties.impact_circulation",
   "from": {
-    "path": "@.properties.date_de_debut_des_travaux",
+    "path": "$.properties.date_de_debut_des_travaux",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd"
+        "format": "%Y-%m-%d"
       }
     ]
   },
   "to": {
-    "path": "@.date_de_fin_des_travaux",
+    "path": "$.date_de_fin_des_travaux",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "yyyy-MM-dd"
+        "format": "%Y-%m-%d"
       }
     ]
   }
