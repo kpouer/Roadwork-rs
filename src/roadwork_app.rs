@@ -205,7 +205,7 @@ impl RoadworkApp {
                                     service.to_string(),
                                     service,
                                 )
-                                .clicked()
+                                .changed()
                             {
                                 self.load_data();
                             }
