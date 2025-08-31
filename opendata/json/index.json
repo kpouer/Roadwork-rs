@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "generatedAt": "2025-08-31T15:44:27.518962+00:00",
+  "count": 16,
+  "files": [
+    {
+      "key": "Belgium-Liege",
+      "path": "opendata/json/Belgium-Liege.json",
+      "country": "Belgium",
+      "name": "Liège",
+      "size": 1287,
+      "modified": "2025-08-15T20:47:14.237550170+00:00"
+    },
+    {
+      "key": "France-44-Loire-Atlantique",
+      "path": "opendata/json/France-44-Loire-Atlantique.json",
+      "country": "France",
+      "name": "Loire Atlantique",
+      "size": 1432,
+      "modified": "2025-08-15T20:47:14.237920084+00:00"
+    },
+    {
+      "key": "France-72-Sarthe",
+      "path": "opendata/json/France-72-Sarthe.json",
+      "country": "France",
+      "name": "Sarthe (72)",
+      "size": 1265,
+      "modified": "2025-08-15T20:47:14.238364791+00:00"
+    },
+    {
+      "key": "France-Avignon",
+      "path": "opendata/json/France-Avignon.json",
+      "country": "France",
+      "name": "Avignon",
+      "size": 1194,
+      "modified": "2025-08-15T20:47:14.238526790+00:00"
+    },
+    {
+      "key": "France-Bordeaux",
+      "path": "opendata/json/France-Bordeaux.json",
+      "country": "France",
+      "name": "Bordeaux",
+      "size": 1218,
+      "modified": "2025-08-15T20:47:14.238681497+00:00"
+    },
+    {
+      "key": "France-Issy-les-Moulineaux",
+      "path": "opendata/json/France-Issy-les-Moulineaux.json",
+      "country": "France",
+      "name": "Issy-les-Moulineaux",
+      "size": 1446,
+      "modified": "2025-08-15T20:47:14.238952829+00:00"
+    },
+    {
+      "key": "France-Lyon",
+      "path": "opendata/json/France-Lyon.json",
+      "country": "France",
+      "name": "Lyon",
+      "size": 1365,
+      "modified": "2025-08-15T20:47:14.239284661+00:00"
+    },
+    {
+      "key": "France-Montpellier",
+      "path": "opendata/json/France-Montpellier.json",
+      "country": "France",
+      "name": "Montpellier",
+      "size": 1228,
+      "modified": "2025-08-15T20:47:14.239773158+00:00"
+    },
+    {
+      "key": "France-Paris",
+      "path": "opendata/json/France-Paris.json",
+      "country": "France",
+      "name": "Paris",
+      "size": 1498,
+      "modified": "2025-08-15T20:47:14.239931241+00:00"
+    },
+    {
+      "key": "France-Pornichet",
+      "path": "opendata/json/France-Pornichet.json",
+      "country": "France",
+      "name": "Pornichet",
+      "size": 1219,
+      "modified": "2025-08-15T20:47:14.240088115+00:00"
+    },
+    {
+      "key": "France-Rennes",
+      "path": "opendata/json/France-Rennes.json",
+      "country": "France",
+      "name": "Rennes",
+      "size": 937,
+      "modified": "2025-08-15T20:47:14.240240989+00:00"
+    },
+    {
+      "key": "France-Rouen",
+      "path": "opendata/json/France-Rouen.json",
+      "country": "France",
+      "name": "Rouen",
+      "size": 1468,
+      "modified": "2025-08-15T20:47:14.240393405+00:00"
+    },
+    {
+      "key": "France-Toulouse",
+      "path": "opendata/json/France-Toulouse.json",
+      "country": "France",
+      "name": "Toulouse",
+      "size": 1268,
+      "modified": "2025-08-15T20:47:14.240549487+00:00"
+    },
+    {
+      "key": "Germany-Berlin",
+      "path": "opendata/json/Germany-Berlin.json",
+      "country": "Germany",
+      "name": "Berlin",
+      "size": 1110,
+      "modified": "2025-08-15T20:47:14.240704278+00:00"
+    },
+    {
+      "key": "USA-CA-SanFrancisco",
+      "path": "opendata/json/USA-CA-SanFrancisco.json",
+      "country": "USA California",
+      "name": "San Francisco",
+      "size": 1178,
+      "modified": "2025-08-15T20:47:14.240848986+00:00"
+    },
+    {
+      "key": "USA-IL-Chicago",
+      "path": "opendata/json/USA-IL-Chicago.json",
+      "country": "USA Illinois",
+      "name": "Chicago",
+      "size": 1037,
+      "modified": "2025-08-15T20:47:14.240996235+00:00"
+    }
+  ]
+}
