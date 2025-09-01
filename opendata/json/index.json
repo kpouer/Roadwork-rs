@@ -5,7 +5,7 @@
   "files": [
     {
       "key": "Belgium-Liege",
-      "path": "opendata/json/Belgium-Liege.json",
+      "path": "Belgium-Liege.json",
       "country": "Belgium",
       "name": "Liège",
       "size": 1287,
@@ -13,7 +13,7 @@
     },
     {
       "key": "France-44-Loire-Atlantique",
-      "path": "opendata/json/France-44-Loire-Atlantique.json",
+      "path": "France-44-Loire-Atlantique.json",
       "country": "France",
       "name": "Loire Atlantique",
       "size": 1432,
@@ -21,7 +21,7 @@
     },
     {
       "key": "France-72-Sarthe",
-      "path": "opendata/json/France-72-Sarthe.json",
+      "path": "France-72-Sarthe.json",
       "country": "France",
       "name": "Sarthe (72)",
       "size": 1265,
@@ -29,7 +29,7 @@
     },
     {
       "key": "France-Avignon",
-      "path": "opendata/json/France-Avignon.json",
+      "path": "France-Avignon.json",
       "country": "France",
       "name": "Avignon",
       "size": 1194,
@@ -37,7 +37,7 @@
     },
     {
       "key": "France-Bordeaux",
-      "path": "opendata/json/France-Bordeaux.json",
+      "path": "France-Bordeaux.json",
       "country": "France",
       "name": "Bordeaux",
       "size": 1218,
@@ -45,7 +45,7 @@
     },
     {
       "key": "France-Issy-les-Moulineaux",
-      "path": "opendata/json/France-Issy-les-Moulineaux.json",
+      "path": "France-Issy-les-Moulineaux.json",
       "country": "France",
       "name": "Issy-les-Moulineaux",
       "size": 1446,
@@ -53,7 +53,7 @@
     },
     {
       "key": "France-Lyon",
-      "path": "opendata/json/France-Lyon.json",
+      "path": "France-Lyon.json",
       "country": "France",
       "name": "Lyon",
       "size": 1365,
@@ -61,7 +61,7 @@
     },
     {
       "key": "France-Montpellier",
-      "path": "opendata/json/France-Montpellier.json",
+      "path": "France-Montpellier.json",
       "country": "France",
       "name": "Montpellier",
       "size": 1228,
@@ -69,7 +69,7 @@
     },
     {
       "key": "France-Paris",
-      "path": "opendata/json/France-Paris.json",
+      "path": "France-Paris.json",
       "country": "France",
       "name": "Paris",
       "size": 1498,
@@ -77,7 +77,7 @@
     },
     {
       "key": "France-Pornichet",
-      "path": "opendata/json/France-Pornichet.json",
+      "path": "France-Pornichet.json",
       "country": "France",
       "name": "Pornichet",
       "size": 1219,
@@ -85,7 +85,7 @@
     },
     {
       "key": "France-Rennes",
-      "path": "opendata/json/France-Rennes.json",
+      "path": "France-Rennes.json",
       "country": "France",
       "name": "Rennes",
       "size": 937,
@@ -93,7 +93,7 @@
     },
     {
       "key": "France-Rouen",
-      "path": "opendata/json/France-Rouen.json",
+      "path": "France-Rouen.json",
       "country": "France",
       "name": "Rouen",
       "size": 1468,
@@ -101,7 +101,7 @@
     },
     {
       "key": "France-Toulouse",
-      "path": "opendata/json/France-Toulouse.json",
+      "path": "France-Toulouse.json",
       "country": "France",
       "name": "Toulouse",
       "size": 1268,
@@ -109,7 +109,7 @@
     },
     {
       "key": "Germany-Berlin",
-      "path": "opendata/json/Germany-Berlin.json",
+      "path": "Germany-Berlin.json",
       "country": "Germany",
       "name": "Berlin",
       "size": 1110,
@@ -117,7 +117,7 @@
     },
     {
       "key": "USA-CA-SanFrancisco",
-      "path": "opendata/json/USA-CA-SanFrancisco.json",
+      "path": "USA-CA-SanFrancisco.json",
       "country": "USA California",
       "name": "San Francisco",
       "size": 1178,
@@ -125,7 +125,7 @@
     },
     {
       "key": "USA-IL-Chicago",
-      "path": "opendata/json/USA-IL-Chicago.json",
+      "path": "USA-IL-Chicago.json",
       "country": "USA Illinois",
       "name": "Chicago",
       "size": 1037,
