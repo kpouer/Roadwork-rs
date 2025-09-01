@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use crate::OPENDATA_FOLDER;
 
 const GITHUB_RAW_PREFIX: &str = "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
 
@@ -19,24 +18,24 @@ struct IndexEntry {
 }
 
 pub(crate) fn ensure_opendata_available() {
-    let opendata_folder = Path::new(OPENDATA_FOLDER);
+    let opendata_folder = crate::opendata_folder_path();
     if opendata_folder.exists() {
-        info!("Bootstrap skipped: {OPENDATA_FOLDER} already exists");
+        info!("Bootstrap skipped: {} already exists", opendata_folder.display());
         return;
     }
 
-    info!("Bootstrap: {OPENDATA_FOLDER} not found, downloading descriptors");
-    if let Err(e) = bootstrap_download() {
+    info!("Bootstrap: {} not found, downloading descriptors", opendata_folder.display());
+    if let Err(e) = bootstrap_download(&opendata_folder) {
         error!("Bootstrap failed: {e}");
         return;
     }
 
-    if let Err(e) = fs::create_dir_all(opendata_folder) {
-        warn!("Unable to create marker directory {OPENDATA_FOLDER}: {e}");
+    if let Err(e) = fs::create_dir_all(&opendata_folder) {
+        warn!("Unable to create marker directory {}: {e}", opendata_folder.display());
     }
 }
 
-fn bootstrap_download() -> Result<(), String> {
+fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
     let http = HttpService::default();
 
     // Download index.json from raw GitHub URL
@@ -48,7 +47,7 @@ fn bootstrap_download() -> Result<(), String> {
         let rel_path = sanitize_path(&file.path).ok_or_else(|| format!("invalid path in index: {}", file.path))?;
         let url = format!("{GITHUB_RAW_PREFIX}/{}", rel_path.to_string_lossy());
         // Map destination to data/json/...
-        let dest_path = PathBuf::from(format!("{OPENDATA_FOLDER}/{}", file.path));
+        let dest_path = base_folder.join(&file.path);
         info!("Downloading {} -> {}", rel_path.display(), dest_path.display());
         match http.get_url(&url) {
             Ok(content) => {

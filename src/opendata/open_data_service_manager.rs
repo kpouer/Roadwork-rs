@@ -25,7 +25,7 @@ impl OpenDataServiceManager {
     const VERSION: &'static str = "2";
 
     pub(crate) fn new(settings: Arc<Mutex<Settings>>) -> Self {
-        let opendata_services = Self::get_json_file_names(crate::OPENDATA_FOLDER);
+        let opendata_services = Self::get_json_file_names(&crate::opendata_folder_path());
         Self {
             synchronization_service: SynchronizationService::new(Arc::clone(&settings)),
             settings,
@@ -158,9 +158,8 @@ impl OpenDataServiceManager {
     }
 
     /// Returns a vector of JSON file names without the `.json` extension from the given directory.
-    fn get_json_file_names(path: &str) -> HashMap<String, OpendataService> {
+    fn get_json_file_names(path: &std::path::Path) -> HashMap<String, OpendataService> {
         info!("get_json_file_names {:?}", path);
-        let path = Path::new(path);
         let mut services = HashMap::new();
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries {

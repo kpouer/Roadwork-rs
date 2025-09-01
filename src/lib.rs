@@ -12,6 +12,17 @@ mod gui;
 /// the path where the opendata definitions are stored
 pub(crate) const OPENDATA_FOLDER: &str = "data/opendata";
 
+pub(crate) fn opendata_folder_path() -> std::path::PathBuf {
+    // Prefer user's home directory: ~/.roadwork/data/opendata if available
+    if let Some(mut home) = std::env::var_os("HOME").map(std::path::PathBuf::from).or_else(|| home::home_dir()) {
+        home.push(".roadwork");
+        home.push("data");
+        home.push("opendata");
+        return home;
+    }
+    std::path::PathBuf::from(OPENDATA_FOLDER)
+}
+
 #[derive(Error, Debug)]
 pub(crate) enum MyError {
     #[error("Date Parse Error {0:?}")]
