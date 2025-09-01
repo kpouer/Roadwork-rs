@@ -9,6 +9,9 @@ pub mod settings;
 mod json_tools;
 mod gui;
 
+/// the path where the opendata definitions are stored
+pub(crate) const OPENDATA_FOLDER: &str = "data/opendata";
+
 #[derive(Error, Debug)]
 pub(crate) enum MyError {
     #[error("Date Parse Error {0:?}")]

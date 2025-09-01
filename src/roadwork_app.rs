@@ -31,6 +31,9 @@ pub struct RoadworkApp {
 
 impl RoadworkApp {
     pub fn new(egui_ctx: Context) -> Self {
+        // Ensure opendata descriptors are available when starting the app
+        crate::opendata::bootstrap::ensure_opendata_available();
+
         let settings = Default::default();
         let mut http_options = HttpOptions::default();
         http_options.cache = Settings::settings_folder().map(|mut settings_folder| {

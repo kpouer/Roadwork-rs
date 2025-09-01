@@ -25,7 +25,7 @@ impl OpenDataServiceManager {
     const VERSION: &'static str = "2";
 
     pub(crate) fn new(settings: Arc<Mutex<Settings>>) -> Self {
-        let opendata_services = Self::get_json_file_names("opendata/json");
+        let opendata_services = Self::get_json_file_names(crate::OPENDATA_FOLDER);
         Self {
             synchronization_service: SynchronizationService::new(Arc::clone(&settings)),
             settings,
