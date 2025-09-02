@@ -36,23 +36,37 @@ impl RoadworkApp {
         // Ensure opendata descriptors are available when starting the app
         crate::opendata::bootstrap::ensure_opendata_available();
 
-        let settings = Default::default();
+        let settings: Arc<Mutex<Settings>> = Default::default();
         let mut http_options = HttpOptions::default();
         http_options.cache = Settings::settings_folder().map(|mut settings_folder| {
             settings_folder.push("cache");
             settings_folder
         });
-        Self {
+        let position = {
+            let s = settings.lock().unwrap();
+            s.map_center.unwrap_or_default()
+        };
+        let mut app = Self {
             tiles: HttpTiles::with_options(OpenStreetMap, http_options, egui_ctx),
             map_memory: Default::default(),
             open_data_service_manager: OpenDataServiceManager::new(Arc::clone(&settings)),
             settings,
-            position: Default::default(),
+            position,
             roadwork_data: None,
             selected_roadwork: None,
             logs_panel_open: false,
             toasts: Toasts::default(),
+        };
+        // Restore zoom level if available in settings
+        if let Some(z) = app.settings.lock().unwrap().map_zoom {
+            // If API differs, adjust to the correct setter.
+            #[allow(unused_must_use)]
+            {
+                // Common walkers API exposes `set_zoom(f64)` on MapMemory
+                app.map_memory.set_zoom(z);
+            }
         }
+        app
     }
 
     fn reload_data(&mut self) {
@@ -63,7 +77,9 @@ impl RoadworkApp {
 
     pub fn load_data(&mut self) {
         info!("Loading data");
-        self.position = self.open_data_service_manager.get_center();
+        // Prefer the saved map center if available, otherwise use the service metadata center
+        let saved_center = { self.settings.lock().unwrap().map_center };
+        self.position = saved_center.unwrap_or_else(|| self.open_data_service_manager.get_center());
         self.roadwork_data = self.open_data_service_manager.get_data();
     }
 
@@ -247,6 +263,19 @@ impl App for RoadworkApp {
             .double_click_to_zoom(true)
             .zoom_with_ctrl(false);
             let response = ui.add(map);
+
+            // Keep our position synced with the map's memory (center)
+            // so we can persist it on exit.
+            // If MapMemory exposes a `center()` method returning Position, use it.
+            #[allow(unused_variables)]
+            {
+                // Update position unconditionally; cheap and ensures latest value.
+                // If API differs, adjust to correct getter.
+                if let Some(center) = self.map_memory.detached() {
+                    self.position = center.into();
+                }
+            }
+
             if let Some(roadwork_data) = &self.roadwork_data {
                 let projector =
                     Projector::new(response.rect, &self.map_memory, self.position.into());
@@ -271,7 +300,15 @@ impl App for RoadworkApp {
         if let Some(roadwork_data) = &self.roadwork_data {
             self.open_data_service_manager.save(&roadwork_data);
         }
-        let settings = self.settings.lock().unwrap();
+        let mut settings = self.settings.lock().unwrap();
+        settings.map_center = Some(self.position);
+        // Persist current zoom level if available from the map memory
+        #[allow(unused_variables)]
+        {
+            // Common walkers API exposes `zoom()` on MapMemory
+            let z = self.map_memory.zoom();
+            settings.map_zoom = Some(z);
+        }
         settings.save().expect("Unable to save settings");
     }
 

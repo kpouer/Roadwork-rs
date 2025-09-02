@@ -1,3 +1,4 @@
+use crate::opendata::json::model::lat_lng::LatLng;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -23,6 +24,12 @@ pub struct Settings {
 
     #[serde(rename = "hide_expired")]
     pub(crate) hide_expired: bool,
+
+    #[serde(rename = "mapCenter", default)]
+    pub(crate) map_center: Option<LatLng>,
+
+    #[serde(rename = "mapZoom", default)]
+    pub(crate) map_zoom: Option<f64>,
 }
 
 // todo: load & save
@@ -39,6 +46,8 @@ impl Default for Settings {
                 synchronization_login: "".to_string(),
                 synchronization_password: "".to_string(),
                 hide_expired: false,
+                map_center: None,
+                map_zoom: None,
             })
     }
 }

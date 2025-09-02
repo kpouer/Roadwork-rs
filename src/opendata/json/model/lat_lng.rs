@@ -1,7 +1,7 @@
-use serde::Deserialize;
-use walkers::{Position, lat_lon};
+use serde::{Deserialize, Serialize};
+use walkers::Position;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub(crate) struct LatLng {
     pub(crate) lat: f64,
     pub(crate) lon: f64,
@@ -22,7 +22,15 @@ impl LatLng {
 
 impl From<LatLng> for Position {
     fn from(value: LatLng) -> Self {
-        lat_lon(value.lat, value.lon)
+        walkers::lat_lon(value.lat, value.lon)
+    }
+}
+
+impl From<Position> for LatLng {
+    fn from(value: Position) -> Self {
+        // Assuming Position exposes latitude/longitude accessors
+        // If API differs, adjust to correct accessors/fields.
+        Self { lat: value.lat(), lon: value.lng() }
     }
 }
 
@@ -41,7 +49,7 @@ mod tests {
     fn test_from_lat_lng() {
         let lat_lng = LatLng { lat: 48.85337, lon: 2.34847 };
         let position: Position = lat_lng.into();
-        assert_eq!(position, lat_lon(48.85337, 2.34847));
+        assert_eq!(position, walkers::lat_lon(48.85337, 2.34847));
     }
 
     #[test]
