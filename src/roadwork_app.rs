@@ -1,3 +1,4 @@
+use crate::gui::about_dialog::AboutDialog;
 use crate::gui::logs_panel::LogsPanel;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::status_panel::StatusPanel;
@@ -10,12 +11,11 @@ use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
 use egui::{Button, Context, Label, RichText}; // menu used in show_top_panel
+use egui_notify::Toasts;
 use log::info;
 use std::sync::{Arc, Mutex};
-use egui_notify::Toasts;
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpOptions, HttpTiles, Map, MapMemory, Projector};
-use crate::gui::about_dialog::AboutDialog;
 
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
@@ -218,7 +218,7 @@ impl RoadworkApp {
                 ui.menu_button("Help", |ui| {
                     if ui.button("About").clicked() {
                         self.show_about_dialog = true;
-                        ui.close();   
+                        ui.close();
                     }
                 });
             });

@@ -21,7 +21,7 @@ impl SyncData {
             ..src.clone()
         }
     }
-    
+
     pub fn copy(&mut self, other: &SyncData) {
         self.local_update_time = other.local_update_time;
         self.server_update_time = other.server_update_time;
@@ -34,7 +34,20 @@ impl SyncData {
     }
 }
 
-#[derive(Debug, Default, Display, Clone, Copy, Deserialize, Serialize, Ord, PartialOrd, PartialEq, Eq, IntoStaticStr)]
+#[derive(
+    Debug,
+    Default,
+    Display,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    Ord,
+    PartialOrd,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+)]
 pub enum Status {
     #[default]
     New,

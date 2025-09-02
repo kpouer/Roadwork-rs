@@ -36,10 +36,7 @@ impl SynchronizationService {
             info!("Will synchronize with url {}", url);
             let mut body: HashMap<String, SyncData> = HashMap::new();
             roadwork_data.iter().for_each(|roadwork| {
-                body.insert(
-                    roadwork.id.clone(),
-                    roadwork.sync_data.clone(),
-                );
+                body.insert(roadwork.id.clone(), roadwork.sync_data.clone());
             });
             let headers = self.create_headers();
             let synchronized_data: HashMap<String, SyncData> = self

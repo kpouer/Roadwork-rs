@@ -1,9 +1,9 @@
+use crate::MyError;
+use crate::MyError::JsonParsingError;
+use crate::model::wkt::polygon::Polygon;
 use jsonpath_rust::JsonPath;
 use log::{debug, error};
 use serde_json::Value;
-use crate::model::wkt::polygon::Polygon;
-use crate::MyError;
-use crate::MyError::JsonParsingError;
 
 pub(crate) trait JsonTools {
     fn get_path(&self, path: &str) -> Result<String, MyError>;
@@ -16,7 +16,9 @@ impl JsonTools for &Value {
         debug!("get_path path:{path}");
         let result = self.query(path)?;
         if result.is_empty() {
-            return Err(JsonParsingError(format!("Unable to get path {path} from {self}")));
+            return Err(JsonParsingError(format!(
+                "Unable to get path {path} from {self}"
+            )));
         }
         result[0]
             .as_str()
@@ -27,15 +29,20 @@ impl JsonTools for &Value {
     fn get_path_as_double(&self, path: &str) -> Result<f64, MyError> {
         let result = self.query(path)?;
         if result.is_empty() {
-            return Err(JsonParsingError(format!("Unable to get path {path} from {self}")));
+            return Err(JsonParsingError(format!(
+                "Unable to get path {path} from {self}"
+            )));
         }
         let value = result[0];
         match value {
             Value::Number(number) => Ok(number.as_f64().unwrap()),
-            Value::String(string) => string
-                .parse::<f64>()
-                .or(Err(JsonParsingError(format!("Unable to parse {} as a double", string)))),
-            _ => Err(JsonParsingError(format!("Unable to get path {path} from {self}"))),
+            Value::String(string) => string.parse::<f64>().or(Err(JsonParsingError(format!(
+                "Unable to parse {} as a double",
+                string
+            )))),
+            _ => Err(JsonParsingError(format!(
+                "Unable to get path {path} from {self}"
+            ))),
         }
     }
 
@@ -62,7 +69,7 @@ fn get_multipolygon(value: &Vec<&Value>) -> Result<Vec<Polygon>, MyError> {
             polygons.push(polygon)
         }
     }
-    
+
     Ok(polygons)
 }
 
@@ -79,20 +86,25 @@ fn get_polygon(polygon_array: &Vec<Value>) -> Result<Polygon, MyError> {
     let mut xpoints = Vec::with_capacity(polygon_array.len());
     let mut ypoints = Vec::with_capacity(polygon_array.len());
     for point in polygon_array {
-        xpoints.push(point[0].as_f64().ok_or(MyError::JsonParsingError("Unable to get point from polygon".to_string()))?);
-        ypoints.push(point[1].as_f64().ok_or(MyError::JsonParsingError("Unable to get point from polygon".to_string()))?);
+        xpoints.push(point[0].as_f64().ok_or(MyError::JsonParsingError(
+            "Unable to get point from polygon".to_string(),
+        ))?);
+        ypoints.push(point[1].as_f64().ok_or(MyError::JsonParsingError(
+            "Unable to get point from polygon".to_string(),
+        ))?);
     }
     Ok(Polygon::new(xpoints, ypoints))
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
     use super::*;
-    
+    use serde_json::json;
+
     #[test]
     fn is_multi_polygon() {
-        let json = json!("[
+        let json = json!(
+            "[
             [
               [
                 2.352152402234131,
@@ -103,7 +115,7 @@ mod tests {
                 48.87932070314852
               ]
             ]
-          ]");
-        
+          ]"
+        );
     }
 }

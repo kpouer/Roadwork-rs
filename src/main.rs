@@ -15,7 +15,7 @@ fn main() -> eframe::Result {
             .with_app_id("Roadwork")
             .with_icon(icon_data())
             .with_min_inner_size([320.0, 200.0]),
-        persistence_path: Settings::settings_folder(), 
+        persistence_path: Settings::settings_folder(),
         persist_window: true,
         ..Default::default()
     };

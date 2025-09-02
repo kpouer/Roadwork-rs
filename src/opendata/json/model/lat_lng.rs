@@ -33,7 +33,10 @@ impl From<Position> for LatLng {
     fn from(value: Position) -> Self {
         // Assuming Position exposes latitude/longitude accessors
         // If API differs, adjust to correct accessors/fields.
-        Self { lat: value.lat(), lon: value.lng() }
+        Self {
+            lat: value.lat(),
+            lon: value.lng(),
+        }
     }
 }
 
@@ -50,7 +53,10 @@ mod tests {
 
     #[test]
     fn test_from_lat_lng() {
-        let lat_lng = LatLng { lat: LAT_PARIS, lon: LON_PARIS };
+        let lat_lng = LatLng {
+            lat: LAT_PARIS,
+            lon: LON_PARIS,
+        };
         let position: Position = lat_lng.into();
         assert_eq!(position, walkers::lat_lon(LAT_PARIS, LON_PARIS));
     }

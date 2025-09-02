@@ -26,6 +26,7 @@ pub(crate) struct Roadwork {
 
 impl Roadwork {
     pub(crate) fn is_expired(&self) -> bool {
-        Duration::from_millis(self.end as u64) < SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
+        Duration::from_millis(self.end as u64)
+            < SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
     }
 }

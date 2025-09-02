@@ -18,13 +18,12 @@ impl<'a> LogsPanel<'a> {
             self.show(ctx);
         }
     }
-    
+
     pub(crate) fn show(&mut self, ctx: &Context) {
         egui::Window::new("Logs panel")
             .open(self.open)
             .show(ctx, |ui| {
-                LoggerUi::default()
-                    .show(ui);
+                LoggerUi::default().show(ui);
             });
     }
 }

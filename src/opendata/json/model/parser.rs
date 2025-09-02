@@ -1,14 +1,14 @@
+use crate::opendata::json::model::date_result::DateResult;
 use chrono::{DateTime, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use regex::Regex;
 use serde::Deserialize;
-use crate::opendata::json::model::date_result::DateResult;
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Parser {
     /// the matcher is a regexp that will extract the date format from a text
-    pub (crate) matcher: String,
-    /// A date format to parse the timestamp. If missing, then it is a timestamp 
+    pub(crate) matcher: String,
+    /// A date format to parse the timestamp. If missing, then it is a timestamp
     pub(crate) format: Option<String>,
     #[serde(default)]
     #[serde(rename = "addYear")]
@@ -28,7 +28,11 @@ impl Parser {
                 groups[1].to_string()
             };
             let timestamp = self.parse_date(&date_string, locale)?;
-            return Some(DateResult::new( DateTime::from_timestamp_millis(timestamp).map(|d| d.with_timezone(&locale))?, self.add_year, self.reset_hour));
+            return Some(DateResult::new(
+                DateTime::from_timestamp_millis(timestamp).map(|d| d.with_timezone(&locale))?,
+                self.add_year,
+                self.reset_hour,
+            ));
         }
         None
     }
@@ -40,7 +44,7 @@ impl Parser {
                 let naive_datetime = naive_date.and_hms_opt(0, 0, 0)?;
                 let datetime = locale.from_local_datetime(&naive_datetime).single()?;
                 Some(datetime.timestamp_millis())
-            },
+            }
             None => {
                 // no format then it must be a timestamp in seconds or ms
                 let mut timestamp = date_string.parse::<i64>().ok()?;
@@ -56,8 +60,8 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Datelike, Timelike};
     use super::*;
+    use chrono::{Datelike, Timelike};
 
     #[test]
     fn test_parse_date() {
@@ -67,7 +71,9 @@ mod tests {
             add_year: false,
             reset_hour: false,
         };
-        let date = parser.parse("2025-02-10", chrono_tz::Europe::Paris).unwrap();
+        let date = parser
+            .parse("2025-02-10", chrono_tz::Europe::Paris)
+            .unwrap();
         assert_eq!(date.date.year(), 2025);
         assert_eq!(date.date.month(), 2);
         assert_eq!(date.date.day(), 10);
@@ -84,7 +90,9 @@ mod tests {
             add_year: false,
             reset_hour: false,
         };
-        let date = parser.parse("1746113416000", chrono_tz::Europe::Paris).unwrap();
+        let date = parser
+            .parse("1746113416000", chrono_tz::Europe::Paris)
+            .unwrap();
         assert_eq!(date.date.year(), 2025);
         assert_eq!(date.date.month(), 5);
         assert_eq!(date.date.day(), 1);
@@ -92,7 +100,7 @@ mod tests {
         assert_eq!(date.date.minute(), 30);
         assert_eq!(date.date.second(), 16);
     }
-    
+
     #[test]
     fn test_parse_timestamp_sec() {
         let parser = Parser {
@@ -101,7 +109,9 @@ mod tests {
             add_year: false,
             reset_hour: false,
         };
-        let date = parser.parse("1746113416", chrono_tz::Europe::Paris).unwrap();
+        let date = parser
+            .parse("1746113416", chrono_tz::Europe::Paris)
+            .unwrap();
         assert_eq!(date.date.year(), 2025);
         assert_eq!(date.date.month(), 5);
         assert_eq!(date.date.day(), 1);

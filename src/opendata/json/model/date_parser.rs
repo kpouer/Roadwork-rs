@@ -1,9 +1,9 @@
+use crate::MyError;
+use crate::MyError::ParsingError;
 use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::parser::Parser;
-use crate::MyError;
 use chrono_tz::Tz;
 use serde::Deserialize;
-use crate::MyError::ParsingError;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct DateParser {
@@ -13,8 +13,7 @@ pub(crate) struct DateParser {
 
 impl DateParser {
     pub(crate) fn parse(&self, value: &str, locale: Tz) -> Result<DateResult, MyError> {
-        self
-            .parsers
+        self.parsers
             .iter()
             .find_map(|parser| parser.parse(value, locale))
             .ok_or(ParsingError(format!(

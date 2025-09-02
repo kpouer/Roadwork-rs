@@ -1,3 +1,5 @@
+use crate::MyError;
+use crate::MyError::RoadworkParsingError;
 use crate::json_tools::JsonTools;
 use crate::model::date_range::DateRange;
 use crate::model::roadwork::Roadwork;
@@ -6,8 +8,6 @@ use crate::opendata::json::model::date_parser::DateParser;
 use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
 use crate::service::http_service::HttpService;
-use crate::MyError;
-use crate::MyError::RoadworkParsingError;
 use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
@@ -170,7 +170,8 @@ impl OpendataService {
             .to
             .map(|date| date.timestamp_millis())
             .unwrap_or(0);
-        if let Some(impact_circulation_detail) = &self.service_descriptor.impact_circulation_detail {
+        if let Some(impact_circulation_detail) = &self.service_descriptor.impact_circulation_detail
+        {
             roadwork_builder.impact_circulation_detail =
                 node.get_path(impact_circulation_detail).ok();
         }
@@ -193,7 +194,8 @@ impl OpendataService {
         let current_year = chrono::Local::now().year();
         let date_parser = date_parser.as_ref().unwrap();
         let value = node.get_path(&date_parser.path)?;
-        let mut result = date_parser.parse(&value, self.service_descriptor.metadata.get_locale())?;
+        let mut result =
+            date_parser.parse(&value, self.service_descriptor.metadata.get_locale())?;
         if result.reset_hour {
             match Self::drop_time(&result.date) {
                 None => warn!("Unable to add year to date {}", result.date),

@@ -24,8 +24,8 @@ pub(crate) struct ServiceDescriptor {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
     use super::*;
+    use std::fs::File;
 
     #[test]
     fn test_service_descriptor() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,21 +35,38 @@ mod tests {
         // Vérifier les champs de navigation JSON
         assert_eq!(service_descriptor.roadwork_array, "$.records");
         assert_eq!(service_descriptor.id, "@.recordid");
-        assert_eq!(service_descriptor.latitude, Some("@.geometry.coordinates[1]".to_string()));
-        assert_eq!(service_descriptor.longitude, Some("@.geometry.coordinates[0]".to_string()));
-        assert_eq!(service_descriptor.polygon, Some("@.fields.geo_shape.coordinates".to_string()));
+        assert_eq!(
+            service_descriptor.latitude,
+            Some("@.geometry.coordinates[1]".to_string())
+        );
+        assert_eq!(
+            service_descriptor.longitude,
+            Some("@.geometry.coordinates[0]".to_string())
+        );
+        assert_eq!(
+            service_descriptor.polygon,
+            Some("@.fields.geo_shape.coordinates".to_string())
+        );
         assert_eq!(service_descriptor.road, Some("@.fields.voie".to_string()));
-        assert_eq!(service_descriptor.location_details, Some("@.fields.precision_localisation".to_string()));
-        assert_eq!(service_descriptor.impact_circulation_detail, Some("@.fields.impact_circulation_detail".to_string()));
+        assert_eq!(
+            service_descriptor.location_details,
+            Some("@.fields.precision_localisation".to_string())
+        );
+        assert_eq!(
+            service_descriptor.impact_circulation_detail,
+            Some("@.fields.impact_circulation_detail".to_string())
+        );
 
         // Vérifier que les champs optionnels sont correctement définis
         assert!(service_descriptor.from.is_some());
         assert!(service_descriptor.to.is_some());
 
         // Vérifier que l'URL des métadonnées est correcte
-        assert_eq!(service_descriptor.metadata.url, "https://opendata.paris.fr/api/records/1.0/search/?dataset=chantiers-perturbants&q=&rows=1000&facet=cp_arrondissement&facet=typologie&facet=maitre_ouvrage&facet=objet&facet=impact_circulation&facet=niveau_perturbation&facet=statut&exclude.statut=5");
+        assert_eq!(
+            service_descriptor.metadata.url,
+            "https://opendata.paris.fr/api/records/1.0/search/?dataset=chantiers-perturbants&q=&rows=1000&facet=cp_arrondissement&facet=typologie&facet=maitre_ouvrage&facet=objet&facet=impact_circulation&facet=niveau_perturbation&facet=statut&exclude.statut=5"
+        );
 
         Ok(())
-
     }
 }

@@ -10,8 +10,8 @@ impl DateRange {
     pub(crate) fn new(from: DateTime<Tz>, to: DateTime<Tz>) -> Self {
         Self { from, to: Some(to) }
     }
-    
+
     pub(crate) fn without_end(from: DateTime<Tz>) -> Self {
-        Self { from, to: None }   
+        Self { from, to: None }
     }
 }

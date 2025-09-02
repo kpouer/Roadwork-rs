@@ -1,5 +1,5 @@
-use std::any::TypeId;
 use egui::TextBuffer;
+use std::any::TypeId;
 use std::ops::Range;
 
 pub(crate) struct DummyTextBuffer<'a> {
@@ -14,7 +14,7 @@ impl<'a> Default for DummyTextBuffer<'a> {
 
 impl<'a> From<&'a str> for DummyTextBuffer<'a> {
     fn from(text: &'a str) -> Self {
-        Self { text }   
+        Self { text }
     }
 }
 

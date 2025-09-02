@@ -57,7 +57,9 @@ impl OpenDataServiceManager {
         if let Some(save_path) = self.get_path(&roadwork_data.source) {
             info!("save to {save_path:?}");
             match save_path.parent() {
-                None => error!("Unable to save cache to {save_path:?} because parent directory does not exist"),
+                None => error!(
+                    "Unable to save cache to {save_path:?} because parent directory does not exist"
+                ),
                 Some(parent) => {
                     fs::create_dir_all(parent).ok();
                     match File::create(&save_path) {
@@ -103,12 +105,15 @@ impl OpenDataServiceManager {
                             let new_roadworks = &mut new_data.roadworks;
                             info!("reloaded {} new roadworks", new_roadworks.len());
                             for existing_roadwork in &mut cached_roadwork_data {
-                                if let Some(new_roadwork) = new_roadworks.get_mut(&existing_roadwork.id) {
-                                    new_roadwork.sync_data = SyncData::new_from(&existing_roadwork.sync_data);
+                                if let Some(new_roadwork) =
+                                    new_roadworks.get_mut(&existing_roadwork.id)
+                                {
+                                    new_roadwork.sync_data =
+                                        SyncData::new_from(&existing_roadwork.sync_data);
                                     info!(
-                                    "Roadwork {} -> status {}",
-                                    existing_roadwork.id, existing_roadwork.sync_data.status
-                                );
+                                        "Roadwork {} -> status {}",
+                                        existing_roadwork.id, existing_roadwork.sync_data.status
+                                    );
                                 }
                             }
                             self.save(new_data);
@@ -135,11 +140,10 @@ impl OpenDataServiceManager {
     }
 
     fn get_path(&self, opendata_service: &str) -> Option<PathBuf> {
-        Settings::settings_folder()
-            .map(|mut folder| {
-                folder.push(format!("{opendata_service}.{}.json", Self::VERSION));
-                folder
-            })
+        Settings::settings_folder().map(|mut folder| {
+            folder.push(format!("{opendata_service}.{}.json", Self::VERSION));
+            folder
+        })
     }
 
     fn load_cache(cache_path: &Path) -> Option<RoadworkData> {

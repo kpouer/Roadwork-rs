@@ -1,12 +1,13 @@
+use crate::OPENDATA_FOLDER;
 use crate::service::http_service::HttpService;
 use log::{error, info, warn};
 use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use crate::OPENDATA_FOLDER;
 
-const GITHUB_RAW_PREFIX: &str = "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
+const GITHUB_RAW_PREFIX: &str =
+    "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
 
 #[derive(Debug, Deserialize)]
 struct IndexFile {
@@ -21,18 +22,27 @@ struct IndexEntry {
 pub(crate) fn ensure_opendata_available() {
     let opendata_folder = crate::opendata_folder_path();
     if opendata_folder.exists() {
-        info!("Bootstrap skipped: {} already exists", opendata_folder.display());
+        info!(
+            "Bootstrap skipped: {} already exists",
+            opendata_folder.display()
+        );
         return;
     }
 
-    info!("Bootstrap: {} not found, downloading descriptors", opendata_folder.display());
+    info!(
+        "Bootstrap: {} not found, downloading descriptors",
+        opendata_folder.display()
+    );
     if let Err(e) = bootstrap_download(&opendata_folder) {
         error!("Bootstrap failed: {e}");
         return;
     }
 
     if let Err(e) = fs::create_dir_all(&opendata_folder) {
-        warn!("Unable to create marker directory {}: {e}", opendata_folder.display());
+        warn!(
+            "Unable to create marker directory {}: {e}",
+            opendata_folder.display()
+        );
     }
 }
 
@@ -41,15 +51,23 @@ fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
 
     // Download index.json from raw GitHub URL
     let index_url = format!("{GITHUB_RAW_PREFIX}/index.json");
-    let index_str = http.get_url(&index_url).map_err(|e| format!("get index: {e}"))?;
-    let index: IndexFile = serde_json::from_str(&index_str).map_err(|e| format!("parse index: {e}"))?;
+    let index_str = http
+        .get_url(&index_url)
+        .map_err(|e| format!("get index: {e}"))?;
+    let index: IndexFile =
+        serde_json::from_str(&index_str).map_err(|e| format!("parse index: {e}"))?;
 
     for file in index.files {
-        let rel_path = sanitize_path(&file.path).ok_or_else(|| format!("invalid path in index: {}", file.path))?;
+        let rel_path = sanitize_path(&file.path)
+            .ok_or_else(|| format!("invalid path in index: {}", file.path))?;
         let url = format!("{GITHUB_RAW_PREFIX}/{}", rel_path.to_string_lossy());
         // Map destination to data/json/...
         let dest_path = base_folder.join(&file.path);
-        info!("Downloading {} -> {}", rel_path.display(), dest_path.display());
+        info!(
+            "Downloading {} -> {}",
+            rel_path.display(),
+            dest_path.display()
+        );
         match http.get_url(&url) {
             Ok(content) => {
                 if let Some(parent) = dest_path.parent() {
@@ -57,7 +75,8 @@ fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
                         return Err(format!("create dir {}: {e}", parent.display()));
                     }
                 }
-                let mut f = File::create(&dest_path).map_err(|e| format!("create {}: {e}", dest_path.display()))?;
+                let mut f = File::create(&dest_path)
+                    .map_err(|e| format!("create {}: {e}", dest_path.display()))?;
                 f.write_all(content.as_bytes())
                     .map_err(|e| format!("write {}: {e}", dest_path.display()))?;
             }
