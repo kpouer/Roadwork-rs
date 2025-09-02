@@ -9,12 +9,13 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
-use egui::{Button, Context, Label, RichText};
+use egui::{Button, Context, Label, RichText}; // menu used in show_top_panel
 use log::info;
 use std::sync::{Arc, Mutex};
 use egui_notify::Toasts;
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpOptions, HttpTiles, Map, MapMemory, Projector};
+use crate::gui::about_dialog::AboutDialog;
 
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
@@ -29,6 +30,7 @@ pub struct RoadworkApp {
     selected_roadwork: Option<String>,
     logs_panel_open: bool,
     toasts: Toasts,
+    show_about_dialog: bool,
 }
 
 impl RoadworkApp {
@@ -56,6 +58,7 @@ impl RoadworkApp {
             selected_roadwork: None,
             logs_panel_open: false,
             toasts: Toasts::default(),
+            show_about_dialog: false,
         };
         // Restore zoom level if available in settings
         if let Some(z) = app.settings.lock().unwrap().map_zoom {
@@ -210,6 +213,19 @@ impl RoadworkApp {
     }
 
     fn show_top_panel(&mut self, ctx: &Context) {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("Help", |ui| {
+                    if ui.button("About").clicked() {
+                        self.show_about_dialog = true;
+                        ui.close();   
+                    }
+                });
+            });
+            if self.show_about_dialog {
+                AboutDialog::new(&mut self.show_about_dialog).show(ctx);
+            }
+        });
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_label("")

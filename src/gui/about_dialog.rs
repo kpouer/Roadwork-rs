@@ -9,16 +9,7 @@ impl<'a> AboutDialog<'a> {
         Self { open }
     }
 
-    pub(crate) fn show_button(&mut self, ctx: &Context, ui: &mut egui::Ui) {
-        if ui.button("?").clicked() {
-            *self.open = true;
-        }
-        if *self.open {
-            self.show(ctx);
-        }
-    }
-
-    fn show(&mut self, ctx: &Context) {
+    pub(crate) fn show(&mut self, ctx: &Context) {
         egui::Window::new("About Roadwork")
             .open(self.open)
             .show(ctx, |ui| {
