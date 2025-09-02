@@ -282,7 +282,11 @@ impl App for RoadworkApp {
                 if response.clicked() {
                     self.selected_roadwork = None;
                 }
+                let hide_expired = self.settings.lock().unwrap().hide_expired;
                 for (id, marker) in roadwork_data.roadworks.iter() {
+                    if hide_expired && marker.is_expired() {
+                        continue;
+                    }
                     if ui
                         .add(RoadworkMarker::new(marker, &projector, response.clicked()))
                         .changed()
