@@ -34,8 +34,8 @@ impl From<Position> for LatLng {
         // Assuming Position exposes latitude/longitude accessors
         // If API differs, adjust to correct accessors/fields.
         Self {
-            lat: value.lat(),
-            lon: value.lng(),
+            lat: value.y(),
+            lon: value.x(),
         }
     }
 }

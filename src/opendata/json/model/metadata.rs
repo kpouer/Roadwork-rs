@@ -29,7 +29,7 @@ impl Metadata {
     pub(crate) fn get_locale(&self) -> Tz {
         self.locale
             .as_ref()
-            .map(|locale| Tz::from_str(&locale).unwrap_or(Tz::Europe__Paris))
+            .map(|locale| Tz::from_str(locale).unwrap_or(Tz::Europe__Paris))
             .unwrap_or(Tz::Europe__Paris)
     }
 }

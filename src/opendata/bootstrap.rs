@@ -1,4 +1,3 @@
-use crate::OPENDATA_FOLDER;
 use crate::service::http_service::HttpService;
 use log::{error, info, warn};
 use serde::Deserialize;
@@ -47,7 +46,7 @@ pub(crate) fn ensure_opendata_available() {
 }
 
 fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
-    let http = HttpService::default();
+    let http = HttpService;
 
     // Download index.json from raw GitHub URL
     let index_url = format!("{GITHUB_RAW_PREFIX}/index.json");
@@ -70,10 +69,10 @@ fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
         );
         match http.get_url(&url) {
             Ok(content) => {
-                if let Some(parent) = dest_path.parent() {
-                    if let Err(e) = fs::create_dir_all(parent) {
-                        return Err(format!("create dir {}: {e}", parent.display()));
-                    }
+                if let Some(parent) = dest_path.parent()
+                    && let Err(e) = fs::create_dir_all(parent)
+                {
+                    return Err(format!("create dir {}: {e}", parent.display()));
                 }
                 let mut f = File::create(&dest_path)
                     .map_err(|e| format!("create {}: {e}", dest_path.display()))?;

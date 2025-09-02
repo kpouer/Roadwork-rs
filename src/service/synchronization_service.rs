@@ -18,7 +18,7 @@ impl SynchronizationService {
     pub(crate) fn new(settings: Arc<Mutex<Settings>>) -> SynchronizationService {
         Self {
             settings,
-            http_service: HttpService::default(),
+            http_service: HttpService,
         }
     }
 }
@@ -58,7 +58,7 @@ impl SynchronizationService {
         let synchronization_team = &settings.synchronization_team;
         let mut url = settings.synchronization_url.clone();
         if !url.ends_with("/") {
-            url.push_str("/");
+            url.push('/');
         }
         format!("{url}/setData/{synchronization_team}/{source}")
     }

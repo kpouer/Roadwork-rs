@@ -2,14 +2,9 @@ use egui::TextBuffer;
 use std::any::TypeId;
 use std::ops::Range;
 
+#[derive(Debug, Default)]
 pub(crate) struct DummyTextBuffer<'a> {
     text: &'a str,
-}
-
-impl<'a> Default for DummyTextBuffer<'a> {
-    fn default() -> Self {
-        Self { text: "" }
-    }
 }
 
 impl<'a> From<&'a str> for DummyTextBuffer<'a> {

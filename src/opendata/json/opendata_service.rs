@@ -101,8 +101,10 @@ impl OpendataService {
     }
 
     fn build_roadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
-        let mut roadwork_builder = Roadwork::default();
-        roadwork_builder.id = node.get_path(&self.service_descriptor.id)?;
+        let mut roadwork_builder = Roadwork {
+            id: node.get_path(&self.service_descriptor.id)?,
+            ..Roadwork::default()
+        };
         let latitude_path = match &self.service_descriptor.latitude {
             None => {
                 return Err(RoadworkParsingError(format!(
@@ -149,10 +151,10 @@ impl OpendataService {
         } else {
             warn!("Unable to get longitude as it's path is empty");
         }
-        if let Some(polygon_path) = &self.service_descriptor.polygon {
-            if !polygon_path.is_empty() {
-                roadwork_builder.polygons = node.get_path_as_polygons(polygon_path);
-            }
+        if let Some(polygon_path) = &self.service_descriptor.polygon
+            && !polygon_path.is_empty()
+        {
+            roadwork_builder.polygons = node.get_path_as_polygons(polygon_path);
         }
         if let Some(road) = &self.service_descriptor.road {
             roadwork_builder.road = node.get_path(road).ok();

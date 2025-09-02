@@ -50,7 +50,7 @@ impl JsonTools for &Value {
         match self.query(path) {
             Ok(value) => {
                 if is_multi_polygon(&value) {
-                    return Some(get_multipolygon(&value).ok()?);
+                    return get_multipolygon(&value).ok();
                 } else if let Some(Value::Array(polygon_array)) = value.first() {
                     return Some(vec![get_polygon(polygon_array).ok()?]);
                 }
@@ -74,10 +74,10 @@ fn get_multipolygon(value: &Vec<&Value>) -> Result<Vec<Polygon>, MyError> {
 }
 
 fn is_multi_polygon(value: &Vec<&Value>) -> bool {
-    if let Some(Value::Array(first_level)) = value.first() {
-        if let Some(Value::Array(_)) = first_level.first() {
-            return true;
-        }
+    if let Some(Value::Array(first_level)) = value.first()
+        && let Some(Value::Array(_)) = first_level.first()
+    {
+        return true;
     }
     false
 }

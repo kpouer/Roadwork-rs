@@ -6,7 +6,7 @@ use crate::model::roadwork_data::RoadworkData;
 use crate::opendata::json::model::lat_lng::LatLng;
 use crate::opendata::open_data_service_manager::OpenDataServiceManager;
 use crate::settings::Settings;
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::DateTime;
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
@@ -39,11 +39,13 @@ impl RoadworkApp {
         crate::opendata::bootstrap::ensure_opendata_available();
 
         let settings: Arc<Mutex<Settings>> = Default::default();
-        let mut http_options = HttpOptions::default();
-        http_options.cache = Settings::settings_folder().map(|mut settings_folder| {
-            settings_folder.push("cache");
-            settings_folder
-        });
+        let http_options = HttpOptions {
+            cache: Settings::settings_folder().map(|mut settings_folder| {
+                settings_folder.push("cache");
+                settings_folder
+            }),
+            ..Default::default()
+        };
         let position = {
             let s = settings.lock().unwrap();
             s.map_center.unwrap_or_default()
@@ -228,11 +230,10 @@ impl RoadworkApp {
         });
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                let opendata_service_name =
+                    self.settings.lock().unwrap().opendata_service.to_string();
                 egui::ComboBox::from_label("")
-                    .selected_text(format!(
-                        "{}",
-                        self.settings.lock().unwrap().opendata_service
-                    ))
+                    .selected_text(opendata_service_name)
                     .show_ui(ui, |ui| {
                         // todo : remove this ugly clone
                         let services = self.open_data_service_manager.services().to_owned();
@@ -318,7 +319,7 @@ impl App for RoadworkApp {
     fn save(&mut self, _storage: &mut dyn Storage) {
         info!("Saving data");
         if let Some(roadwork_data) = &self.roadwork_data {
-            self.open_data_service_manager.save(&roadwork_data);
+            self.open_data_service_manager.save(roadwork_data);
         }
         let mut settings = self.settings.lock().unwrap();
         settings.map_center = Some(self.position);

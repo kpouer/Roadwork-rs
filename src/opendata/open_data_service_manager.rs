@@ -85,7 +85,7 @@ impl OpenDataServiceManager {
         let current_path = self.get_path(&self.settings.lock().unwrap().opendata_service);
         if let Some(current_path) = &current_path {
             info!("getData {current_path:?}");
-            match Self::load_cache(&current_path) {
+            match Self::load_cache(current_path) {
                 None => {
                     info!("There is no cached data");
                     self.get_opendata_service()
@@ -97,7 +97,7 @@ impl OpenDataServiceManager {
                         .le(&SystemTime::now().duration_since(UNIX_EPOCH).unwrap())
                     {
                         info!("Cache is obsolete {current_path:?}");
-                        fs::remove_file(&current_path).ok();
+                        fs::remove_file(current_path).ok();
                         let mut new_data_optional = self
                             .get_opendata_service()
                             .and_then(|ods| ods.get_data().ok());
@@ -149,8 +149,7 @@ impl OpenDataServiceManager {
     fn load_cache(cache_path: &Path) -> Option<RoadworkData> {
         File::open(cache_path)
             .ok()
-            .map(|file| serde_json::from_reader::<File, RoadworkData>(file).ok())
-            .flatten()
+            .and_then(|file| serde_json::from_reader::<File, RoadworkData>(file).ok())
     }
 
     fn apply_finished_status(roadwork_data: &mut RoadworkData) {
@@ -166,31 +165,27 @@ impl OpenDataServiceManager {
         info!("get_json_file_names {:?}", path);
         let mut services = HashMap::new();
         if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
-                        let file_name = path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .map(|name| name.nfc().collect::<String>());
-                        if let Some(name) = file_name {
-                            let name = name.strip_suffix(".json").unwrap();
-                            match File::open(&path) {
-                                Ok(file) => {
-                                    match serde_json::from_reader::<File, ServiceDescriptor>(file) {
-                                        Ok(service_descriptor) => {
-                                            let opendata_service = OpendataService::new(
-                                                name.into(),
-                                                service_descriptor,
-                                            );
-                                            services.insert(name.to_string(), opendata_service);
-                                        }
-                                        Err(e) => error!("Failed to parse file {path:?}: {e}"),
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
+                    let file_name = path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.nfc().collect::<String>());
+                    if let Some(name) = file_name {
+                        let name = name.strip_suffix(".json").unwrap();
+                        match File::open(&path) {
+                            Ok(file) => {
+                                match serde_json::from_reader::<File, ServiceDescriptor>(file) {
+                                    Ok(service_descriptor) => {
+                                        let opendata_service =
+                                            OpendataService::new(name.into(), service_descriptor);
+                                        services.insert(name.to_string(), opendata_service);
                                     }
+                                    Err(e) => error!("Failed to parse file {path:?}: {e}"),
                                 }
-                                Err(e) => error!("Failed to open file {path:?}: {e}"),
                             }
+                            Err(e) => error!("Failed to open file {path:?}: {e}"),
                         }
                     }
                 }

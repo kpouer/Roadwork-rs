@@ -16,7 +16,7 @@ pub(crate) fn opendata_folder_path() -> std::path::PathBuf {
     // Prefer user's home directory: ~/.roadwork/data/opendata if available
     if let Some(mut home) = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| home::home_dir())
+        .or_else(home::home_dir)
     {
         home.push(".roadwork");
         home.push("data");

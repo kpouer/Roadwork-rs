@@ -54,13 +54,11 @@ impl Widget for RoadworkMarker<'_> {
         ));
         let painter = ui.painter();
         let color32 = Self::status_2_color(self.roadwork.sync_data.status);
-        if self.clicked {
-            if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                if Self::is_within_circle(screen_position.to_pos2(), pos, 10.0) {
-                    println!("Clicked");
-                    response.mark_changed();
-                }
-            }
+        if self.clicked
+            && let Some(pos) = ui.ctx().pointer_interact_pos()
+            && Self::is_within_circle(screen_position.to_pos2(), pos, 10.0)
+        {
+            response.mark_changed();
         }
         painter.circle(screen_position.to_pos2(), 10., color32, Stroke::default());
         response
