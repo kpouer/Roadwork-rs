@@ -13,10 +13,13 @@ impl Default for LatLng {
     }
 }
 
+const LAT_PARIS: f64 = 48.85337;
+const LON_PARIS: f64 = 2.34847;
+
 impl LatLng {
     pub const PARIS: Self = Self {
-        lat: 48.85337,
-        lon: 2.34847,
+        lat: LAT_PARIS,
+        lon: LON_PARIS,
     };
 }
 
@@ -41,22 +44,22 @@ mod tests {
     #[test]
     fn test_default_lat_lng() {
         let lat_lng = LatLng::default();
-        assert_eq!(lat_lng.lat, 48.85337);
-        assert_eq!(lat_lng.lon, 2.34847);
+        assert_eq!(lat_lng.lat, LAT_PARIS);
+        assert_eq!(lat_lng.lon, LON_PARIS);
     }
 
     #[test]
     fn test_from_lat_lng() {
-        let lat_lng = LatLng { lat: 48.85337, lon: 2.34847 };
+        let lat_lng = LatLng { lat: LAT_PARIS, lon: LON_PARIS };
         let position: Position = lat_lng.into();
-        assert_eq!(position, walkers::lat_lon(48.85337, 2.34847));
+        assert_eq!(position, walkers::lat_lon(LAT_PARIS, LON_PARIS));
     }
 
     #[test]
     fn test_deserialize_lat_lng() {
         let json = r#"{"lat": 48.85337, "lon": 2.34847}"#;
         let lat_lng: LatLng = serde_json::from_str(json).unwrap();
-        assert_eq!(lat_lng.lat, 48.85337);
-        assert_eq!(lat_lng.lon, 2.34847);
+        assert_eq!(lat_lng.lat, LAT_PARIS);
+        assert_eq!(lat_lng.lon, LON_PARIS);
     }
 }
