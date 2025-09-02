@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use crate::OPENDATA_FOLDER;
 
 const GITHUB_RAW_PREFIX: &str = "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
 

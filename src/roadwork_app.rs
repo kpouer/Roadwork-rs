@@ -12,6 +12,7 @@ use egui::text::LayoutJob;
 use egui::{Button, Context, Label, RichText};
 use log::info;
 use std::sync::{Arc, Mutex};
+use egui_notify::Toasts;
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpOptions, HttpTiles, Map, MapMemory, Projector};
 
@@ -27,6 +28,7 @@ pub struct RoadworkApp {
     roadwork_data: Option<RoadworkData>,
     selected_roadwork: Option<String>,
     logs_panel_open: bool,
+    toasts: Toasts,
 }
 
 impl RoadworkApp {
@@ -49,6 +51,7 @@ impl RoadworkApp {
             roadwork_data: None,
             selected_roadwork: None,
             logs_panel_open: false,
+            toasts: Toasts::default(),
         }
     }
 
@@ -202,6 +205,7 @@ impl RoadworkApp {
                         // todo : remove this ugly clone
                         let services = self.open_data_service_manager.services().to_owned();
                         for service in services {
+                            let service_name = service.to_string();
                             if ui
                                 .selectable_value(
                                     &mut self.settings.lock().unwrap().opendata_service,
@@ -211,6 +215,7 @@ impl RoadworkApp {
                                 .changed()
                             {
                                 self.load_data();
+                                self.toasts.success(format!("Switching to {service_name}"));
                             }
                         }
                     });
@@ -258,6 +263,7 @@ impl App for RoadworkApp {
                 }
             }
         });
+        self.toasts.show(ctx);
     }
 
     fn save(&mut self, _storage: &mut dyn Storage) {

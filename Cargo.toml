@@ -26,6 +26,7 @@ egui = "0.32"
 egui_extras = { version = "0.32", features = ["svg"] }
 egui_logger = "0.8.0"
 eframe = { version = "0.32", features = ["persistence"] }
+egui-notify = "0.20.0"
 home = "0.5.11"
 jsonpath-rust = "1.0.4"
 log = "0.4"
