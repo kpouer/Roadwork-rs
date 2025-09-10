@@ -1,5 +1,6 @@
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::logs_panel::LogsPanel;
+use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::status_panel::StatusPanel;
 use crate::model::roadwork_data::RoadworkData;
@@ -274,122 +275,7 @@ impl RoadworkApp {
         if self.show_info_dialog {
             if let Some(ods) = self.open_data_service_manager.get_opendata_service() {
                 let md = &ods.service_descriptor.metadata;
-                let screen = ctx.screen_rect().size();
-                let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
-                egui::Window::new("Source info")
-                    .open(&mut self.show_info_dialog)
-                    .resizable(true)
-                    .max_size(max)
-                    .show(ctx, |ui| {
-                        egui::Grid::new("metadata_grid")
-                            .num_columns(2)
-                            .spacing([6.0, 4.0])
-                            .show(ui, |ui| {
-                                ui.label(RichText::new("Name:").strong());
-                                ui.add(Label::new(md.name()).wrap_mode(TextWrapMode::Wrap));
-                                ui.end_row();
-
-                                ui.label(RichText::new("Country:").strong());
-                                ui.add(Label::new(md.country()).wrap_mode(TextWrapMode::Wrap));
-                                ui.end_row();
-
-                                if let Some(p) = md.producer() {
-                                    ui.label(RichText::new("Producer:").strong());
-                                    ui.add(Label::new(p).wrap_mode(TextWrapMode::Wrap));
-                                    ui.end_row();
-                                }
-
-                                if let Some(lic) = md.licence_name() {
-                                    ui.label(RichText::new("License:").strong());
-                                    if let Some(url) = md.licence_url() {
-                                        // Show license name, and a clickable URL below it
-                                        ui.vertical(|ui| {
-                                            ui.add(Label::new(lic).wrap_mode(TextWrapMode::Wrap));
-                                            let link_text = url;
-                                            let response = ui.add(
-                                                Label::new(
-                                                    RichText::new(link_text)
-                                                        .underline()
-                                                        .color(ui.visuals().hyperlink_color),
-                                                )
-                                                .wrap_mode(TextWrapMode::Wrap)
-                                                .sense(egui::Sense::click()),
-                                            );
-                                            if response.clicked() {
-                                                let _ = open::that(url);
-                                            }
-                                        });
-                                    } else {
-                                        ui.add(Label::new(lic).wrap_mode(TextWrapMode::Wrap));
-                                    }
-                                    ui.end_row();
-                                }
-
-                                ui.label(RichText::new("Source URL:").strong());
-                                {
-                                    let url = md.source_url();
-                                    let response = ui.add(
-                                        Label::new(
-                                            RichText::new(url)
-                                                .underline()
-                                                .color(ui.visuals().hyperlink_color),
-                                        )
-                                        .wrap_mode(TextWrapMode::Wrap)
-                                        .sense(egui::Sense::click()),
-                                    );
-                                    if response.clicked() {
-                                        let _ = open::that(url);
-                                    }
-                                }
-                                ui.end_row();
-
-                                ui.label(RichText::new("API URL:").strong());
-                                {
-                                    let url = &md.url;
-                                    let response = ui.add(
-                                        Label::new(
-                                            RichText::new(url)
-                                                .underline()
-                                                .color(ui.visuals().hyperlink_color),
-                                        )
-                                        .wrap_mode(TextWrapMode::Wrap)
-                                        .sense(egui::Sense::click()),
-                                    );
-                                    if response.clicked() {
-                                        let _ = open::that(url);
-                                    }
-                                }
-                                ui.end_row();
-
-                                if let Some(locale) = md.locale_str() {
-                                    ui.label(RichText::new("Locale:").strong());
-                                    ui.add(Label::new(locale).wrap_mode(TextWrapMode::Wrap));
-                                    ui.end_row();
-                                }
-
-                                if let Some(ts) = md.tile_server() {
-                                    ui.label(RichText::new("Tile server:").strong());
-                                    ui.add(Label::new(ts).wrap_mode(TextWrapMode::Wrap));
-                                    ui.end_row();
-                                }
-
-                                if let Some(pattern) = &md.editor_pattern {
-                                    ui.label(RichText::new("Editor pattern:").strong());
-                                    ui.add(Label::new(pattern).wrap_mode(TextWrapMode::Wrap));
-                                    ui.end_row();
-                                }
-
-                                ui.label(RichText::new("Center:").strong());
-                                ui.add(
-                                    Label::new(format!(
-                                        "lat: {:.5}, lon: {:.5}",
-                                        md.center.lat, md.center.lon
-                                    ))
-                                    .wrap_mode(TextWrapMode::Wrap),
-                                );
-                                ui.end_row();
-                            });
-                    });
+                MetadataDialog::new(&mut self.show_info_dialog, &md).show(ctx);
             } else {
                 let screen = ctx.screen_rect().size();
                 let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
