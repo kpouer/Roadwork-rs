@@ -32,6 +32,32 @@ impl Metadata {
             .map(|locale| Tz::from_str(locale).unwrap_or(Tz::Europe__Paris))
             .unwrap_or(Tz::Europe__Paris)
     }
+
+    // Getters to expose metadata details for UI
+    pub(crate) fn country(&self) -> &str {
+        &self.country
+    }
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+    pub(crate) fn producer(&self) -> Option<&str> {
+        self.producer.as_deref()
+    }
+    pub(crate) fn licence_name(&self) -> Option<&str> {
+        self.licence_name.as_deref()
+    }
+    pub(crate) fn licence_url(&self) -> Option<&str> {
+        self.licence_url.as_deref()
+    }
+    pub(crate) fn source_url(&self) -> &str {
+        &self.source_url
+    }
+    pub(crate) fn locale_str(&self) -> Option<&str> {
+        self.locale.as_deref()
+    }
+    pub(crate) fn tile_server(&self) -> Option<&str> {
+        self.tile_server.as_deref()
+    }
 }
 
 impl Metadata {

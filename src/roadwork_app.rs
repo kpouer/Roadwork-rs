@@ -31,6 +31,7 @@ pub struct RoadworkApp {
     logs_panel_open: bool,
     toasts: Toasts,
     show_about_dialog: bool,
+    show_info_dialog: bool,
 }
 
 impl RoadworkApp {
@@ -61,6 +62,7 @@ impl RoadworkApp {
             logs_panel_open: false,
             toasts: Toasts::default(),
             show_about_dialog: false,
+            show_info_dialog: false,
         };
         // Restore zoom level if available in settings
         if let Some(z) = app.settings.lock().unwrap().map_zoom {
@@ -260,8 +262,92 @@ impl RoadworkApp {
                     "Hide expired",
                 );
                 LogsPanel::new(&mut self.logs_panel_open).show_button(ctx, ui);
+
+                // Info button to show source metadata
+                if ui.button("Info").clicked() {
+                    self.show_info_dialog = true;
+                }
             });
         });
+
+        // Source Info dialog
+        if self.show_info_dialog {
+            if let Some(ods) = self.open_data_service_manager.get_opendata_service() {
+                let md = &ods.service_descriptor.metadata;
+                egui::Window::new("Source info")
+                    .open(&mut self.show_info_dialog)
+                    .resizable(true)
+                    .show(ctx, |ui| {
+                        egui::Grid::new("metadata_grid")
+                            .num_columns(2)
+                            .spacing([6.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("Name:").strong());
+                                ui.label(md.name());
+                                ui.end_row();
+
+                                ui.label(RichText::new("Country:").strong());
+                                ui.label(md.country());
+                                ui.end_row();
+
+                                if let Some(p) = md.producer() {
+                                    ui.label(RichText::new("Producer:").strong());
+                                    ui.label(p);
+                                    ui.end_row();
+                                }
+
+                                if let Some(lic) = md.licence_name() {
+                                    ui.label(RichText::new("License:").strong());
+                                    if let Some(url) = md.licence_url() {
+                                        ui.hyperlink_to(lic, url);
+                                    } else {
+                                        ui.label(lic);
+                                    }
+                                    ui.end_row();
+                                }
+
+                                ui.label(RichText::new("Source URL:").strong());
+                                ui.hyperlink(md.source_url());
+                                ui.end_row();
+
+                                ui.label(RichText::new("API URL:").strong());
+                                ui.hyperlink(&md.url);
+                                ui.end_row();
+
+                                if let Some(locale) = md.locale_str() {
+                                    ui.label(RichText::new("Locale:").strong());
+                                    ui.label(locale);
+                                    ui.end_row();
+                                }
+
+                                if let Some(ts) = md.tile_server() {
+                                    ui.label(RichText::new("Tile server:").strong());
+                                    ui.label(ts);
+                                    ui.end_row();
+                                }
+
+                                if let Some(pattern) = &md.editor_pattern {
+                                    ui.label(RichText::new("Editor pattern:").strong());
+                                    ui.label(pattern);
+                                    ui.end_row();
+                                }
+
+                                ui.label(RichText::new("Center:").strong());
+                                ui.label(format!(
+                                    "lat: {:.5}, lon: {:.5}",
+                                    md.center.lat, md.center.lon
+                                ));
+                                ui.end_row();
+                            });
+                    });
+            } else {
+                egui::Window::new("Source info")
+                    .open(&mut self.show_info_dialog)
+                    .show(ctx, |ui| {
+                        ui.label("No source selected");
+                    });
+            }
+        }
     }
 
     fn draw_zoom_level(&mut self, ui: &mut Ui, response: Response) {
@@ -313,16 +399,8 @@ impl App for RoadworkApp {
             .zoom_with_ctrl(false);
             let response = ui.add(map);
 
-            // Keep our position synced with the map's memory (center)
-            // so we can persist it on exit.
-            // If MapMemory exposes a `center()` method returning Position, use it.
-            #[allow(unused_variables)]
-            {
-                // Update position unconditionally; cheap and ensures latest value.
-                // If API differs, adjust to correct getter.
-                if let Some(center) = self.map_memory.detached() {
-                    self.position = center.into();
-                }
+            if let Some(center) = self.map_memory.detached() {
+                self.position = center.into();
             }
 
             if let Some(roadwork_data) = &self.roadwork_data {
@@ -357,13 +435,8 @@ impl App for RoadworkApp {
         }
         let mut settings = self.settings.lock().unwrap();
         settings.map_center = Some(self.position);
-        // Persist current zoom level if available from the map memory
-        #[allow(unused_variables)]
-        {
-            // Common walkers API exposes `zoom()` on MapMemory
-            let z = self.map_memory.zoom();
-            settings.map_zoom = Some(z);
-        }
+        let z = self.map_memory.zoom();
+        settings.map_zoom = Some(z);
         settings.save().expect("Unable to save settings");
     }
 
