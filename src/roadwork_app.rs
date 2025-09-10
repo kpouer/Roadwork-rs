@@ -312,6 +312,15 @@ impl App for RoadworkApp {
                     }
                 }
             }
+
+            let pos = response.rect.right_bottom() - egui::vec2(6.0, 6.0);
+            ui.painter_at(response.rect).text(
+                pos,
+                egui::Align2::RIGHT_BOTTOM,
+                format!("Zoom: {:.2}", self.map_memory.zoom()),
+                egui::TextStyle::Small.resolve(ui.style()),
+                ui.visuals().strong_text_color(),
+            );
         });
         self.toasts.show(ctx);
     }
