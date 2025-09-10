@@ -285,7 +285,11 @@ impl RoadworkApp {
         let bottom_right = response.rect.right_bottom() - margin;
         let rect = egui::Rect::from_min_size(bottom_right - rect_size, rect_size);
 
-        painter.rect_filled(rect, egui::Rounding::same(4u8), ui.visuals().code_bg_color);
+        painter.rect_filled(
+            rect,
+            egui::CornerRadius::same(4u8),
+            ui.visuals().code_bg_color,
+        );
 
         // Draw text inside the rectangle with padding
         let text_pos = rect.min + padding;
