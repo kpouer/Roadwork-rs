@@ -1,7 +1,7 @@
 use crate::opendata::json::model::metadata::Metadata;
 use eframe::epaint::text::TextWrapMode;
-use egui::Label;
 use egui::{Context, RichText};
+use egui::{Label, Ui};
 
 pub(crate) struct MetadataDialog<'a> {
     open: &'a mut bool,
@@ -25,18 +25,11 @@ impl<'a> MetadataDialog<'a> {
                     .num_columns(2)
                     .spacing([6.0, 4.0])
                     .show(ui, |ui| {
-                        ui.label(RichText::new("Name:").strong());
-                        ui.add(Label::new(self.metadata.name()).wrap_mode(TextWrapMode::Wrap));
-                        ui.end_row();
-
-                        ui.label(RichText::new("Country:").strong());
-                        ui.add(Label::new(self.metadata.country()).wrap_mode(TextWrapMode::Wrap));
-                        ui.end_row();
+                        Self::add_row(ui, "Name:", self.metadata.name());
+                        Self::add_row(ui, "Country:", self.metadata.country());
 
                         if let Some(p) = self.metadata.producer() {
-                            ui.label(RichText::new("Producer:").strong());
-                            ui.add(Label::new(p).wrap_mode(TextWrapMode::Wrap));
-                            ui.end_row();
+                            Self::add_row(ui, "Producer:", p);
                         }
 
                         if let Some(lic) = self.metadata.licence_name() {
@@ -65,70 +58,55 @@ impl<'a> MetadataDialog<'a> {
                             ui.end_row();
                         }
 
-                        ui.label(RichText::new("Source URL:").strong());
-                        {
-                            let url = self.metadata.source_url();
-                            let response = ui.add(
-                                Label::new(
-                                    RichText::new(url)
-                                        .underline()
-                                        .color(ui.visuals().hyperlink_color),
-                                )
-                                .wrap_mode(TextWrapMode::Wrap)
-                                .sense(egui::Sense::click()),
-                            );
-                            if response.clicked() {
-                                let _ = open::that(url);
-                            }
-                        }
-                        ui.end_row();
-
-                        ui.label(RichText::new("API URL:").strong());
-                        {
-                            let url = &self.metadata.url;
-                            let response = ui.add(
-                                Label::new(
-                                    RichText::new(url)
-                                        .underline()
-                                        .color(ui.visuals().hyperlink_color),
-                                )
-                                .wrap_mode(TextWrapMode::Wrap)
-                                .sense(egui::Sense::click()),
-                            );
-                            if response.clicked() {
-                                let _ = open::that(url);
-                            }
-                        }
-                        ui.end_row();
+                        Self::add_row_link(ui, "Source URL:", self.metadata.source_url());
+                        Self::add_row_link(ui, "API URL:", &self.metadata.url);
 
                         if let Some(locale) = self.metadata.locale_str() {
-                            ui.label(RichText::new("Locale:").strong());
-                            ui.add(Label::new(locale).wrap_mode(TextWrapMode::Wrap));
-                            ui.end_row();
+                            Self::add_row(ui, "Locale:", locale);
                         }
 
                         if let Some(ts) = self.metadata.tile_server() {
-                            ui.label(RichText::new("Tile server:").strong());
-                            ui.add(Label::new(ts).wrap_mode(TextWrapMode::Wrap));
-                            ui.end_row();
+                            Self::add_row(ui, "Tile server:", ts);
                         }
 
                         if let Some(pattern) = &self.metadata.editor_pattern {
-                            ui.label(RichText::new("Editor pattern:").strong());
-                            ui.add(Label::new(pattern).wrap_mode(TextWrapMode::Wrap));
-                            ui.end_row();
+                            Self::add_row(ui, "Editor pattern:", pattern);
                         }
 
-                        ui.label(RichText::new("Center:").strong());
-                        ui.add(
-                            Label::new(format!(
+                        Self::add_row(
+                            ui,
+                            "Center:",
+                            &format!(
                                 "lat: {:.5}, lon: {:.5}",
                                 self.metadata.center.lat, self.metadata.center.lon
-                            ))
-                            .wrap_mode(TextWrapMode::Wrap),
+                            ),
                         );
-                        ui.end_row();
                     });
             });
+    }
+
+    fn add_row_link(ui: &mut Ui, label: &str, value: &str) {
+        ui.label(RichText::new(label).strong());
+        {
+            let response = ui.add(
+                Label::new(
+                    RichText::new(value)
+                        .underline()
+                        .color(ui.visuals().hyperlink_color),
+                )
+                .wrap_mode(TextWrapMode::Wrap)
+                .sense(egui::Sense::click()),
+            );
+            if response.clicked() {
+                let _ = open::that(value);
+            }
+        }
+        ui.end_row();
+    }
+
+    fn add_row(ui: &mut Ui, label: &str, value: &str) {
+        ui.label(RichText::new(label).strong());
+        ui.add(Label::new(value).wrap_mode(TextWrapMode::Wrap));
+        ui.end_row();
     }
 }
