@@ -17,7 +17,7 @@ impl<'a> MetadataDialog<'a> {
         let screen = ctx.screen_rect().size();
         let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
         egui::Window::new("Source info")
-            .open(&mut self.open)
+            .open(self.open)
             .resizable(true)
             .max_size(max)
             .show(ctx, |ui| {
