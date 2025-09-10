@@ -10,7 +10,7 @@ use chrono::DateTime;
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
 use egui::text::LayoutJob;
-use egui::{Button, Context, Label, RichText}; // menu used in show_top_panel
+use egui::{Button, Context, Label, Response, RichText, Ui}; // menu used in show_top_panel
 use egui_notify::Toasts;
 use log::info;
 use std::sync::{Arc, Mutex};
@@ -263,6 +263,34 @@ impl RoadworkApp {
             });
         });
     }
+
+    fn draw_zoom_level(&mut self, ui: &mut Ui, response: Response) {
+        let painter = ui.painter_at(response.rect);
+        let margin = egui::vec2(6.0, 6.0); // distance from map edges
+        let padding = egui::vec2(6.0, 4.0); // inner padding around text
+
+        let text_color = ui.visuals().strong_text_color();
+
+        // Measure text
+        let galley = ui.fonts(|f| {
+            f.layout_no_wrap(
+                format!("Zoom: {:.2}", self.map_memory.zoom()),
+                egui::TextStyle::Body.resolve(ui.style()),
+                text_color,
+            )
+        });
+        let rect_size = galley.size() + 2.0 * padding;
+
+        // Position rectangle's bottom-right with a small margin from the map edge
+        let bottom_right = response.rect.right_bottom() - margin;
+        let rect = egui::Rect::from_min_size(bottom_right - rect_size, rect_size);
+
+        painter.rect_filled(rect, egui::Rounding::same(4u8), ui.visuals().code_bg_color);
+
+        // Draw text inside the rectangle with padding
+        let text_pos = rect.min + padding;
+        painter.galley(text_pos, galley, text_color);
+    }
 }
 
 impl App for RoadworkApp {
@@ -313,14 +341,7 @@ impl App for RoadworkApp {
                 }
             }
 
-            let pos = response.rect.right_bottom() - egui::vec2(6.0, 6.0);
-            ui.painter_at(response.rect).text(
-                pos,
-                egui::Align2::RIGHT_BOTTOM,
-                format!("Zoom: {:.2}", self.map_memory.zoom()),
-                egui::TextStyle::Small.resolve(ui.style()),
-                ui.visuals().strong_text_color(),
-            );
+            self.draw_zoom_level(ui, response);
         });
         self.toasts.show(ctx);
     }
