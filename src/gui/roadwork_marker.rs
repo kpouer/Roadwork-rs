@@ -42,7 +42,7 @@ impl RoadworkMarker<'_> {
 
 impl Widget for RoadworkMarker<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let (rect, mut response) = ui.allocate_exact_size(ui.available_size(), Sense::click());
+        let (_rect, mut response) = ui.allocate_exact_size(ui.available_size(), Sense::click());
         // let response = draw_roadwork(
         //     &mut child_ui,
         //     self.roadwork,
