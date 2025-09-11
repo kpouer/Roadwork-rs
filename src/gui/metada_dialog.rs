@@ -1,6 +1,6 @@
 use crate::opendata::json::model::metadata::Metadata;
 use eframe::epaint::text::TextWrapMode;
-use egui::{Context, RichText};
+use egui::{Context, Response, RichText};
 use egui::{Label, Ui};
 
 pub(crate) struct MetadataDialog<'a> {
@@ -38,17 +38,7 @@ impl<'a> MetadataDialog<'a> {
                                 // Show license name, and a clickable URL below it
                                 ui.vertical(|ui| {
                                     ui.add(Label::new(lic).wrap_mode(TextWrapMode::Wrap));
-                                    let link_text = url;
-                                    let response = ui.add(
-                                        Label::new(
-                                            RichText::new(link_text)
-                                                .underline()
-                                                .color(ui.visuals().hyperlink_color),
-                                        )
-                                        .wrap_mode(TextWrapMode::Wrap)
-                                        .sense(egui::Sense::click()),
-                                    );
-                                    if response.clicked() {
+                                    if Self::show_link(ui, url).clicked() {
                                         let _ = open::that(url);
                                     }
                                 });
@@ -87,21 +77,22 @@ impl<'a> MetadataDialog<'a> {
 
     fn add_row_link(ui: &mut Ui, label: &str, value: &str) {
         ui.label(RichText::new(label).strong());
-        {
-            let response = ui.add(
-                Label::new(
-                    RichText::new(value)
-                        .underline()
-                        .color(ui.visuals().hyperlink_color),
-                )
-                .wrap_mode(TextWrapMode::Wrap)
-                .sense(egui::Sense::click()),
-            );
-            if response.clicked() {
-                let _ = open::that(value);
-            }
+        if Self::show_link(ui, value).clicked() {
+            let _ = open::that(value);
         }
         ui.end_row();
+    }
+
+    fn show_link(ui: &mut Ui, url: &str) -> Response {
+        ui.add(
+            Label::new(
+                RichText::new(url)
+                    .underline()
+                    .color(ui.visuals().hyperlink_color),
+            )
+            .wrap_mode(TextWrapMode::Wrap)
+            .sense(egui::Sense::click()),
+        )
     }
 
     fn add_row(ui: &mut Ui, label: &str, value: &str) {
