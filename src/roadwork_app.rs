@@ -275,9 +275,9 @@ impl RoadworkApp {
         if self.show_info_dialog {
             if let Some(ods) = self.open_data_service_manager.get_opendata_service() {
                 let md = &ods.service_descriptor.metadata;
-                MetadataDialog::new(&mut self.show_info_dialog, &md).show(ctx);
+                MetadataDialog::new(&mut self.show_info_dialog, md).show(ctx);
             } else {
-                let screen = ctx.screen_rect().size();
+                let screen = ctx.content_rect().size();
                 let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
                 egui::Window::new("Source info")
                     .open(&mut self.show_info_dialog)
@@ -297,7 +297,7 @@ impl RoadworkApp {
         let text_color = ui.visuals().strong_text_color();
 
         // Measure text
-        let galley = ui.fonts(|f| {
+        let galley = ui.fonts_mut(|f| {
             f.layout_no_wrap(
                 format!("Zoom: {:.2}", self.map_memory.zoom()),
                 egui::TextStyle::Body.resolve(ui.style()),

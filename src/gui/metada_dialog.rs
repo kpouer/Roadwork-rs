@@ -14,7 +14,7 @@ impl<'a> MetadataDialog<'a> {
     }
 
     pub(crate) fn show(&mut self, ctx: &Context) {
-        let screen = ctx.screen_rect().size();
+        let screen = ctx.content_rect().size();
         let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
         egui::Window::new("Source info")
             .open(self.open)
