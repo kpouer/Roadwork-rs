@@ -10,12 +10,12 @@ impl<'a> LogsPanel<'a> {
         Self { open }
     }
 
-    pub(crate) fn show_button(&mut self, ctx: &Context, ui: &mut egui::Ui) {
+    pub(crate) fn show_button(&mut self, ui: &mut egui::Ui) {
         if ui.button("Logs panel").clicked() {
             *self.open = true;
         }
         if *self.open {
-            self.show(ctx);
+            self.show(ui.ctx());
         }
     }
 

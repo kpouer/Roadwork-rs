@@ -109,7 +109,7 @@ impl RoadworkApp {
         job
     }
 
-    fn show_left_panel(&mut self, ctx: &Context) {
+    fn show_left_panel(&mut self, ui: &mut Ui) {
         let url = self.get_wme_url_pattern();
 
         if let Some((id, roadwork_data)) = self
@@ -121,7 +121,7 @@ impl RoadworkApp {
                 .roadworks
                 .get_mut(id)
                 .expect("roadwork not found");
-            egui::SidePanel::left("left_panel").show(ctx, |ui| {
+            egui::Panel::left("left_panel").show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.label(RichText::new("Id:").strong());
                     ui.add(Label::new(&roadwork.id).wrap_mode(TextWrapMode::Truncate));
@@ -217,8 +217,8 @@ impl RoadworkApp {
         }
     }
 
-    fn show_top_panel(&mut self, ctx: &Context) {
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+    fn show_top_panel(&mut self, ui: &mut Ui) {
+        egui::Panel::top("menu_bar").show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Help", |ui| {
                     if ui.button("About").clicked() {
@@ -228,10 +228,10 @@ impl RoadworkApp {
                 });
             });
             if self.show_about_dialog {
-                AboutDialog::new(&mut self.show_about_dialog).show(ctx);
+                AboutDialog::new(&mut self.show_about_dialog).show(ui);
             }
         });
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let opendata_service_name =
                     self.settings.lock().unwrap().opendata_service.to_string();
@@ -262,7 +262,7 @@ impl RoadworkApp {
                     &mut self.settings.lock().unwrap().hide_expired,
                     "Hide expired",
                 );
-                LogsPanel::new(&mut self.logs_panel_open).show_button(ctx, ui);
+                LogsPanel::new(&mut self.logs_panel_open).show_button(ui);
 
                 // Info button to show source metadata
                 if ui.button("Info").clicked() {
@@ -275,14 +275,14 @@ impl RoadworkApp {
         if self.show_info_dialog {
             if let Some(ods) = self.open_data_service_manager.get_opendata_service() {
                 let md = &ods.service_descriptor.metadata;
-                MetadataDialog::new(&mut self.show_info_dialog, md).show(ctx);
+                MetadataDialog::new(&mut self.show_info_dialog, md).show(ui.ctx());
             } else {
-                let screen = ctx.content_rect().size();
+                let screen = ui.ctx().content_rect().size();
                 let max = egui::vec2(screen.x * 0.9, screen.y * 0.9);
                 egui::Window::new("Source info")
                     .open(&mut self.show_info_dialog)
                     .max_size(max)
-                    .show(ctx, |ui| {
+                    .show(ui.ctx(), |ui| {
                         ui.add(Label::new("No source selected").wrap_mode(TextWrapMode::Wrap));
                     });
             }
@@ -323,11 +323,11 @@ impl RoadworkApp {
 }
 
 impl App for RoadworkApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        self.show_top_panel(ctx);
-        self.show_left_panel(ctx);
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        self.show_top_panel(ui);
+        self.show_left_panel(ui);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let map = Map::new(
                 Some(&mut self.tiles),
                 &mut self.map_memory,
@@ -364,7 +364,7 @@ impl App for RoadworkApp {
 
             self.draw_zoom_level(ui, response);
         });
-        self.toasts.show(ctx);
+        self.toasts.show(ui.ctx());
     }
 
     fn save(&mut self, _storage: &mut dyn Storage) {

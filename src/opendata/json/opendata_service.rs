@@ -76,9 +76,9 @@ impl OpendataService {
                     .reduce(|acc, s| format!("{acc}&{s}"))
                     .unwrap_or_default();
                 if metadata.url.contains("?") {
-                    format!("{}&{}", &metadata.url, query_string)
+                    format!("{}&{}", metadata.url, query_string)
                 } else {
-                    format!("{}?{}", &metadata.url, query_string)
+                    format!("{}?{}", metadata.url, query_string)
                 }
             }
         }
