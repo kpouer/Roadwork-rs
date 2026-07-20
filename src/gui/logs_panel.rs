@@ -1,5 +1,4 @@
 use egui::Context;
-use egui_logger::LoggerUi;
 
 pub(crate) struct LogsPanel<'a> {
     open: &'a mut bool,
@@ -11,7 +10,7 @@ impl<'a> LogsPanel<'a> {
     }
 
     pub(crate) fn show_button(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Logs panel").clicked() {
+        if ui.button("Logs (browser console)").clicked() {
             *self.open = true;
         }
         if *self.open {
@@ -20,10 +19,9 @@ impl<'a> LogsPanel<'a> {
     }
 
     pub(crate) fn show(&mut self, ctx: &Context) {
-        egui::Window::new("Logs panel")
-            .open(self.open)
-            .show(ctx, |ui| {
-                LoggerUi::default().show(ui);
-            });
+        egui::Window::new("Logs").open(self.open).show(ctx, |ui| {
+            ui.label("Logs are available in the browser developer console (F12).");
+            ui.label("Use LevelFilter::Info or higher to see logs.");
+        });
     }
 }

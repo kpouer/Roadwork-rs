@@ -1,10 +1,10 @@
 use crate::opendata::json::model::lat_lng::LatLng;
 use chrono_tz::Tz;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Metadata {
     country: String,
     pub(crate) center: LatLng,

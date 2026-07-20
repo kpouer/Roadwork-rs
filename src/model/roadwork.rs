@@ -1,10 +1,10 @@
 use crate::model::wkt::polygon::Polygon;
+use crate::now_millis;
 use roadwork_sync::SyncData;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Roadwork structure
-/// it is serialized as a cache on disk
+/// it is serialized as a cache in IndexedDB
 #[derive(Default, Debug, Deserialize, Serialize)]
 pub(crate) struct Roadwork {
     pub(crate) id: String,
@@ -26,7 +26,6 @@ pub(crate) struct Roadwork {
 
 impl Roadwork {
     pub(crate) fn is_expired(&self) -> bool {
-        Duration::from_millis(self.end as u64)
-            < SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
+        (self.end as u64) < now_millis()
     }
 }

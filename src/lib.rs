@@ -1,6 +1,7 @@
 use jsonpath_rust::parser::errors::JsonPathError;
 use thiserror::Error;
 
+pub mod database;
 mod gui;
 mod json_tools;
 mod model;
@@ -9,21 +10,8 @@ pub mod roadwork_app;
 mod service;
 pub mod settings;
 
-/// the path where the opendata definitions are stored
-pub(crate) const OPENDATA_FOLDER: &str = "data/opendata";
-
-pub(crate) fn opendata_folder_path() -> std::path::PathBuf {
-    // Prefer user's home directory: ~/.roadwork/data/opendata if available
-    if let Some(mut home) = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(home::home_dir)
-    {
-        home.push(".roadwork");
-        home.push("data");
-        home.push("opendata");
-        return home;
-    }
-    std::path::PathBuf::from(OPENDATA_FOLDER)
+pub(crate) fn now_millis() -> u64 {
+    chrono::Utc::now().timestamp_millis() as u64
 }
 
 #[derive(Error, Debug)]

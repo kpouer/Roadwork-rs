@@ -1,35 +1,39 @@
+use crate::database::RoadworkDb;
 use crate::model::roadwork_data::RoadworkData;
+use crate::now_millis;
 use crate::opendata::json::model::lat_lng::LatLng;
-use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
 use crate::opendata::json::opendata_service::OpendataService;
 use crate::service::synchronization_service::SynchronizationService;
 use crate::settings::Settings;
-use log::{debug, error, info};
+use log::{debug, info};
 use roadwork_sync::SyncData;
 use std::collections::HashMap;
-use std::fs;
-use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use unicode_normalization::UnicodeNormalization;
 
 pub(crate) struct OpenDataServiceManager {
+    db: Arc<RoadworkDb>,
     settings: Arc<Mutex<Settings>>,
-    service_names: Vec<String>,
     opendata_services: HashMap<String, OpendataService>,
+    service_names: Vec<String>,
     synchronization_service: SynchronizationService,
 }
 
 impl OpenDataServiceManager {
-    const VERSION: &'static str = "2";
-
-    pub(crate) fn new(settings: Arc<Mutex<Settings>>) -> Self {
-        let opendata_services = Self::get_json_file_names(&crate::opendata_folder_path());
+    pub(crate) async fn new(db: Arc<RoadworkDb>, settings: Arc<Mutex<Settings>>) -> Self {
+        let descriptors = db.load_descriptors().await;
+        let opendata_services: HashMap<String, OpendataService> = descriptors
+            .into_iter()
+            .map(|(name, sd)| {
+                let ods = OpendataService::new(name.clone(), sd);
+                (name, ods)
+            })
+            .collect();
+        let service_names = opendata_services.keys().cloned().collect();
         Self {
             synchronization_service: SynchronizationService::new(Arc::clone(&settings)),
+            db,
             settings,
-            service_names: opendata_services.keys().map(|s| s.to_string()).collect(),
+            service_names,
             opendata_services,
         }
     }
@@ -42,66 +46,46 @@ impl OpenDataServiceManager {
             .unwrap_or_default()
     }
 
-    pub(crate) fn get_data(&self) -> Option<RoadworkData> {
-        let mut roadworks_option = self.get_roadworks();
+    pub(crate) async fn get_data(&self) -> Option<RoadworkData> {
+        let mut roadworks_option = self.get_roadworks().await;
         if let Some(roadwork_data) = &mut roadworks_option {
             Self::apply_finished_status(roadwork_data);
-            self.synchronization_service.synchronize(roadwork_data);
+            self.synchronization_service
+                .synchronize(roadwork_data)
+                .await;
         }
         roadworks_option
     }
 
-    /// Save the roadwork state
-    pub(crate) fn save(&self, roadwork_data: &RoadworkData) {
+    pub(crate) async fn save(&self, roadwork_data: &RoadworkData) {
         info!("save {}", roadwork_data.source);
-        if let Some(save_path) = self.get_path(&roadwork_data.source) {
-            info!("save to {save_path:?}");
-            match save_path.parent() {
-                None => error!(
-                    "Unable to save cache to {save_path:?} because parent directory does not exist"
-                ),
-                Some(parent) => {
-                    fs::create_dir_all(parent).ok();
-                    match File::create(&save_path) {
-                        Ok(file) => {
-                            if let Err(e) = serde_json::to_writer_pretty(file, roadwork_data) {
-                                error!("Unable to save cache to {save_path:?} because {e}");
-                            }
-                        }
-                        Err(e) => error!("Unable to save cache to {save_path:?} because {e}"),
-                    }
-                }
-            }
-        }
+        self.db
+            .save_cache(&roadwork_data.source, roadwork_data)
+            .await;
     }
 
-    /**
-     * Returns roadwork data.
-     * If
-     *
-     * @return an optional that should contain Roadwork data
-     */
-    fn get_roadworks(&self) -> Option<RoadworkData> {
-        let current_path = self.get_path(&self.settings.lock().unwrap().opendata_service);
-        if let Some(current_path) = &current_path {
-            info!("getData {current_path:?}");
-            match Self::load_cache(current_path) {
-                None => {
-                    info!("There is no cached data");
-                    self.get_opendata_service()
-                        .and_then(|ods| ods.get_data().ok())
-                        .inspect(|new_data| self.save(new_data))
+    async fn get_roadworks(&self) -> Option<RoadworkData> {
+        let service_name = self.settings.lock().unwrap().opendata_service.clone();
+        info!("get_roadworks for {service_name}");
+
+        match self.db.load_cache(&service_name).await {
+            None => {
+                info!("There is no cached data");
+                if let Some(ods) = self.get_opendata_service() {
+                    let data = ods.get_data().await.ok()?;
+                    self.db.save_cache(&service_name, &data).await;
+                    Some(data)
+                } else {
+                    None
                 }
-                Some(mut cached_roadwork_data) => {
-                    if (cached_roadwork_data.created + Duration::from_secs(86400))
-                        .le(&SystemTime::now().duration_since(UNIX_EPOCH).unwrap())
-                    {
-                        info!("Cache is obsolete {current_path:?}");
-                        fs::remove_file(current_path).ok();
-                        let mut new_data_optional = self
-                            .get_opendata_service()
-                            .and_then(|ods| ods.get_data().ok());
-                        if let Some(new_data) = &mut new_data_optional {
+            }
+            Some(mut cached_roadwork_data) => {
+                let now = now_millis();
+                if cached_roadwork_data.created + 86_400_000 <= now {
+                    info!("Cache is obsolete");
+                    self.db.delete_cache(&service_name).await;
+                    if let Some(ods) = self.get_opendata_service() {
+                        if let Some(mut new_data) = ods.get_data().await.ok() {
                             let new_roadworks = &mut new_data.roadworks;
                             info!("reloaded {} new roadworks", new_roadworks.len());
                             for existing_roadwork in &mut cached_roadwork_data {
@@ -116,19 +100,15 @@ impl OpenDataServiceManager {
                                     );
                                 }
                             }
-                            self.save(new_data);
+                            self.db.save_cache(&service_name, &new_data).await;
+                            return Some(new_data);
                         }
-                        return new_data_optional;
                     }
-
-                    Some(cached_roadwork_data)
+                    return None;
                 }
+
+                Some(cached_roadwork_data)
             }
-        } else {
-            info!("There is no cached folder");
-            self.get_opendata_service()
-                .and_then(|ods| ods.get_data().ok())
-                .inspect(|new_data| self.save(new_data))
         }
     }
 
@@ -139,19 +119,6 @@ impl OpenDataServiceManager {
         self.opendata_services.get(opendata_service)
     }
 
-    fn get_path(&self, opendata_service: &str) -> Option<PathBuf> {
-        Settings::settings_folder().map(|mut folder| {
-            folder.push(format!("{opendata_service}.{}.json", Self::VERSION));
-            folder
-        })
-    }
-
-    fn load_cache(cache_path: &Path) -> Option<RoadworkData> {
-        File::open(cache_path)
-            .ok()
-            .and_then(|file| serde_json::from_reader::<File, RoadworkData>(file).ok())
-    }
-
     fn apply_finished_status(roadwork_data: &mut RoadworkData) {
         for roadwork in roadwork_data.roadworks.values_mut() {
             if roadwork.is_expired() {
@@ -160,48 +127,13 @@ impl OpenDataServiceManager {
         }
     }
 
-    /// Returns a vector of JSON file names without the `.json` extension from the given directory.
-    fn get_json_file_names(path: &std::path::Path) -> HashMap<String, OpendataService> {
-        info!("get_json_file_names {:?}", path);
-        let mut services = HashMap::new();
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-                    let file_name = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|name| name.nfc().collect::<String>());
-                    if let Some(name) = file_name {
-                        let name = name.strip_suffix(".json").unwrap();
-                        match File::open(&path) {
-                            Ok(file) => {
-                                match serde_json::from_reader::<File, ServiceDescriptor>(file) {
-                                    Ok(service_descriptor) => {
-                                        let opendata_service =
-                                            OpendataService::new(name.into(), service_descriptor);
-                                        services.insert(name.to_string(), opendata_service);
-                                    }
-                                    Err(e) => error!("Failed to parse file {path:?}: {e}"),
-                                }
-                            }
-                            Err(e) => error!("Failed to open file {path:?}: {e}"),
-                        }
-                    }
-                }
-            }
-        }
-        services
-    }
-
     pub(crate) fn services(&self) -> &[String] {
         &self.service_names
     }
 
-    pub(crate) fn delete_cache(&self) {
-        if let Some(current_path) = self.get_path(&self.settings.lock().unwrap().opendata_service) {
-            info!("delete_cache {current_path:?}");
-            fs::remove_file(&current_path).ok();
-        }
+    pub(crate) async fn delete_cache(&self) {
+        let service_name = self.settings.lock().unwrap().opendata_service.clone();
+        info!("delete_cache for {service_name}");
+        self.db.delete_cache(&service_name).await;
     }
 }

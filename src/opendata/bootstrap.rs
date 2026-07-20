@@ -1,9 +1,8 @@
+use crate::database::RoadworkDb;
 use crate::service::http_service::HttpService;
-use log::{error, info, warn};
+use log::{error, info};
 use serde::Deserialize;
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 const GITHUB_RAW_PREFIX: &str =
     "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
@@ -18,86 +17,61 @@ struct IndexEntry {
     path: String,
 }
 
-pub(crate) fn ensure_opendata_available() {
-    let opendata_folder = crate::opendata_folder_path();
-    if opendata_folder.exists() {
+pub(crate) async fn ensure_opendata_available(db: &RoadworkDb) {
+    let existing = db.load_descriptors().await;
+    if !existing.is_empty() {
         info!(
-            "Bootstrap skipped: {} already exists",
-            opendata_folder.display()
+            "Bootstrap skipped: {} descriptors already in IndexedDB",
+            existing.len()
         );
         return;
     }
 
-    info!(
-        "Bootstrap: {} not found, downloading descriptors",
-        opendata_folder.display()
-    );
-    if let Err(e) = bootstrap_download(&opendata_folder) {
-        error!("Bootstrap failed: {e}");
-        return;
-    }
-
-    if let Err(e) = fs::create_dir_all(&opendata_folder) {
-        warn!(
-            "Unable to create marker directory {}: {e}",
-            opendata_folder.display()
-        );
+    info!("Bootstrap: no descriptors found, downloading from GitHub");
+    match bootstrap_download(db).await {
+        Ok(()) => info!("Bootstrap completed successfully"),
+        Err(e) => error!("Bootstrap failed: {e}"),
     }
 }
 
-fn bootstrap_download(base_folder: &Path) -> Result<(), String> {
+async fn bootstrap_download(db: &RoadworkDb) -> Result<(), String> {
     let http = HttpService;
 
-    // Download index.json from raw GitHub URL
     let index_url = format!("{GITHUB_RAW_PREFIX}/index.json");
     let index_str = http
         .get_url(&index_url)
+        .await
         .map_err(|e| format!("get index: {e}"))?;
     let index: IndexFile =
         serde_json::from_str(&index_str).map_err(|e| format!("parse index: {e}"))?;
 
+    let mut descriptors = HashMap::new();
+
     for file in index.files {
-        let rel_path = sanitize_path(&file.path)
-            .ok_or_else(|| format!("invalid path in index: {}", file.path))?;
-        let url = format!("{GITHUB_RAW_PREFIX}/{}", rel_path.to_string_lossy());
-        // Map destination to data/json/...
-        let dest_path = base_folder.join(&file.path);
-        info!(
-            "Downloading {} -> {}",
-            rel_path.display(),
-            dest_path.display()
-        );
-        match http.get_url(&url) {
+        let path = &file.path;
+        if path.contains("..") || path.starts_with('/') {
+            error!("Skipping invalid path: {path}");
+            continue;
+        }
+        let url = format!("{GITHUB_RAW_PREFIX}/{path}");
+        info!("Downloading {path}");
+        match http.get_url(&url).await {
             Ok(content) => {
-                if let Some(parent) = dest_path.parent()
-                    && let Err(e) = fs::create_dir_all(parent)
+                let name = path.strip_suffix(".json").unwrap_or(path).to_string();
+                match serde_json::from_str::<
+                    crate::opendata::json::model::service_descriptor::ServiceDescriptor,
+                >(&content)
                 {
-                    return Err(format!("create dir {}: {e}", parent.display()));
+                    Ok(descriptor) => {
+                        descriptors.insert(name, descriptor);
+                    }
+                    Err(e) => error!("Failed to parse {path}: {e}"),
                 }
-                let mut f = File::create(&dest_path)
-                    .map_err(|e| format!("create {}: {e}", dest_path.display()))?;
-                f.write_all(content.as_bytes())
-                    .map_err(|e| format!("write {}: {e}", dest_path.display()))?;
             }
-            Err(e) => return Err(format!("download {}: {e}", url)),
+            Err(e) => error!("Failed to download {path}: {e}"),
         }
     }
 
+    db.save_descriptors(&descriptors).await;
     Ok(())
-}
-
-// Ensure the path is relative and does not escape the working directory
-fn sanitize_path(p: &str) -> Option<PathBuf> {
-    let path = Path::new(p);
-    if path.is_absolute() {
-        return None;
-    }
-    let mut cleaned = PathBuf::new();
-    for comp in path.components() {
-        match comp {
-            std::path::Component::ParentDir => return None,
-            _ => cleaned.push(comp.as_os_str()),
-        }
-    }
-    Some(cleaned)
 }

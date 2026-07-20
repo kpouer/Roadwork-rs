@@ -13,7 +13,6 @@ use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
 use log::{error, info, warn};
 use serde_json::Value;
-use std::fs;
 
 #[derive(Debug)]
 pub(crate) struct OpendataService {
@@ -33,14 +32,10 @@ impl OpendataService {
 }
 
 impl OpendataService {
-    pub(crate) fn get_data(&self) -> Result<RoadworkData, MyError> {
+    pub(crate) async fn get_data(&self) -> Result<RoadworkData, MyError> {
         let url = self.build_url();
         info!("getData {url}");
-        let json = if cfg!(debug_assertions) {
-            fs::read_to_string("test/example.json").expect("Unable to read file")
-        } else {
-            self.http_service.get_url(&url)?
-        };
+        let json = self.http_service.get_url(&url).await?;
         self.parse_json(&json)
     }
 
@@ -85,18 +80,10 @@ impl OpendataService {
     }
 
     fn is_valid(roadwork: &Roadwork) -> bool {
-        if roadwork.longitude == 0.0 && roadwork.latitude == 00.0 {
+        if roadwork.longitude == 0.0 && roadwork.latitude == 0.0 {
             warn!("{roadwork:?} is invalid because it has no location");
             return false;
         }
-        //        if (roadwork.getStart() == 0) {
-        //            logger.warn("{} is invalid because it's start date is 0", roadwork);
-        //            return false;
-        //        }
-        //        if (roadwork.getEnd() == 0) {
-        //            logger.warn("{} is invalid because it's end date is 0", roadwork);
-        //            return false;
-        //        }
         true
     }
 
@@ -193,7 +180,7 @@ impl OpendataService {
                 "Cannot parse date as dateParse is null".to_string(),
             ));
         }
-        let current_year = chrono::Local::now().year();
+        let current_year = chrono::Utc::now().year();
         let date_parser = date_parser.as_ref().unwrap();
         let value = node.get_path(&date_parser.path)?;
         let mut result =
@@ -228,7 +215,7 @@ impl OpendataService {
     }
 
     fn get_date_range(&self, node: &Value) -> Result<DateRange, MyError> {
-        let current_year = chrono::Local::now().year();
+        let current_year = chrono::Utc::now().year();
         let start_time = self
             .parse_date(node, &self.service_descriptor.from)
             .map(|date_result| date_result.date)

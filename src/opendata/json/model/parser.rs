@@ -2,9 +2,9 @@ use crate::opendata::json::model::date_result::DateResult;
 use chrono::{DateTime, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Parser {
     /// the matcher is a regexp that will extract the date format from a text
     pub(crate) matcher: String,

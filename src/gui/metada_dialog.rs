@@ -35,11 +35,10 @@ impl<'a> MetadataDialog<'a> {
                         if let Some(lic) = self.metadata.licence_name() {
                             ui.label(RichText::new("License:").strong());
                             if let Some(url) = self.metadata.licence_url() {
-                                // Show license name, and a clickable URL below it
                                 ui.vertical(|ui| {
                                     ui.add(Label::new(lic).wrap_mode(TextWrapMode::Wrap));
                                     if Self::show_link(ui, url).clicked() {
-                                        let _ = open::that(url);
+                                        Self::open_url(url);
                                     }
                                 });
                             } else {
@@ -75,10 +74,17 @@ impl<'a> MetadataDialog<'a> {
             });
     }
 
+    fn open_url(url: &str) {
+        web_sys::window()
+            .unwrap()
+            .open_with_url_and_target(url, "_blank")
+            .ok();
+    }
+
     fn add_row_link(ui: &mut Ui, label: &str, value: &str) {
         ui.label(RichText::new(label).strong());
         if Self::show_link(ui, value).clicked() {
-            let _ = open::that(value);
+            Self::open_url(value);
         }
         ui.end_row();
     }

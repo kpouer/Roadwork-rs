@@ -1,19 +1,13 @@
 use crate::model::roadwork::Roadwork;
+use crate::now_millis;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct RoadworkData {
-    /**
-     * The name of the opendata source
-     */
     pub(crate) source: String,
     pub(crate) roadworks: HashMap<String, Roadwork>,
-    /**
-     * The date of the last update
-     */
-    pub(crate) created: Duration,
+    pub(crate) created: u64,
 }
 
 impl<'a> IntoIterator for &'a mut RoadworkData {
@@ -34,7 +28,7 @@ impl RoadworkData {
         Self {
             source: source.to_string(),
             roadworks: roadworks_map,
-            created: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+            created: now_millis(),
         }
     }
 

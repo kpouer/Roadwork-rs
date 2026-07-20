@@ -1,41 +1,38 @@
-#![windows_subsystem = "windows"]
-
-use egui_extras::install_image_loaders;
+use eframe::wasm_bindgen::JsCast;
 use log::LevelFilter;
+use roadworkapp_lib::database::RoadworkDb;
 use roadworkapp_lib::roadwork_app::RoadworkApp;
-use roadworkapp_lib::settings::Settings;
+use std::sync::Arc;
 
-fn main() -> eframe::Result {
-    egui_logger::builder()
-        .max_level(LevelFilter::Info)
-        .init()
-        .unwrap();
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_app_id("Roadwork")
-            .with_icon(icon_data())
-            .with_min_inner_size([320.0, 200.0]),
-        persistence_path: Settings::settings_folder(),
-        persist_window: true,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Roadwork",
-        options,
-        Box::new(|ctx| {
-            install_image_loaders(&ctx.egui_ctx);
-            let mut app = RoadworkApp::new(ctx.egui_ctx.clone());
-            app.load_data();
-            Ok(Box::new(app))
-        }),
-    )
-}
+fn main() {
+    eframe::WebLogger::init(LevelFilter::Info).ok();
 
-fn icon_data() -> egui::IconData {
-    let app_icon_png_bytes = include_bytes!("../media/icon.png");
+    let web_options = eframe::WebOptions::default();
 
-    match eframe::icon_data::from_png_bytes(app_icon_png_bytes) {
-        Ok(icon_data) => icon_data,
-        Err(err) => panic!("Failed to load app icon: {err}"),
-    }
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let db = Arc::new(RoadworkDb::new().await);
+
+        eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(move |cc| {
+                    egui_extras::install_image_loaders(&cc.egui_ctx);
+                    Ok(Box::new(RoadworkApp::new(cc.egui_ctx.clone(), db)))
+                }),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
 }

@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 pub(crate) struct SynchronizationService {
     settings: Arc<Mutex<Settings>>,
     http_service: HttpService,
-    // localizationService: LocalizationService,
 }
 
 impl SynchronizationService {
@@ -24,12 +23,7 @@ impl SynchronizationService {
 }
 
 impl SynchronizationService {
-    /**
-     * Synchronize the data with the server
-     *
-     * @param roadwork_data the data to synchronize. Status might be updated
-     */
-    pub(crate) fn synchronize(&self, roadwork_data: &mut RoadworkData) {
+    pub(crate) async fn synchronize(&self, roadwork_data: &mut RoadworkData) {
         if self.settings.lock().unwrap().synchronization_enabled {
             info!("synchronize");
             let url = self.get_url(&roadwork_data.source);
@@ -39,16 +33,20 @@ impl SynchronizationService {
                 body.insert(roadwork.id.clone(), roadwork.sync_data.clone());
             });
             let headers = self.create_headers();
-            let synchronized_data: HashMap<String, SyncData> = self
+            match self
                 .http_service
-                .post_json_object(&url, &body, &headers)
-                .unwrap();
-
-            for (id, server_sync_data) in synchronized_data {
-                match roadwork_data.get_mut_roadwork(&id) {
-                    Some(roadwork) => roadwork.sync_data.copy(&server_sync_data),
-                    None => warn!("Roadwork {id} not found"),
+                .post_json_object::<HashMap<String, SyncData>>(&url, &body, &headers)
+                .await
+            {
+                Ok(synchronized_data) => {
+                    for (id, server_sync_data) in synchronized_data {
+                        match roadwork_data.get_mut_roadwork(&id) {
+                            Some(roadwork) => roadwork.sync_data.copy(&server_sync_data),
+                            None => warn!("Roadwork {id} not found"),
+                        }
+                    }
                 }
+                Err(e) => warn!("Synchronization failed: {e}"),
             }
         }
     }
