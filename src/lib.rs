@@ -1,35 +1,11 @@
-use jsonpath_rust::parser::errors::JsonPathError;
-use thiserror::Error;
-
-pub mod database;
+mod convert;
 mod gui;
-mod json_tools;
-mod model;
-mod opendata;
 pub mod roadwork_app;
-mod service;
-pub mod settings;
 
-pub(crate) fn now_millis() -> u64 {
-    chrono::Utc::now().timestamp_millis() as u64
-}
-
-#[derive(Error, Debug)]
-pub(crate) enum MyError {
-    #[error("Date Parse Error {0:?}")]
-    ChronoParseError(#[from] chrono::ParseError),
-    #[error("Http Error {0:?}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("Parse Int Error {0:?}")]
-    ParseIntError(#[from] std::num::ParseIntError),
-    #[error("{0}")]
-    RoadworkParsingError(String),
-    #[error("{0}")]
-    ParsingError(String),
-    #[error("{0}")]
-    JsonParsingError(String),
-    #[error("{0}")]
-    JsonPathError(#[from] JsonPathError),
-    #[error("{0}")]
-    SerdeError(#[from] serde_json::Error),
-}
+pub use roadwork_core::MyError;
+pub use roadwork_core::http_service;
+pub use roadwork_core::json_tools;
+pub use roadwork_core::model;
+pub use roadwork_core::now_millis;
+pub use roadwork_core::opendata;
+pub use roadwork_core::settings;

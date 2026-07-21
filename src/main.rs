@@ -1,8 +1,6 @@
 use eframe::wasm_bindgen::JsCast;
 use log::LevelFilter;
-use roadworkapp_lib::database::RoadworkDb;
 use roadworkapp_lib::roadwork_app::RoadworkApp;
-use std::sync::Arc;
 
 fn main() {
     eframe::WebLogger::init(LevelFilter::Info).ok();
@@ -21,15 +19,13 @@ fn main() {
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .expect("the_canvas_id was not a HtmlCanvasElement");
 
-        let db = Arc::new(RoadworkDb::new().await);
-
         eframe::WebRunner::new()
             .start(
                 canvas,
                 web_options,
                 Box::new(move |cc| {
                     egui_extras::install_image_loaders(&cc.egui_ctx);
-                    Ok(Box::new(RoadworkApp::new(cc.egui_ctx.clone(), db)))
+                    Ok(Box::new(RoadworkApp::new(cc.egui_ctx.clone())))
                 }),
             )
             .await

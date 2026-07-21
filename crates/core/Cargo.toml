@@ -1,0 +1,17 @@
+[package]
+name = "roadwork-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+roadwork-sync = { path = "../sync", version = "0.1.0" }
+chrono = "0.4"
+chrono-tz = "0.10"
+jsonpath-rust = "1.0.4"
+log = "0.4"
+regex = "1.12"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+urlencoding = "2.1.3"

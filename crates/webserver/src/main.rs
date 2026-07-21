@@ -1,25 +1,108 @@
+mod api;
+mod bootstrap;
+pub mod descriptor_manager;
+mod state;
+mod storage;
+
+use crate::descriptor_manager::DescriptorManager;
 use axum::{
     Router,
     body::Body,
     http::{Response, StatusCode, header},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post, put},
 };
+use state::{AppState, SyncConfig};
 use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use storage::SqliteStorage;
+use tower_http::cors::{Any, CorsLayer};
 
 include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
+    let data_dir = std::env::var("DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("./data"));
+
+    let storage = Arc::new(SqliteStorage::new(&data_dir).await);
+
+    let descriptor_manager = DescriptorManager::new(data_dir);
+    bootstrap::ensure_descriptors_available(&descriptor_manager).await;
+
+    let sync_config = load_sync_config();
+
+    let state = AppState {
+        descriptor_manager: Arc::new(descriptor_manager),
+        storage: Arc::clone(&storage),
+        sync_config,
+        default_service: Arc::new(Mutex::new(Some("France-Paris".to_string()))),
+    };
+
+    let refresh_state = state.clone();
+    tokio::spawn(async move {
+        let interval_secs: u64 = std::env::var("REFRESH_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(86_400);
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        loop {
+            interval.tick().await;
+            log::info!("Daily refresh triggered");
+            refresh_state.refresh_all().await;
+        }
+    });
+
     let app = Router::new()
+        .route("/api/health", get(|| async { "ok" }))
+        .route("/api/services", get(api::services::get_services))
+        .route("/api/roadworks", get(api::roadworks::get_roadworks))
+        .route(
+            "/api/roadworks/refresh",
+            post(api::roadworks::refresh_roadworks),
+        )
+        .route(
+            "/api/roadworks/refresh-all",
+            post(api::roadworks::refresh_all_roadworks),
+        )
+        .route(
+            "/api/roadworks/{team}/{id}/status",
+            put(api::status::update_status),
+        )
+        .route("/api/sync", post(api::sync::trigger_sync))
         .route("/", get(index_handler))
-        .route("/health", get(|| async { "ok" }))
-        .fallback(static_handler);
+        .fallback(static_handler)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
+        .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     println!("Listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+fn load_sync_config() -> Option<SyncConfig> {
+    let url = std::env::var("SYNC_URL").ok()?;
+    let team = std::env::var("SYNC_TEAM").unwrap_or_default();
+    let login = std::env::var("SYNC_LOGIN").unwrap_or_default();
+    let password = std::env::var("SYNC_PASSWORD").unwrap_or_default();
+
+    Some(SyncConfig {
+        enabled: true,
+        url,
+        team,
+        login,
+        password,
+    })
 }
 
 fn find_file(name: &str) -> Option<&'static [u8]> {

@@ -1,0 +1,10 @@
+[package]
+name = "roadwork-wme"
+version = "0.1.0"
+edition = "2024"
+description = "WME (Waze Map Editor) userscript for Roadwork"
+publish = false
+
+[lib]
+name = "roadwork_wme"
+path = "src/lib.rs"

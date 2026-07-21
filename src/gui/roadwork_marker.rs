@@ -1,7 +1,7 @@
-use crate::model::roadwork::Roadwork;
 use eframe::emath::Pos2;
 use eframe::epaint::{Color32, Stroke};
 use egui::{Response, Sense, Ui, Widget};
+use roadwork_core::model::roadwork::Roadwork;
 use roadwork_sync::Status;
 use walkers::{Position, Projector};
 

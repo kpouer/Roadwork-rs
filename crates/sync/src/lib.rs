@@ -4,14 +4,14 @@ use strum_macros::{Display, IntoStaticStr};
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct SyncData {
     #[serde(rename = "localUpdateTime")]
-    pub(crate) local_update_time: u64,
+    pub local_update_time: u64,
     /**
      * Timestamp of the last server change
      */
     #[serde(rename = "serverUpdateTime")]
-    pub(crate) server_update_time: u64,
+    pub server_update_time: u64,
     pub status: Status,
-    pub(crate) dirty: bool,
+    pub dirty: bool,
 }
 
 impl SyncData {
@@ -22,10 +22,26 @@ impl SyncData {
         }
     }
 
+    pub fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
+
     pub fn copy(&mut self, other: &SyncData) {
         self.local_update_time = other.local_update_time;
         self.server_update_time = other.server_update_time;
         self.status = other.status;
+    }
+
+    pub fn local_update_time(&self) -> u64 {
+        self.local_update_time
+    }
+
+    pub fn server_update_time(&self) -> u64 {
+        self.server_update_time
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
     }
 
     pub(crate) fn update_time(&mut self, server_update_time: u64) {
@@ -55,4 +71,17 @@ pub enum Status {
     Ignored,
     Finished,
     Treated,
+}
+
+impl<T: AsRef<str>> From<T> for Status {
+    fn from(s: T) -> Self {
+        match s.as_ref() {
+            "New" => Status::New,
+            "Later" => Status::Later,
+            "Ignored" => Status::Ignored,
+            "Finished" => Status::Finished,
+            "Treated" => Status::Treated,
+            _ => Status::New,
+        }
+    }
 }

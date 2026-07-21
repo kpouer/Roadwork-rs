@@ -1,7 +1,7 @@
-use crate::opendata::json::model::metadata::Metadata;
 use eframe::epaint::text::TextWrapMode;
 use egui::{Context, Response, RichText};
 use egui::{Label, Ui};
+use roadwork_core::opendata::json::model::metadata::Metadata;
 
 pub(crate) struct MetadataDialog<'a> {
     open: &'a mut bool,

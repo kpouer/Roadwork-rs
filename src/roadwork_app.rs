@@ -1,14 +1,9 @@
-use crate::database::RoadworkDb;
+use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::logs_panel::LogsPanel;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::status_panel::StatusPanel;
-use crate::model::roadwork_data::RoadworkData;
-use crate::opendata::bootstrap;
-use crate::opendata::json::model::lat_lng::LatLng;
-use crate::opendata::open_data_service_manager::OpenDataServiceManager;
-use crate::settings::Settings;
 use chrono::DateTime;
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
@@ -16,23 +11,28 @@ use egui::text::LayoutJob;
 use egui::{Button, Context, Label, Response, RichText, Ui};
 use egui_notify::Toasts;
 use log::info;
+use roadwork_core::model::roadwork_data::RoadworkData;
+use roadwork_core::opendata::json::model::lat_lng::LatLng;
+use roadwork_core::opendata::json::model::metadata::Metadata;
 use std::sync::{Arc, Mutex};
 use walkers::sources::OpenStreetMap;
 use walkers::{HttpTiles, Map, MapMemory, Projector};
 
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
+const API_BASE: &str = "/api";
 
 pub struct RoadworkApp {
     ctx: Context,
-    db: Arc<RoadworkDb>,
     tiles: HttpTiles,
     map_memory: MapMemory,
-    settings: Arc<Mutex<Settings>>,
-    open_data_service_manager: Arc<Mutex<Option<OpenDataServiceManager>>>,
     position: LatLng,
+    services: Vec<String>,
+    selected_service: String,
     roadwork_data: Arc<Mutex<Option<RoadworkData>>>,
+    current_metadata: Arc<Mutex<Option<Metadata>>>,
     selected_roadwork: Option<String>,
+    hide_expired: bool,
     logs_panel_open: bool,
     toasts: Toasts,
     show_about_dialog: bool,
@@ -40,23 +40,20 @@ pub struct RoadworkApp {
 }
 
 impl RoadworkApp {
-    pub fn new(egui_ctx: Context, db: Arc<RoadworkDb>) -> Self {
-        let settings: Arc<Mutex<Settings>> = Arc::new(Mutex::new(Settings::default()));
-        let position = settings.lock().unwrap().map_center.unwrap_or_default();
-        let roadwork_data: Arc<Mutex<Option<RoadworkData>>> = Arc::new(Mutex::new(None));
-        let open_data_service_manager: Arc<Mutex<Option<OpenDataServiceManager>>> =
-            Arc::new(Mutex::new(None));
+    pub fn new(egui_ctx: Context) -> Self {
+        let position = LatLng::default();
 
         let app = Self {
             ctx: egui_ctx.clone(),
-            db,
             tiles: HttpTiles::new(OpenStreetMap, egui_ctx.clone()),
             map_memory: Default::default(),
-            open_data_service_manager,
-            settings: Arc::clone(&settings),
             position,
-            roadwork_data,
+            services: Vec::new(),
+            selected_service: "France-Paris".to_string(),
+            roadwork_data: Arc::new(Mutex::new(None)),
+            current_metadata: Arc::new(Mutex::new(None)),
             selected_roadwork: None,
+            hide_expired: false,
             logs_panel_open: false,
             toasts: Toasts::default(),
             show_about_dialog: false,
@@ -68,58 +65,59 @@ impl RoadworkApp {
     }
 
     fn spawn_init(&self) {
-        let db = Arc::clone(&self.db);
-        let settings = Arc::clone(&self.settings);
         let roadwork_data = Arc::clone(&self.roadwork_data);
-        let open_data_service_manager = Arc::clone(&self.open_data_service_manager);
         let ctx = self.ctx.clone();
+        let selected_service = self.selected_service.clone();
 
         wasm_bindgen_futures::spawn_local(async move {
-            let loaded_settings = db.load_settings().await;
-            *settings.lock().unwrap() = loaded_settings;
+            let fetched_services = fetch_services().await.unwrap_or_default();
 
-            bootstrap::ensure_opendata_available(&db).await;
+            if !fetched_services.is_empty() {
+                let service = if fetched_services.contains(&selected_service) {
+                    selected_service
+                } else {
+                    fetched_services[0].clone()
+                };
 
-            let manager = OpenDataServiceManager::new(Arc::clone(&db), Arc::clone(&settings)).await;
-
-            let saved_center = settings.lock().unwrap().map_center;
-            let _pos = saved_center.unwrap_or_else(|| manager.get_center());
-            let data = manager.get_data().await;
-
-            *open_data_service_manager.lock().unwrap() = Some(manager);
-            *roadwork_data.lock().unwrap() = data;
+                match fetch_roadworks(&service).await {
+                    Ok(data) => {
+                        *roadwork_data.lock().unwrap() = Some(data);
+                    }
+                    Err(e) => log::error!("Failed to fetch roadworks: {e}"),
+                }
+            }
 
             ctx.request_repaint();
         });
     }
 
     fn reload_data(&self) {
-        info!("reload data");
-        let open_data_service_manager = Arc::clone(&self.open_data_service_manager);
         let roadwork_data = Arc::clone(&self.roadwork_data);
         let ctx = self.ctx.clone();
+        let service = self.selected_service.clone();
 
         wasm_bindgen_futures::spawn_local(async move {
-            if let Some(manager) = open_data_service_manager.lock().unwrap().as_ref() {
-                manager.delete_cache().await;
-                let data = manager.get_data().await;
-                *roadwork_data.lock().unwrap() = data;
+            match refresh_roadworks(&service).await {
+                Ok(data) => {
+                    *roadwork_data.lock().unwrap() = Some(data);
+                }
+                Err(e) => log::error!("Failed to refresh roadworks: {e}"),
             }
             ctx.request_repaint();
         });
     }
 
     fn load_data(&self) {
-        info!("Loading data");
-        let _settings = Arc::clone(&self.settings);
         let roadwork_data = Arc::clone(&self.roadwork_data);
-        let open_data_service_manager = Arc::clone(&self.open_data_service_manager);
         let ctx = self.ctx.clone();
+        let service = self.selected_service.clone();
 
         wasm_bindgen_futures::spawn_local(async move {
-            if let Some(manager) = open_data_service_manager.lock().unwrap().as_ref() {
-                let data = manager.get_data().await;
-                *roadwork_data.lock().unwrap() = data;
+            match fetch_roadworks(&service).await {
+                Ok(data) => {
+                    *roadwork_data.lock().unwrap() = Some(data);
+                }
+                Err(e) => log::error!("Failed to fetch roadworks: {e}"),
             }
             ctx.request_repaint();
         });
@@ -156,101 +154,97 @@ impl RoadworkApp {
 
         if let Some(id) = selected_id {
             let mut guard = self.roadwork_data.lock().unwrap();
-            if let Some(roadwork_data) = guard.as_mut() {
-                if let Some(roadwork) = roadwork_data.roadworks.get_mut(&id) {
-                    egui::Panel::left("left_panel").show_inside(ui, |ui| {
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new("Id:").strong());
-                            ui.add(Label::new(&roadwork.id).wrap_mode(TextWrapMode::Truncate));
-                            ui.horizontal(|ui| {
-                                egui::Grid::new("loc_grid")
-                                    .num_columns(2)
-                                    .spacing([4.0, 4.0])
-                                    .show(ui, |ui| {
-                                        ui.label(RichText::new("Latitude:").strong());
-                                        ui.add(
-                                            Label::new(roadwork.latitude.to_string())
-                                                .wrap_mode(TextWrapMode::Truncate),
-                                        );
-                                        ui.end_row();
-                                        ui.label(RichText::new("Longitude:").strong());
-                                        ui.add(
-                                            Label::new(roadwork.longitude.to_string())
-                                                .wrap_mode(TextWrapMode::Truncate),
-                                        );
-                                        ui.end_row();
-                                    });
-                                if ui.button("WME").clicked() {
-                                    let url = url
-                                        .replace("${lat}", &format!("{}", roadwork.latitude))
-                                        .replace("${lon}", &format!("{}", roadwork.longitude));
-                                    Self::open_url(&url);
-                                }
-                            });
-
-                            egui::Grid::new("time_grid")
+            if let Some(roadwork_data) = guard.as_mut()
+                && let Some(roadwork) = roadwork_data.roadworks.get_mut(&id)
+            {
+                egui::Panel::left("left_panel").show_inside(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Id:").strong());
+                        ui.add(Label::new(&roadwork.id).wrap_mode(TextWrapMode::Truncate));
+                        ui.horizontal(|ui| {
+                            egui::Grid::new("loc_grid")
                                 .num_columns(2)
                                 .spacing([4.0, 4.0])
                                 .show(ui, |ui| {
-                                    ui.label(RichText::new("Start:").strong());
-                                    ui.label(
-                                        DateTime::from_timestamp_millis(roadwork.start)
-                                            .expect("Parsed start date")
-                                            .format("%d/%m/%Y %H:%M")
-                                            .to_string(),
+                                    ui.label(RichText::new("Latitude:").strong());
+                                    ui.add(
+                                        Label::new(roadwork.latitude.to_string())
+                                            .wrap_mode(TextWrapMode::Truncate),
                                     );
                                     ui.end_row();
-                                    ui.label(RichText::new("End:").strong());
-                                    ui.label(
-                                        DateTime::from_timestamp_millis(roadwork.end)
-                                            .expect("Parsed start date")
-                                            .format("%d/%m/%Y %H:%M")
-                                            .to_string(),
+                                    ui.label(RichText::new("Longitude:").strong());
+                                    ui.add(
+                                        Label::new(roadwork.longitude.to_string())
+                                            .wrap_mode(TextWrapMode::Truncate),
                                     );
                                     ui.end_row();
                                 });
-
-                            if let Some(text) = &roadwork.road {
-                                ui.label(RichText::new("Road:").strong());
-                                ui.add(Label::new(text).wrap_mode(TextWrapMode::Truncate));
+                            if ui.button("WME").clicked() {
+                                let url = url
+                                    .replace("${lat}", &format!("{}", roadwork.latitude))
+                                    .replace("${lon}", &format!("{}", roadwork.longitude));
+                                Self::open_url(&url);
                             }
-                            if let Some(text) = &roadwork.location_details {
-                                ui.label(RichText::new("Location details:").strong());
-                                ui.label(Self::get_multiline_text(text));
-                            }
-                            if let Some(text) = &roadwork.impact_circulation_detail {
-                                ui.label(RichText::new("Impact:").strong());
-                                ui.label(Self::get_multiline_text(text));
-                            }
-                            if let Some(text) = &roadwork.description {
-                                ui.label(RichText::new("Description:").strong());
-                                ui.label(Self::get_multiline_text(text));
-                            }
-
-                            if ui
-                                .add_enabled(!roadwork.url.is_empty(), Button::new("Open URL"))
-                                .clicked()
-                            {
-                                Self::open_url(&roadwork.url);
-                            }
-
-                            StatusPanel::new(roadwork).show(ui);
                         });
+
+                        egui::Grid::new("time_grid")
+                            .num_columns(2)
+                            .spacing([4.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("Start:").strong());
+                                ui.label(
+                                    DateTime::from_timestamp_millis(roadwork.start)
+                                        .expect("Parsed start date")
+                                        .format("%d/%m/%Y %H:%M")
+                                        .to_string(),
+                                );
+                                ui.end_row();
+                                ui.label(RichText::new("End:").strong());
+                                ui.label(
+                                    DateTime::from_timestamp_millis(roadwork.end)
+                                        .expect("Parsed start date")
+                                        .format("%d/%m/%Y %H:%M")
+                                        .to_string(),
+                                );
+                                ui.end_row();
+                            });
+
+                        if let Some(text) = &roadwork.road {
+                            ui.label(RichText::new("Road:").strong());
+                            ui.add(Label::new(text).wrap_mode(TextWrapMode::Truncate));
+                        }
+                        if let Some(text) = &roadwork.location_details {
+                            ui.label(RichText::new("Location details:").strong());
+                            ui.label(Self::get_multiline_text(text));
+                        }
+                        if let Some(text) = &roadwork.impact_circulation_detail {
+                            ui.label(RichText::new("Impact:").strong());
+                            ui.label(Self::get_multiline_text(text));
+                        }
+                        if let Some(text) = &roadwork.description {
+                            ui.label(RichText::new("Description:").strong());
+                            ui.label(Self::get_multiline_text(text));
+                        }
+
+                        if ui
+                            .add_enabled(!roadwork.url.is_empty(), Button::new("Open URL"))
+                            .clicked()
+                        {
+                            Self::open_url(&roadwork.url);
+                        }
+
+                        StatusPanel::new(roadwork).show(ui);
                     });
-                }
+                });
             }
         }
     }
 
     fn get_wme_url_pattern(&self) -> String {
-        if let Some(manager) = self.open_data_service_manager.lock().unwrap().as_ref() {
-            if let Some(opendataservice) = manager.get_opendata_service() {
-                if let Some(editor_pattern) =
-                    &opendataservice.service_descriptor.metadata.editor_pattern
-                {
-                    return editor_pattern.to_string();
-                }
-            }
+        if let Some(metadata) = self.current_metadata.lock().unwrap().as_ref()
+            && let Some(editor_pattern) = &metadata.editor_pattern
+        {
+            return editor_pattern.to_string();
         }
         DEFAULT_WME_URL.to_string()
     }
@@ -271,25 +265,17 @@ impl RoadworkApp {
         });
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                let opendata_service_name =
-                    self.settings.lock().unwrap().opendata_service.to_string();
+                let current_service = self.selected_service.clone();
                 egui::ComboBox::from_label("")
-                    .selected_text(opendata_service_name)
+                    .selected_text(&current_service)
                     .show_ui(ui, |ui| {
-                        let services = self
-                            .open_data_service_manager
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .map(|m| m.services().to_owned())
-                            .unwrap_or_default();
-                        for service in services {
-                            let service_name = service.to_string();
+                        for service in &self.services {
+                            let service_name = service.clone();
                             if ui
                                 .selectable_value(
-                                    &mut self.settings.lock().unwrap().opendata_service,
-                                    service.to_string(),
-                                    service,
+                                    &mut self.selected_service,
+                                    service.clone(),
+                                    service.clone(),
                                 )
                                 .changed()
                             {
@@ -301,10 +287,7 @@ impl RoadworkApp {
                 if ui.button("Reload").clicked() {
                     self.reload_data();
                 }
-                ui.checkbox(
-                    &mut self.settings.lock().unwrap().hide_expired,
-                    "Hide expired",
-                );
+                ui.checkbox(&mut self.hide_expired, "Hide expired");
                 LogsPanel::new(&mut self.logs_panel_open).show_button(ui);
 
                 if ui.button("Info").clicked() {
@@ -314,14 +297,7 @@ impl RoadworkApp {
         });
 
         if self.show_info_dialog {
-            if let Some(ods) = self
-                .open_data_service_manager
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|m| m.get_opendata_service())
-            {
-                let md = &ods.service_descriptor.metadata;
+            if let Some(md) = self.current_metadata.lock().unwrap().as_ref() {
                 MetadataDialog::new(&mut self.show_info_dialog, md).show(ui.ctx());
             } else {
                 let screen = ui.ctx().content_rect().size();
@@ -375,7 +351,7 @@ impl App for RoadworkApp {
             let map = Map::new(
                 Some(&mut self.tiles),
                 &mut self.map_memory,
-                self.position.into(),
+                latlng_to_position(self.position),
             )
             .zoom_gesture(true)
             .double_click_to_zoom(true)
@@ -383,18 +359,20 @@ impl App for RoadworkApp {
             let response = ui.add(map);
 
             if let Some(center) = self.map_memory.detached() {
-                self.position = center.into();
+                self.position = position_to_latlng(center);
             }
 
             if let Some(roadwork_data) = self.roadwork_data.lock().unwrap().as_ref() {
-                let projector =
-                    Projector::new(response.rect, &self.map_memory, self.position.into());
+                let projector = Projector::new(
+                    response.rect,
+                    &self.map_memory,
+                    latlng_to_position(self.position),
+                );
                 if response.clicked() {
                     self.selected_roadwork = None;
                 }
-                let hide_expired = self.settings.lock().unwrap().hide_expired;
                 for (id, marker) in roadwork_data.roadworks.iter() {
-                    if hide_expired && marker.is_expired() {
+                    if self.hide_expired && marker.is_expired() {
                         continue;
                     }
                     if ui
@@ -412,30 +390,36 @@ impl App for RoadworkApp {
     }
 
     fn save(&mut self, _storage: &mut dyn Storage) {
-        info!("Saving data");
-
-        {
-            let mut settings = self.settings.lock().unwrap();
-            settings.map_center = Some(self.position);
-            let z = self.map_memory.zoom();
-            settings.map_zoom = Some(z);
-        }
-
-        let db = Arc::clone(&self.db);
-        let settings = Arc::clone(&self.settings);
-        let roadwork_data = Arc::clone(&self.roadwork_data);
-
-        wasm_bindgen_futures::spawn_local(async move {
-            let s = settings.lock().unwrap().clone();
-            db.save_settings(&s).await;
-
-            if let Some(data) = roadwork_data.lock().unwrap().as_ref() {
-                db.save_cache(&data.source, data).await;
-            }
-        });
+        info!("Saving data (frontend state is managed by backend)");
     }
 
     fn persist_egui_memory(&self) -> bool {
         true
     }
+}
+
+// --- API Client functions ---
+
+async fn fetch_services() -> Result<Vec<String>, reqwest::Error> {
+    let url = format!("{API_BASE}/services");
+    let resp = reqwest::get(&url).await?.json::<Vec<String>>().await?;
+    Ok(resp)
+}
+
+async fn fetch_roadworks(service: &str) -> Result<RoadworkData, reqwest::Error> {
+    let url = format!("{API_BASE}/roadworks?service={service}");
+    let resp = reqwest::get(&url).await?.json::<RoadworkData>().await?;
+    Ok(resp)
+}
+
+async fn refresh_roadworks(service: &str) -> Result<RoadworkData, reqwest::Error> {
+    let url = format!("{API_BASE}/roadworks/refresh?service={service}");
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .send()
+        .await?
+        .json::<RoadworkData>()
+        .await?;
+    Ok(resp)
 }
