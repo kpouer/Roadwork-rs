@@ -26,12 +26,110 @@ fn base64_encode(data: &[u8]) -> String {
     result
 }
 
+fn copy_with_replacements(
+    static_dir: &std::path::Path,
+    out_dir: &std::path::Path,
+    filename: &str,
+    dest_filename: &str,
+    version: &str,
+    build_date: &str,
+) {
+    let src = static_dir.join(filename);
+    let dest = out_dir.join(dest_filename);
+    let content = fs::read_to_string(&src).unwrap_or_else(|e| {
+        panic!("Failed to read {}: {e}", src.display());
+    });
+    let updated = content
+        .replace("__VERSION__", version)
+        .replace("__BUILD_DATE__", build_date);
+    fs::write(&dest, &updated).unwrap_or_else(|e| {
+        panic!("Failed to write {}: {e}", dest.display());
+    });
+}
+
+fn format_build_date() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // days since epoch
+    let days = secs / 86400;
+    let time_secs = secs % 86400;
+    let h = time_secs / 3600;
+    let m = (time_secs % 3600) / 60;
+    let s = time_secs % 60;
+
+    // Simple date calculation (Zeller-like, valid from 2000-03-01)
+    let y = 2000i64;
+    let mut year = y;
+    let mut remaining = days as i64 - (date_to_days(y, 3, 1) as i64);
+    if remaining < 0 {
+        year = 1999;
+        remaining = days as i64 - (date_to_days(1999, 3, 1) as i64);
+    }
+    loop {
+        let days_in_year = if is_leap(year) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        year += 1;
+    }
+    let month_days = if is_leap(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut month = 3usize;
+    let mut day = remaining;
+    for (i, &md) in month_days.iter().enumerate().cycle().skip(2) {
+        if day < md as i64 {
+            month = i + 1;
+            break;
+        }
+        day -= md as i64;
+    }
+
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        year,
+        month,
+        day + 1,
+        h,
+        m,
+        s
+    )
+}
+
+fn is_leap(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn date_to_days(year: i64, month: u32, day: u32) -> u64 {
+    let mut y = year;
+    let mut m = month as i64;
+    if m <= 2 {
+        y -= 1;
+        m += 12;
+    }
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (m - 3) + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    (era * 146097 + doe) as u64
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let static_dir = manifest_dir.join("static");
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
     let out_dir = workspace_root.join("target/wme");
     let wasm_crate_dir = manifest_dir.parent().unwrap().join("wme-wasm");
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap();
+    let build_date = format_build_date();
+
+    // Expose build date to the crate at compile time
+    println!("cargo:rustc-env=WME_BUILD_DATE={build_date}");
 
     println!("cargo:rerun-if-changed=static");
     println!("cargo:rerun-if-changed=../wme-wasm/src");
@@ -72,18 +170,32 @@ fn main() {
     fs::write(out_dir.join("wasm_bytes.js"), &wasm_js).expect("Failed to write wasm_bytes.js");
 
     // --- Copy static files into extension directory ---
-    fs::copy(
-        static_dir.join("manifest.json"),
-        out_dir.join("manifest.json"),
-    )
-    .expect("Failed to copy manifest.json");
+    copy_with_replacements(
+        &static_dir,
+        &out_dir,
+        "manifest.json",
+        "manifest.json",
+        &version,
+        &build_date,
+    );
+    copy_with_replacements(
+        &static_dir,
+        &out_dir,
+        "meta.js",
+        "meta.js",
+        &version,
+        &build_date,
+    );
+    copy_with_replacements(
+        &static_dir,
+        &out_dir,
+        "roadwork-wme.js",
+        "inject.js",
+        &version,
+        &build_date,
+    );
     fs::copy(static_dir.join("content.js"), out_dir.join("content.js"))
         .expect("Failed to copy content.js");
-    fs::copy(
-        static_dir.join("roadwork-wme.js"),
-        out_dir.join("inject.js"),
-    )
-    .expect("Failed to copy inject.js");
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))
         .expect("Failed to copy style.css");
     fs::copy(

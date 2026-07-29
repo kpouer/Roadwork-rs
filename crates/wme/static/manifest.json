@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Roadwork for WME",
-    "version": "0.2.0",
+    "version": "__VERSION__",
     "description": "Affiche les chantiers routiers dans Waze Map Editor",
     "content_security_policy": {
         "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

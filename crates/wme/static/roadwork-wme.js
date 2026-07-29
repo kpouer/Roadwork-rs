@@ -1058,6 +1058,11 @@ async function buildPanel(tabPane) {
     heading.textContent = "Roadwork Settings";
     panelEl.appendChild(heading);
 
+    const versionLine = document.createElement("div");
+    versionLine.style.cssText = "font-size:11px;color:#888;margin-bottom:8px;";
+    versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
+    panelEl.appendChild(versionLine);
+
     const field1 = document.createElement("div");
     field1.className = "roadwork-field";
     const lbl1 = document.createElement("label");

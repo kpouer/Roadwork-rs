@@ -1,6 +1,7 @@
 use eframe::epaint::text::TextWrapMode;
 use egui::Context;
 use egui::Label;
+use roadwork_wme;
 
 pub(crate) struct AboutDialog<'a> {
     open: &'a mut bool,
