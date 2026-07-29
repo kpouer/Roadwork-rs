@@ -78,9 +78,10 @@ let floatingPanelEl = null;
 let floatingTableBody = null;
 let floatingToggleBtn = null;
 let selectedRoadworkId = null;
-let wktFeatures = [];
+let polygonGroups = {};
+let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
-const WKT_STORAGE_KEY = "roadwork-wme-wkt";
+const POLYGON_GROUPS_KEY = "roadwork-wme-polygon-groups";
 let detailPanelEl = null;
 
 function bootstrap() {
@@ -181,26 +182,39 @@ function clearCache(service) {
     }
 }
 
-function saveWktToStorage() {
+function savePolygonGroups() {
     try {
-        localStorage.setItem(WKT_STORAGE_KEY, JSON.stringify(wktFeatures));
+        localStorage.setItem(POLYGON_GROUPS_KEY, JSON.stringify({ groups: polygonGroups, nextId: nextGroupId }));
     } catch (_) {}
 }
 
-function loadWktFromStorage() {
+function loadPolygonGroups() {
     try {
-        const raw = localStorage.getItem(WKT_STORAGE_KEY);
+        const raw = localStorage.getItem(POLYGON_GROUPS_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === "object" && parsed.groups) {
+                nextGroupId = parsed.nextId || 0;
+                return parsed.groups;
+            }
         }
     } catch (_) {}
-    return [];
+    return {};
 }
 
-function clearWktStorage() {
+function migrateWktFromLegacy() {
     try {
-        localStorage.removeItem(WKT_STORAGE_KEY);
+        const raw = localStorage.getItem("roadwork-wme-wkt");
+        if (!raw) return;
+        const features = JSON.parse(raw);
+        if (Array.isArray(features) && features.length > 0) {
+            const name = "Import " + new Date().toLocaleDateString("fr-FR");
+            const gid = "group_" + nextGroupId;
+            polygonGroups[gid] = { id: gid, name, features, visible: true };
+            nextGroupId++;
+            savePolygonGroups();
+        }
+        localStorage.removeItem("roadwork-wme-wkt");
     } catch (_) {}
 }
 
@@ -374,7 +388,7 @@ function createFloatingPanel() {
     if (isFloatingPanelVisible()) {
         floatingToggleBtn.style.display = "none";
     }
-    document.body.appendChild(floatingToggleBtn);
+    if (toolbarEl) toolbarEl.appendChild(floatingToggleBtn);
 
     let isDragging = false;
     let dragOffsetX = 0;
@@ -789,31 +803,40 @@ function clearMapFeatures() {
     }
 }
 
-function renderWktToMap() {
+function renderAllGroupsToMap() {
     if (!wmeSDK) return;
     try {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
-    if (wktFeatures.length === 0) return;
+    const allFeatures = [];
+    for (const group of Object.values(polygonGroups)) {
+        if (!group.visible) continue;
+        for (const feature of group.features) {
+            allFeatures.push(feature);
+        }
+    }
+    if (allFeatures.length === 0) return;
     try {
         const checked = wmeSDK.LayerSwitcher.isLayerCheckboxChecked({name: WKT_LAYER});
         if (!checked) return;
     } catch (_) {}
     try {
-        wmeSDK.Map.addFeaturesToLayer({features: wktFeatures, layerName: WKT_LAYER});
+        wmeSDK.Map.addFeaturesToLayer({features: allFeatures, layerName: WKT_LAYER});
     } catch (e) {
         console.warn("[Roadwork] Failed to add WKT features:", e);
     }
 }
 
-function clearWktLayer() {
-    wktFeatures = [];
-    clearWktStorage();
+function clearAllPolygonGroups() {
+    polygonGroups = {};
+    nextGroupId = 0;
+    savePolygonGroups();
     try {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
     const statusEl = document.getElementById("rw-wkt-status");
     if (statusEl) statusEl.textContent = "Aucun fichier chargé";
+    updatePolygonesPanel();
 }
 
 function buildWktMarkerIcon() {
@@ -1051,6 +1074,247 @@ function populateServiceSelect(selectEl, services) {
     }
 }
 
+let toolbarEl = null;
+let polygonesPanelEl = null;
+let polygonesToggleBtn = null;
+let polygonesPanelBody = null;
+let polygonesDropzoneEl = null;
+
+function addPolygonGroup(name, features) {
+    const gid = "group_" + nextGroupId;
+    const prefixed = features.map(f => ({ ...f, id: gid + "-" + f.id }));
+    polygonGroups[gid] = { id: gid, name, features: prefixed, visible: true };
+    nextGroupId++;
+    savePolygonGroups();
+    renderAllGroupsToMap();
+    updatePolygonesPanel();
+    return gid;
+}
+
+function removePolygonGroup(id) {
+    delete polygonGroups[id];
+    savePolygonGroups();
+    renderAllGroupsToMap();
+    updatePolygonesPanel();
+}
+
+function togglePolygonGroup(id) {
+    const g = polygonGroups[id];
+    if (!g) return;
+    g.visible = !g.visible;
+    savePolygonGroups();
+    renderAllGroupsToMap();
+    updatePolygonesPanel();
+}
+
+function renamePolygonGroup(id, newName) {
+    const g = polygonGroups[id];
+    if (!g) return;
+    g.name = newName;
+    savePolygonGroups();
+    updatePolygonesPanel();
+}
+
+function createPolygonesUI() {
+    polygonesToggleBtn = document.createElement("button");
+    polygonesToggleBtn.className = "rw-polygones-toggle-btn";
+    polygonesToggleBtn.textContent = "Polygones";
+    polygonesToggleBtn.addEventListener("click", () => {
+        polygonesPanelEl.classList.remove("rw-hidden");
+        polygonesToggleBtn.style.display = "none";
+        updatePolygonesPanel();
+    });
+    if (toolbarEl) toolbarEl.appendChild(polygonesToggleBtn);
+
+    polygonesPanelEl = document.createElement("div");
+    polygonesPanelEl.className = "rw-polygones-panel rw-hidden";
+
+    const header = document.createElement("div");
+    header.className = "rw-polygones-header";
+
+    const title = document.createElement("h4");
+    title.textContent = "Polygones";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = "Fermer";
+    closeBtn.addEventListener("click", () => {
+        polygonesPanelEl.classList.add("rw-hidden");
+        polygonesToggleBtn.style.display = "block";
+    });
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    polygonesPanelBody = document.createElement("div");
+    polygonesPanelBody.className = "rw-polygones-body";
+
+    polygonesDropzoneEl = document.createElement("div");
+    polygonesDropzoneEl.className = "rw-polygones-dropzone";
+    polygonesDropzoneEl.textContent = "D\u00e9posez un fichier .wkt ici";
+
+    polygonesPanelEl.appendChild(header);
+    polygonesPanelEl.appendChild(polygonesPanelBody);
+    polygonesPanelEl.appendChild(polygonesDropzoneEl);
+    document.body.appendChild(polygonesPanelEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    header.addEventListener("mousedown", (e) => {
+        if (e.target.tagName === "BUTTON") return;
+        isDragging = true;
+        const rect = polygonesPanelEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        polygonesPanelEl.style.left = e.clientX - dragOffsetX + "px";
+        polygonesPanelEl.style.top = e.clientY - dragOffsetY + "px";
+        polygonesPanelEl.style.right = "auto";
+        polygonesPanelEl.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+}
+
+function updatePolygonesPanel() {
+    if (!polygonesPanelBody) return;
+    polygonesPanelBody.replaceChildren();
+    const entries = Object.values(polygonGroups);
+    if (entries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "rw-polygones-empty";
+        empty.textContent = "Aucun polygone charg\u00e9";
+        polygonesPanelBody.appendChild(empty);
+        return;
+    }
+    for (const group of entries) {
+        const row = document.createElement("div");
+        row.className = "rw-polygon-group-row";
+
+        const toggleCheck = document.createElement("input");
+        toggleCheck.type = "checkbox";
+        toggleCheck.className = "rw-polygon-group-toggle";
+        toggleCheck.checked = group.visible;
+        toggleCheck.title = group.visible ? "Masquer" : "Afficher";
+        toggleCheck.addEventListener("change", () => togglePolygonGroup(group.id));
+
+        const nameInput = document.createElement("input");
+        nameInput.className = "rw-polygon-group-name";
+        nameInput.type = "text";
+        nameInput.value = group.name;
+        nameInput.addEventListener("blur", () => {
+            if (nameInput.value.trim() && nameInput.value !== group.name) {
+                renamePolygonGroup(group.id, nameInput.value.trim());
+            } else {
+                nameInput.value = group.name;
+            }
+        });
+        nameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") nameInput.blur();
+            if (e.key === "Escape") { nameInput.value = group.name; nameInput.blur(); }
+        });
+
+        const countSpan = document.createElement("span");
+        countSpan.className = "rw-polygon-group-count";
+        const geomCounts = {};
+        for (const f of group.features) {
+            const t = f.properties.geomType;
+            geomCounts[t] = (geomCounts[t] || 0) + 1;
+        }
+        const parts = Object.entries(geomCounts).map(([t, c]) => `${c} ${t}`);
+        countSpan.textContent = "(" + parts.join(", ") + ")";
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "rw-polygon-group-delete";
+        deleteBtn.textContent = "\uD83D\uDDD1";
+        deleteBtn.title = "Supprimer";
+        deleteBtn.addEventListener("click", () => {
+            if (confirm("Supprimer le groupe \u00ab " + group.name + " \u00bb ?")) {
+                removePolygonGroup(group.id);
+            }
+        });
+
+        row.appendChild(toggleBtn);
+        row.appendChild(nameInput);
+        row.appendChild(countSpan);
+        row.appendChild(deleteBtn);
+        polygonesPanelBody.appendChild(row);
+    }
+}
+
+function setupPolygonesDragDrop() {
+    let dragCounter = 0;
+
+    document.addEventListener("dragenter", (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) {
+            polygonesPanelEl.classList.remove("rw-hidden");
+            polygonesToggleBtn.style.display = "none";
+            updatePolygonesPanel();
+            polygonesDropzoneEl.classList.add("rw-polygones-dropzone-active");
+        }
+    });
+
+    document.addEventListener("dragover", (e) => {
+        e.preventDefault();
+    });
+
+    document.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            polygonesDropzoneEl.classList.remove("rw-polygones-dropzone-active");
+        }
+    });
+
+    document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        polygonesDropzoneEl.classList.remove("rw-polygones-dropzone-active");
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        if (!file.name.match(/\.(wkt|txt)$/i)) {
+            alert("Veuillez d\u00e9poser un fichier .wkt ou .txt");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const text = evt.target.result;
+            const features = parseWkt(text);
+            if (features.length === 0) {
+                alert("Aucune g\u00e9om\u00e9trie valide trouv\u00e9e dans le fichier");
+                return;
+            }
+            const fileName = file.name.replace(/\.[^/.]+$/, "");
+            addPolygonGroup(fileName, features);
+            updatePolygonesPanel();
+            if (features.length > 0 && wmeSDK?.Map) {
+                const first = features[0];
+                if (first.geometry.type === 'Point') {
+                    const [lon, lat] = first.geometry.coordinates;
+                    wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+                } else {
+                    const coords = first.geometry.type === 'Polygon' ? first.geometry.coordinates[0] : first.geometry.coordinates;
+                    if (coords && coords.length > 0) {
+                        const mid = Math.floor(coords.length / 2);
+                        const [lon, lat] = coords[mid];
+                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+                    }
+                }
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+
 async function buildPanel(tabPane) {
     panelEl = document.createElement("div");
     panelEl.className = "roadwork-panel";
@@ -1156,17 +1420,8 @@ async function buildPanel(tabPane) {
     wktUploadBtn.textContent = "Charger WKT";
     wktUploadBtn.addEventListener("click", () => wktFileInput.click());
 
-    const wktResetBtn = document.createElement("button");
-    wktResetBtn.className = "roadwork-btn roadwork-btn-secondary roadwork-wkt-btn";
-    wktResetBtn.textContent = "Reset";
-    wktResetBtn.addEventListener("click", () => {
-        clearWktLayer();
-        renderWktToMap();
-    });
-
     wktBtnWrap.appendChild(wktFileInput);
     wktBtnWrap.appendChild(wktUploadBtn);
-    wktBtnWrap.appendChild(wktResetBtn);
     wktSection.appendChild(wktBtnWrap);
 
     const wktStatus = document.createElement("div");
@@ -1188,16 +1443,12 @@ async function buildPanel(tabPane) {
                 wktStatus.textContent = "Aucune géométrie valide trouvée";
                 return;
             }
-            wktFeatures = features;
-            saveWktToStorage();
-            renderWktToMap();
-            const geomCounts = {};
-            for (const f of features) {
-                const t = f.properties.geomType;
-                geomCounts[t] = (geomCounts[t] || 0) + 1;
-            }
-            const parts = Object.entries(geomCounts).map(([t, c]) => `${c} ${t}`);
-            wktStatus.textContent = `${features.length} géométrie(s) chargée(s) : ${parts.join(", ")}`;
+            const fileName = file.name.replace(/\.[^/.]+$/, "");
+            addPolygonGroup(fileName, features);
+            updatePolygonesPanel();
+            const groupCount = Object.keys(polygonGroups).length;
+            const featCount = Object.values(polygonGroups).reduce((s, g) => s + g.features.length, 0);
+            wktStatus.textContent = `${groupCount} groupe(s), ${featCount} géométrie(s)`;
             if (features.length > 0 && wmeSDK?.Map) {
                 const first = features[0];
                 if (first.geometry.type === 'Point') {
@@ -1312,6 +1563,32 @@ async function init(sdk) {
 
     wmeSDK = sdk;
     loadSettings();
+    toolbarEl = document.createElement("div");
+    toolbarEl.className = "rw-toolbar";
+    document.body.appendChild(toolbarEl);
+    (() => {
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        toolbarEl.addEventListener("mousedown", (e) => {
+            if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+            isDragging = true;
+            const rect = toolbarEl.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            e.preventDefault();
+        });
+        document.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            toolbarEl.style.left = e.clientX - dragOffsetX + "px";
+            toolbarEl.style.top = e.clientY - dragOffsetY + "px";
+            toolbarEl.style.right = "auto";
+            toolbarEl.style.bottom = "auto";
+        });
+        document.addEventListener("mouseup", () => {
+            isDragging = false;
+        });
+    })();
     createFloatingPanel();
     createDetailPanel();
     updateLastRefreshDisplay();
@@ -1409,20 +1686,24 @@ async function init(sdk) {
         console.warn("[Roadwork] Failed to add WKT layer checkbox:", e);
     }
 
-    const restoredWkt = loadWktFromStorage();
-    if (restoredWkt.length > 0) {
-        wktFeatures = restoredWkt;
+    const restored = loadPolygonGroups();
+    const hasRestored = Object.keys(restored).length > 0;
+    if (hasRestored) {
+        polygonGroups = restored;
         const wktStatus = document.getElementById("rw-wkt-status");
         if (wktStatus) {
-            const geomCounts = {};
-            for (const f of restoredWkt) {
-                const t = f.properties.geomType;
-                geomCounts[t] = (geomCounts[t] || 0) + 1;
-            }
-            const parts = Object.entries(geomCounts).map(([t, c]) => `${c} ${t}`);
-            wktStatus.textContent = `${restoredWkt.length} géométrie(s) : ${parts.join(", ")}`;
+            const groupCount = Object.keys(restored).length;
+            const featCount = Object.values(restored).reduce((s, g) => s + g.features.length, 0);
+            wktStatus.textContent = `${groupCount} groupe(s), ${featCount} g\u00e9om\u00e9trie(s)`;
         }
-        renderWktToMap();
+    }
+    migrateWktFromLegacy();
+    renderAllGroupsToMap();
+
+    createPolygonesUI();
+    setupPolygonesDragDrop();
+    if (hasRestored) {
+        updatePolygonesPanel();
     }
 
     wmeSDK.Events.on({
@@ -1432,7 +1713,7 @@ async function init(sdk) {
                 renderRoadworksToMap(currentRoadworks);
             }
             if (evt && evt.name === WKT_LAYER) {
-                renderWktToMap();
+                renderAllGroupsToMap();
             }
         },
     });
@@ -1449,7 +1730,11 @@ async function init(sdk) {
             }
 
             if (evt.layerName === WKT_LAYER) {
-                const feature = wktFeatures.find(f => f.id === featureId);
+                let feature = null;
+                for (const group of Object.values(polygonGroups)) {
+                    feature = group.features.find(f => f.id === featureId);
+                    if (feature) break;
+                }
                 if (feature && wmeSDK?.Map) {
                     const geom = feature.geometry;
                     if (geom.type === 'Point') {
@@ -1489,7 +1774,6 @@ async function init(sdk) {
                     showDetailPanel(currentRoadworks[rwId]);
                     renderRoadworksToMap(currentRoadworks);
                 }
-            } else {
             }
         },
     });
