@@ -52,6 +52,7 @@ const SCRIPT_NAME = "Roadwork for WME";
 const STORAGE_KEY = "roadwork-wme-settings";
 const CACHE_KEY_PREFIX = "roadwork-wme-cache-";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
+const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
 
 const STATUS_COLORS = {
     New: "#ef4444",
@@ -83,6 +84,9 @@ let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
 const POLYGON_GROUPS_KEY = "roadwork-wme-polygon-groups";
 let detailPanelEl = null;
+let hideFinished = false;
+let sortColumn = -1;
+let sortDirection = 'asc';
 
 function bootstrap() {
     if (typeof window.getWmeSdk === "function") {
@@ -218,6 +222,64 @@ function migrateWktFromLegacy() {
     } catch (_) {}
 }
 
+function loadStatusOverrides() {
+    try {
+        const raw = localStorage.getItem(STATUS_OVERRIDES_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    return {};
+}
+
+function saveStatusOverrides(overrides) {
+    try {
+        localStorage.setItem(STATUS_OVERRIDES_KEY, JSON.stringify(overrides));
+    } catch (_) {}
+}
+
+function applyStatusOverrides() {
+    const overrides = loadStatusOverrides();
+    for (const [id, status] of Object.entries(overrides)) {
+        if (currentRoadworks[id]) {
+            currentRoadworks[id].syncData = currentRoadworks[id].syncData || {};
+            currentRoadworks[id].syncData.status = status;
+        }
+    }
+}
+
+function loadHideFinished() {
+    try {
+        const v = localStorage.getItem(HIDE_FINISHED_KEY);
+        if (v !== null) hideFinished = JSON.parse(v);
+    } catch (_) {}
+}
+
+function loadSortState() {
+    try {
+        const v = localStorage.getItem(SORT_STATE_KEY);
+        if (v !== null) {
+            const parsed = JSON.parse(v);
+            sortColumn = parsed.col;
+            sortDirection = parsed.dir;
+        }
+    } catch (_) {}
+}
+
+function changeRoadworkStatus(rwId, newStatus) {
+    const rw = currentRoadworks[rwId];
+    if (!rw) return;
+
+    rw.syncData = rw.syncData || {};
+    rw.syncData.status = newStatus;
+
+    const overrides = loadStatusOverrides();
+    overrides[rwId] = newStatus;
+    saveStatusOverrides(overrides);
+
+    renderRoadworksToMap(currentRoadworks);
+    updateFloatingTable();
+    showDetailPanel(rw);
+}
+
 function loadServicesCache() {
     try {
         console.info("[Roadwork] loadServicesCache");
@@ -306,6 +368,9 @@ function updateLastRefreshDisplay() {
 
 const LAST_REFRESH_KEY = "roadwork-wme-last-refresh";
 const PANEL_STORAGE_KEY = "roadwork-wme-panel-visible";
+const HIDE_FINISHED_KEY = "roadwork-wme-hide-finished";
+const PANEL_SIZE_KEY = "roadwork-wme-panel-size";
+const SORT_STATE_KEY = "roadwork-wme-sort-state";
 
 function isFloatingPanelVisible() {
     try {
@@ -342,6 +407,24 @@ function createFloatingPanel() {
     const title = document.createElement("h4");
     title.textContent = "Roadwork List";
 
+    const filterLabel = document.createElement("label");
+    filterLabel.className = "rw-filter-label";
+    filterLabel.title = "Masquer les chantiers terminés";
+
+    const filterCheck = document.createElement("input");
+    filterCheck.type = "checkbox";
+    filterCheck.checked = hideFinished;
+    filterCheck.addEventListener("change", () => {
+        hideFinished = filterCheck.checked;
+        localStorage.setItem(HIDE_FINISHED_KEY, JSON.stringify(hideFinished));
+        updateFloatingTable();
+    });
+
+    const filterText = document.createElement("span");
+    filterText.textContent = "Hide finished";
+    filterLabel.appendChild(filterCheck);
+    filterLabel.appendChild(filterText);
+
     const btnGroup = document.createElement("div");
 
     const refreshBtn = document.createElement("button");
@@ -357,6 +440,7 @@ function createFloatingPanel() {
     btnGroup.appendChild(refreshBtn);
     btnGroup.appendChild(closeBtn);
     header.appendChild(title);
+    header.appendChild(filterLabel);
     header.appendChild(btnGroup);
 
     const tableWrap = document.createElement("div");
@@ -366,9 +450,33 @@ function createFloatingPanel() {
     table.className = "roadwork-table";
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
-    for (const text of ["Statut", "Route", "Début", "Fin", "Description", "Impact"]) {
+    const COLUMNS = ["Statut", "Route", "Début", "Fin", "Description", "Impact"];
+    const headerCells = [];
+    for (let i = 0; i < COLUMNS.length; i++) {
         const th = document.createElement("th");
-        th.textContent = text;
+        th.className = "rw-sortable";
+        let label = COLUMNS[i];
+        if (sortColumn === i) {
+            label += sortDirection === 'asc' ? ' ▲' : ' ▼';
+        }
+        th.textContent = label;
+        th.addEventListener("click", () => {
+            if (sortColumn === i) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = i;
+                sortDirection = 'asc';
+            }
+            localStorage.setItem(SORT_STATE_KEY, JSON.stringify({ col: sortColumn, dir: sortDirection }));
+            for (let j = 0; j < headerCells.length; j++) {
+                headerCells[j].textContent = COLUMNS[j];
+            }
+            if (sortColumn >= 0) {
+                headerCells[sortColumn].textContent += sortDirection === 'asc' ? ' ▲' : ' ▼';
+            }
+            updateFloatingTable();
+        });
+        headerCells.push(th);
         headerRow.appendChild(th);
     }
     thead.appendChild(headerRow);
@@ -379,7 +487,20 @@ function createFloatingPanel() {
 
     floatingPanelEl.appendChild(header);
     floatingPanelEl.appendChild(tableWrap);
+
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "rw-resize-handle";
+    floatingPanelEl.appendChild(resizeHandle);
+
     document.body.appendChild(floatingPanelEl);
+
+    try {
+        const savedSize = JSON.parse(localStorage.getItem(PANEL_SIZE_KEY));
+        if (savedSize) {
+            if (savedSize.w >= 300) floatingPanelEl.style.width = savedSize.w + "px";
+            if (savedSize.h >= 200) floatingPanelEl.style.height = savedSize.h + "px";
+        }
+    } catch (_) {}
 
     floatingToggleBtn = document.createElement("button");
     floatingToggleBtn.className = "rw-toggle-btn";
@@ -413,12 +534,40 @@ function createFloatingPanel() {
     document.addEventListener("mouseup", () => {
         isDragging = false;
     });
+
+    let isResizing = false;
+    let resizeStartX = 0, resizeStartY = 0;
+    let resizeStartW = 0, resizeStartH = 0;
+    resizeHandle.addEventListener("mousedown", (e) => {
+        isResizing = true;
+        resizeStartX = e.clientX;
+        resizeStartY = e.clientY;
+        const rect = floatingPanelEl.getBoundingClientRect();
+        resizeStartW = rect.width;
+        resizeStartH = rect.height;
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isResizing) return;
+        const newW = resizeStartW + (e.clientX - resizeStartX);
+        const newH = resizeStartH + (e.clientY - resizeStartY);
+        if (newW >= 300) floatingPanelEl.style.width = newW + "px";
+        if (newH >= 200) floatingPanelEl.style.height = newH + "px";
+    });
+    document.addEventListener("mouseup", () => {
+        if (isResizing) {
+            isResizing = false;
+            const rect = floatingPanelEl.getBoundingClientRect();
+            localStorage.setItem(PANEL_SIZE_KEY, JSON.stringify({ w: rect.width, h: rect.height }));
+        }
+    });
 }
 
 function updateFloatingTable() {
     if (!floatingTableBody) return;
     floatingTableBody.replaceChildren();
-    const entries = Object.entries(currentRoadworks);
+    let entries = Object.entries(currentRoadworks);
     if (entries.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
@@ -431,6 +580,49 @@ function updateFloatingTable() {
         floatingTableBody.appendChild(tr);
         return;
     }
+
+    if (hideFinished) {
+        entries = entries.filter(([, rw]) => (rw.syncData?.status || "New") !== "Finished");
+    }
+
+    if (sortColumn >= 0) {
+        const getValue = (rw, col) => {
+            switch (col) {
+                case 0: return (rw.syncData?.status || "New");
+                case 1: return (rw.road || "");
+                case 2: return rw.start != null ? rw.start : Infinity;
+                case 3: return rw.end != null ? rw.end : Infinity;
+                case 4: return (rw.description || "");
+                case 5: return (rw.impactCirculationDetail || "");
+                default: return "";
+            }
+        };
+        entries.sort((a, b) => {
+            const va = getValue(a[1], sortColumn);
+            const vb = getValue(b[1], sortColumn);
+            let cmp;
+            if (typeof va === "number" && typeof vb === "number") {
+                cmp = va - vb;
+            } else {
+                cmp = String(va).localeCompare(String(vb), "fr");
+            }
+            return sortDirection === 'asc' ? cmp : -cmp;
+        });
+    }
+
+    if (entries.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 7;
+        td.style.textAlign = "center";
+        td.style.color = "#999";
+        td.style.padding = "16px";
+        td.textContent = "Aucun roadwork à afficher";
+        tr.appendChild(td);
+        floatingTableBody.appendChild(tr);
+        return;
+    }
+
     for (const [id, rw] of entries) {
         const status = rw.syncData?.status || "New";
         const color = STATUS_COLORS[status] || "#9ca3af";
@@ -442,18 +634,18 @@ function updateFloatingTable() {
 
         const tr = document.createElement("tr");
         tr.title = desc;
-tr.addEventListener("click", () => {
-    if (selectedRoadworkId === id) {
-        deselectRoadwork();
-    } else {
-        selectedRoadworkId = id;
-        showDetailPanel(rw);
-        renderRoadworksToMap(currentRoadworks);
-    }
-    if (rw.latitude && rw.longitude && wmeSDK?.Map?.setMapCenter) {
-        wmeSDK.Map.setMapCenter({lonLat: {lon: rw.longitude, lat: rw.latitude}});
-    }
-});
+        tr.addEventListener("click", () => {
+            if (selectedRoadworkId === id) {
+                deselectRoadwork();
+            } else {
+                selectedRoadworkId = id;
+                showDetailPanel(rw);
+                renderRoadworksToMap(currentRoadworks);
+            }
+            if (rw.latitude && rw.longitude && wmeSDK?.Map?.setMapCenter) {
+                wmeSDK.Map.setMapCenter({lonLat: {lon: rw.longitude, lat: rw.latitude}});
+            }
+        });
 
         const tdStatus = document.createElement("td");
         const badge = document.createElement("span");
@@ -723,11 +915,45 @@ function showDetailPanel(rw) {
     };
 
     {
-        const badge = document.createElement("span");
-        badge.className = "rw-status-badge";
-        badge.style.background = color;
-        badge.textContent = status;
-        addField("Statut", badge);
+        const dropdown = document.createElement("div");
+        dropdown.className = "rw-status-dropdown";
+
+        const trigger = document.createElement("span");
+        trigger.className = "rw-status-dropdown-trigger";
+        trigger.style.background = color;
+        trigger.textContent = status;
+
+        const menu = document.createElement("div");
+        menu.className = "rw-status-dropdown-menu rw-hidden";
+
+        for (const s of ALL_STATUSES) {
+            const item = document.createElement("div");
+            item.className = "rw-status-dropdown-item";
+
+            const dot = document.createElement("span");
+            dot.className = "rw-status-dropdown-dot";
+            dot.style.background = STATUS_COLORS[s];
+
+            const label = document.createTextNode(s);
+
+            item.appendChild(dot);
+            item.appendChild(label);
+            item.addEventListener("click", (e) => {
+                e.stopPropagation();
+                changeRoadworkStatus(selectedRoadworkId, s);
+            });
+
+            menu.appendChild(item);
+        }
+
+        trigger.addEventListener("click", (e) => {
+            e.stopPropagation();
+            menu.classList.toggle("rw-hidden");
+        });
+
+        dropdown.appendChild(trigger);
+        dropdown.appendChild(menu);
+        addField("Statut", dropdown);
     }
 
     if (road) {
@@ -1040,6 +1266,7 @@ async function refreshData() {
         clearCache(settings.service);
         const data = await fetchRoadworks(true);
         currentRoadworks = data.roadworks || {};
+        applyStatusOverrides();
         console.info("[Roadwork] refreshData: currentRoadworks count", Object.keys(currentRoadworks).length);
         if (selectedRoadworkId && !currentRoadworks[selectedRoadworkId]) {
             selectedRoadworkId = null;
@@ -1361,6 +1588,15 @@ async function buildPanel(tabPane) {
 
     const field3 = document.createElement("div");
     field3.className = "roadwork-field";
+
+    const btnDiv = document.createElement("div");
+    const refBtn = document.createElement("button");
+    refBtn.className = "roadwork-btn roadwork-btn-secondary";
+    refBtn.id = "rw-refresh-btn";
+    refBtn.textContent = "Refresh now";
+    btnDiv.appendChild(refBtn);
+    panelEl.appendChild(btnDiv);
+
     const lbl3 = document.createElement("label");
     lbl3.textContent = "Log level";
     const logLevelSel = document.createElement("select");
@@ -1383,14 +1619,6 @@ async function buildPanel(tabPane) {
     field3.appendChild(logLevelSel);
     panelEl.appendChild(field3);
 
-    const btnDiv = document.createElement("div");
-    const refBtn = document.createElement("button");
-    refBtn.className = "roadwork-btn roadwork-btn-secondary";
-    refBtn.id = "rw-refresh-btn";
-    refBtn.textContent = "Refresh now";
-    btnDiv.appendChild(refBtn);
-    panelEl.appendChild(btnDiv);
-
     const statDiv = document.createElement("div");
     statDiv.id = "rw-status";
     statDiv.className = "roadwork-status";
@@ -1401,79 +1629,7 @@ async function buildPanel(tabPane) {
     cntDiv.className = "roadwork-count";
     panelEl.appendChild(cntDiv);
 
-    const wktSection = document.createElement("div");
-    wktSection.className = "roadwork-wkt-section";
-    const wktHeading = document.createElement("h3");
-    wktHeading.textContent = "Fichier WKT";
-    wktSection.appendChild(wktHeading);
-
-    const wktBtnWrap = document.createElement("div");
-    wktBtnWrap.className = "roadwork-wkt-buttons";
-
-    const wktFileInput = document.createElement("input");
-    wktFileInput.type = "file";
-    wktFileInput.accept = ".wkt,.txt";
-    wktFileInput.style.display = "none";
-
-    const wktUploadBtn = document.createElement("button");
-    wktUploadBtn.className = "roadwork-btn roadwork-wkt-btn";
-    wktUploadBtn.textContent = "Charger WKT";
-    wktUploadBtn.addEventListener("click", () => wktFileInput.click());
-
-    wktBtnWrap.appendChild(wktFileInput);
-    wktBtnWrap.appendChild(wktUploadBtn);
-    wktSection.appendChild(wktBtnWrap);
-
-    const wktStatus = document.createElement("div");
-    wktStatus.id = "rw-wkt-status";
-    wktStatus.className = "roadwork-wkt-status";
-    wktStatus.textContent = "Aucun fichier chargé";
-    wktSection.appendChild(wktStatus);
-    panelEl.appendChild(wktSection);
     tabPane.appendChild(panelEl);
-
-    wktFileInput.addEventListener("change", (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const text = evt.target.result;
-            const features = parseWkt(text);
-            if (features.length === 0) {
-                wktStatus.textContent = "Aucune géométrie valide trouvée";
-                return;
-            }
-            const fileName = file.name.replace(/\.[^/.]+$/, "");
-            addPolygonGroup(fileName, features);
-            updatePolygonesPanel();
-            const groupCount = Object.keys(polygonGroups).length;
-            const featCount = Object.values(polygonGroups).reduce((s, g) => s + g.features.length, 0);
-            wktStatus.textContent = `${groupCount} groupe(s), ${featCount} géométrie(s)`;
-            if (features.length > 0 && wmeSDK?.Map) {
-                const first = features[0];
-                if (first.geometry.type === 'Point') {
-                    const [lon, lat] = first.geometry.coordinates;
-                    wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
-                } else if (first.geometry.type === 'Polygon') {
-                    const coords = first.geometry.coordinates[0];
-                    if (coords && coords.length > 0) {
-                        const mid = Math.floor(coords.length / 2);
-                        const [lon, lat] = coords[mid];
-                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
-                    }
-                } else if (first.geometry.type === 'LineString') {
-                    const coords = first.geometry.coordinates;
-                    if (coords && coords.length > 0) {
-                        const mid = Math.floor(coords.length / 2);
-                        const [lon, lat] = coords[mid];
-                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
-                    }
-                }
-            }
-        };
-        reader.readAsText(file);
-        wktFileInput.value = "";
-    });
 
     statusEl = panelEl.querySelector("#rw-status");
     countEl = tabPane.querySelector("#rw-count") || panelEl.querySelector("#rw-count");
@@ -1516,6 +1672,7 @@ async function buildPanel(tabPane) {
         try {
             const data = await fetchRoadworks(true);
             currentRoadworks = data.roadworks || {};
+            applyStatusOverrides();
             renderRoadworksToMap(currentRoadworks);
             updateFloatingTable();
             const count = Object.keys(currentRoadworks).length;
@@ -1563,6 +1720,15 @@ async function init(sdk) {
 
     wmeSDK = sdk;
     loadSettings();
+    loadHideFinished();
+    loadSortState();
+
+    document.addEventListener("click", () => {
+        document.querySelectorAll(".rw-status-dropdown-menu:not(.rw-hidden)").forEach(menu => {
+            menu.classList.add("rw-hidden");
+        });
+    });
+
     toolbarEl = document.createElement("div");
     toolbarEl.className = "rw-toolbar";
     document.body.appendChild(toolbarEl);
@@ -1781,6 +1947,7 @@ async function init(sdk) {
     const cached = loadCache(settings.service);
     if (cached) {
         currentRoadworks = cached.roadworks || {};
+        applyStatusOverrides();
         renderRoadworksToMap(currentRoadworks);
         updateFloatingTable();
         const count = Object.keys(currentRoadworks).length;
