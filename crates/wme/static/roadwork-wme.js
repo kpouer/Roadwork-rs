@@ -1989,11 +1989,8 @@ async function init(sdk) {
     createDetailPanel();
     updateLastRefreshDisplay();
 
-    const result = await wmeSDK.Sidebar.registerScriptTab({
-        tabId: SCRIPT_ID,
-        tabLabel: "Roadwork",
-        tabPane: document.createElement("div"),
-    });
+    const result = await wmeSDK.Sidebar.registerScriptTab();
+    result.tabLabel.innerText = "Roadwork";
 
     const tabPane = result?.tabPane;
 
