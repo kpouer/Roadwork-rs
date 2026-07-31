@@ -1,3 +1,5 @@
+type WmeSDK = import("wme-sdk-typings").WmeSDK;
+
 const wasmIframe = document.getElementById('roadwork-wasm-iframe');
 
 let rpcId = 0;
@@ -69,7 +71,7 @@ const DEFAULTS = {
     customSources: [],
 };
 
-let wmeSDK = null;
+let wmeSDK: WmeSDK = null;
 let settings = {...DEFAULTS};
 let currentRoadworks = {};
 let servicesData = [];
@@ -96,12 +98,11 @@ function tryInit() {
     if (initialized) return false;
     if (typeof window.getWmeSdk !== "function") return false;
     initialized = true;
-    init(
-        window.getWmeSdk({
-            scriptId: SCRIPT_ID,
-            scriptName: SCRIPT_NAME,
-        })
-    ).catch((e) => {
+    let wmeSdk = window.getWmeSdk({
+        scriptId: SCRIPT_ID,
+        scriptName: SCRIPT_NAME,
+    });
+    init(wmeSdk).catch((e) => {
         console.error("[Roadwork] init failed:", e);
     });
     return true;
@@ -157,17 +158,17 @@ function saveSettings() {
     } catch (_) {}
 }
 
-async function applyLogLevel(level) {
+async function applyLogLevel(level: string) {
     try {
         await rpcCall("set_log_level", [level]);
     } catch (_) {}
 }
 
-function getCacheKey(service) {
+function getCacheKey(service: string) {
     return CACHE_KEY_PREFIX + service;
 }
 
-function loadCache(service) {
+function loadCache(service: string) {
     try {
         const raw = localStorage.getItem(getCacheKey(service));
         if (!raw) return null;
@@ -180,7 +181,7 @@ function loadCache(service) {
     }
 }
 
-function saveCache(service, data) {
+function saveCache(service: string, data) {
     try {
         localStorage.setItem(getCacheKey(service), JSON.stringify({
             data: data,
@@ -190,7 +191,7 @@ function saveCache(service, data) {
     }
 }
 
-function clearCache(service) {
+function clearCache(service: string) {
     try {
         localStorage.removeItem(getCacheKey(service));
     } catch (_) {
@@ -349,7 +350,7 @@ async function fetchRoadworks(forceRefresh = false) {
     }
 }
 
-function loadCustomDescriptorsCache() {
+function loadCustomDescriptorsCache(): Array | null {
     try {
         const raw = localStorage.getItem(CUSTOM_SOURCES_CACHE_KEY);
         if (!raw) return null;
@@ -360,7 +361,7 @@ function loadCustomDescriptorsCache() {
     }
 }
 
-function saveCustomDescriptorsCache(pairs) {
+function saveCustomDescriptorsCache(pairs: Array) {
     try {
         localStorage.setItem(CUSTOM_SOURCES_CACHE_KEY, JSON.stringify({
             data: pairs,
@@ -431,7 +432,7 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
     } catch (_) {}
 }
 
-function setStatus(text, type) {
+function setStatus(text: string, type) {
     if (!statusEl) {
         return;
     }
@@ -439,7 +440,7 @@ function setStatus(text, type) {
     statusEl.className = "roadwork-status" + (type ? " " + type : "");
 }
 
-function setCount(count) {
+function setCount(count: number) {
     if (!countEl) {
         return;
     }
@@ -474,7 +475,7 @@ function isFloatingPanelVisible() {
     }
 }
 
-function setFloatingPanelVisible(visible) {
+function setFloatingPanelVisible(visible: boolean) {
     try {
         localStorage.setItem(PANEL_STORAGE_KEY, String(visible));
     } catch (_) {
@@ -1222,8 +1223,8 @@ function buildStyleRulesForWktLayer() {
     ];
 }
 
-function buildStyleRulesForLayer(status) {
-    const color = STATUS_COLORS[status];
+function buildStyleRulesForLayer(status: string) {
+    const color: string = STATUS_COLORS[status];
     const rules = [];
 
     if (selectedRoadworkId) {
@@ -1280,7 +1281,7 @@ function buildStyleRulesForLayer(status) {
     return rules;
 }
 
-function isLayerChecked(status) {
+function isLayerChecked(status: string) {
     try {
         return wmeSDK.LayerSwitcher.isLayerCheckboxChecked({name: getLayerName(status)});
     } catch (_) {
@@ -1419,7 +1420,7 @@ let polygonesToggleBtn = null;
 let polygonesPanelBody = null;
 let polygonesDropzoneEl = null;
 
-function addPolygonGroup(name, features) {
+function addPolygonGroup(name: string, features) {
     const gid = "group_" + nextGroupId;
     const prefixed = features.map(f => ({ ...f, id: gid + "-" + f.id }));
     polygonGroups[gid] = { id: gid, name, features: prefixed, visible: true };
@@ -1446,7 +1447,7 @@ function togglePolygonGroup(id) {
     updatePolygonesPanel();
 }
 
-function renamePolygonGroup(id, newName) {
+function renamePolygonGroup(id, newName: string) {
     const g = polygonGroups[id];
     if (!g) return;
     g.name = newName;
@@ -1667,7 +1668,7 @@ function setupPolygonesDragDrop() {
     });
 }
 
-async function buildPanel(tabPane) {
+async function buildPanel(tabPane: Element) {
     panelEl = document.createElement("div");
     panelEl.className = "roadwork-panel";
     const heading = document.createElement("h3");
@@ -1925,7 +1926,7 @@ async function buildPanel(tabPane) {
     renderCustomSources();
 }
 
-async function init(sdk) {
+async function init(sdk: WmeSDK) {
     await Promise.race([
         wasmReady,
         new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after 20s")), 20000)),
