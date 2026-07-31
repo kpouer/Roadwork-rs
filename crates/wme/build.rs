@@ -27,14 +27,14 @@ fn base64_encode(data: &[u8]) -> String {
 }
 
 fn copy_with_replacements(
-    static_dir: &std::path::Path,
+    src_dir: &std::path::Path,
     out_dir: &std::path::Path,
     filename: &str,
     dest_filename: &str,
     version: &str,
     build_date: &str,
 ) {
-    let src = static_dir.join(filename);
+    let src = src_dir.join(filename);
     let dest = out_dir.join(dest_filename);
     let content = fs::read_to_string(&src).unwrap_or_else(|e| {
         panic!("Failed to read {}: {e}", src.display());
@@ -132,6 +132,7 @@ fn main() {
     println!("cargo:rustc-env=WME_BUILD_DATE={build_date}");
 
     println!("cargo:rerun-if-changed=static");
+    println!("cargo:rerun-if-changed=tsconfig.json");
     println!("cargo:rerun-if-changed=../wme-wasm/src");
 
     fs::create_dir_all(&out_dir).unwrap();
@@ -162,6 +163,23 @@ fn main() {
         panic!("wasm-pack build failed");
     }
 
+    // --- Compile TypeScript sources ---
+    println!("cargo:warning=Compiling TypeScript sources...");
+
+    let tsc_bin = workspace_root.join("node_modules/.bin/tsc");
+    let ts_status = Command::new(&tsc_bin)
+        .args(["-p", manifest_dir.join("tsconfig.json").to_str().unwrap()])
+        .status()
+        .expect(
+            "Failed to run tsc. TypeScript must be installed: run `npm install` at the repository root",
+        );
+
+    if !ts_status.success() {
+        panic!("TypeScript compilation failed");
+    }
+
+    let ts_out_dir = out_dir.join("ts");
+
     // --- Embed WASM binary as base64 in JS ---
     let wasm_bytes = fs::read(pkg_dir.join("roadwork_wasm_bg.wasm"))
         .expect("Failed to read WASM binary for base64 encoding");
@@ -187,14 +205,14 @@ fn main() {
         &build_date,
     );
     copy_with_replacements(
-        &static_dir,
+        &ts_out_dir,
         &out_dir,
         "roadwork-wme.js",
         "inject.js",
         &version,
         &build_date,
     );
-    fs::copy(static_dir.join("content.js"), out_dir.join("content.js"))
+    fs::copy(ts_out_dir.join("content.js"), out_dir.join("content.js"))
         .expect("Failed to copy content.js");
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))
         .expect("Failed to copy style.css");
@@ -209,7 +227,7 @@ fn main() {
     )
     .expect("Failed to copy wasm-iframe.html");
     fs::copy(
-        static_dir.join("wasm-init.js"),
+        ts_out_dir.join("wasm-init.js"),
         out_dir.join("wasm-init.js"),
     )
     .expect("Failed to copy wasm-init.js");

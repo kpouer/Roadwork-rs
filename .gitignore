@@ -3,6 +3,7 @@
 /test/example.json
 /cache/
 /target/
+/node_modules/
 /.DS_Store
 /data/
 /test/
