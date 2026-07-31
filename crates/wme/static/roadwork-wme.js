@@ -52,6 +52,7 @@ const SCRIPT_NAME = "Roadwork for WME";
 const STORAGE_KEY = "roadwork-wme-settings";
 const CACHE_KEY_PREFIX = "roadwork-wme-cache-";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
+const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
 
 const STATUS_COLORS = {
@@ -65,6 +66,7 @@ const STATUS_COLORS = {
 const DEFAULTS = {
     service: "France-Paris",
     logLevel: "info",
+    customSources: [],
 };
 
 let wmeSDK = null;
@@ -88,37 +90,46 @@ let hideFinished = false;
 let sortColumn = -1;
 let sortDirection = 'asc';
 
+let initialized = false;
+
+function tryInit() {
+    if (initialized) return false;
+    if (typeof window.getWmeSdk !== "function") return false;
+    initialized = true;
+    init(
+        window.getWmeSdk({
+            scriptId: SCRIPT_ID,
+            scriptName: SCRIPT_NAME,
+        })
+    ).catch((e) => {
+        console.error("[Roadwork] init failed:", e);
+    });
+    return true;
+}
+
 function bootstrap() {
-    if (typeof window.getWmeSdk === "function") {
-        init(
-            window.getWmeSdk({
-                scriptId: SCRIPT_ID,
-                scriptName: SCRIPT_NAME,
-            })
-        );
-    } else if (window.SDK_INITIALIZED && typeof window.SDK_INITIALIZED.then === "function") {
-        window.SDK_INITIALIZED.then(() => {
-            if (typeof window.getWmeSdk === "function") {
-                init(
-                    window.getWmeSdk({
-                        scriptId: SCRIPT_ID,
-                        scriptName: SCRIPT_NAME,
-                    })
-                );
-            }
-        });
-    } else {
-        document.addEventListener("wme-ready", () => {
-            if (typeof window.getWmeSdk === "function") {
-                init(
-                    window.getWmeSdk({
-                        scriptId: SCRIPT_ID,
-                        scriptName: SCRIPT_NAME,
-                    })
-                );
-            }
-        }, {once: true});
+    document.addEventListener("wme-ready", tryInit);
+
+    const sdkInitialized = window.SDK_INITIALIZED;
+    if (sdkInitialized && typeof sdkInitialized.then === "function") {
+        sdkInitialized.then(tryInit);
     }
+
+    if (tryInit()) return;
+
+    const POLL_INTERVAL = 250;
+    const MAX_WAIT = 20000;
+    const start = Date.now();
+    const poll = setInterval(() => {
+        if (tryInit()) {
+            clearInterval(poll);
+            return;
+        }
+        if (Date.now() - start > MAX_WAIT) {
+            clearInterval(poll);
+            console.error("[Roadwork] WME SDK not available after " + (MAX_WAIT / 1000) + "s, giving up");
+        }
+    }, POLL_INTERVAL);
 }
 
 bootstrap();
@@ -336,6 +347,88 @@ async function fetchRoadworks(forceRefresh = false) {
     } catch (e) {
         throw new Error(`Failed to fetch roadworks: ${e}`);
     }
+}
+
+function loadCustomDescriptorsCache() {
+    try {
+        const raw = localStorage.getItem(CUSTOM_SOURCES_CACHE_KEY);
+        if (!raw) return null;
+        const cached = JSON.parse(raw);
+        return Array.isArray(cached.data) ? cached.data : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function saveCustomDescriptorsCache(pairs) {
+    try {
+        localStorage.setItem(CUSTOM_SOURCES_CACHE_KEY, JSON.stringify({
+            data: pairs,
+            timestamp: Date.now(),
+        }));
+    } catch (_) {}
+}
+
+async function fetchCustomDescriptors() {
+    const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
+    const pairs = [];
+    for (const url of sources) {
+        let index;
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            index = await resp.json();
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to fetch index ${url}: ${e}`);
+            continue;
+        }
+        if (!index || !Array.isArray(index.files)) {
+            console.warn(`[Roadwork] Invalid index.json at ${url}`);
+            continue;
+        }
+        const baseDir = url.substring(0, url.lastIndexOf("/") + 1);
+        for (const file of index.files) {
+            const path = file.path;
+            if (!path || path.includes("..") || path.startsWith("/")) {
+                console.warn(`[Roadwork] Skipping invalid path ${path} in ${url}`);
+                continue;
+            }
+            const name = file.key || path.replace(/\.json$/i, "");
+            const descUrl = baseDir + path;
+            try {
+                const resp = await fetch(descUrl);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const json = await resp.text();
+                pairs.push([name, json]);
+            } catch (e) {
+                console.warn(`[Roadwork] Failed to fetch descriptor ${descUrl}: ${e}`);
+            }
+        }
+    }
+    return pairs;
+}
+
+async function syncCustomDescriptorsToWasm(forceRefresh = false) {
+    const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
+    if (sources.length === 0) {
+        await rpcCall("set_custom_descriptors", [[]]);
+        try {
+            localStorage.removeItem(CUSTOM_SOURCES_CACHE_KEY);
+        } catch (_) {}
+        return;
+    }
+    let pairs = null;
+    if (!forceRefresh) {
+        pairs = loadCustomDescriptorsCache();
+    }
+    if (pairs === null) {
+        pairs = await fetchCustomDescriptors();
+        saveCustomDescriptorsCache(pairs);
+    }
+    await rpcCall("set_custom_descriptors", [pairs]);
+    try {
+        localStorage.removeItem(SERVICES_CACHE_KEY);
+    } catch (_) {}
 }
 
 function setStatus(text, type) {
@@ -1466,7 +1559,6 @@ function updatePolygonesPanel() {
             }
         });
 
-        row.appendChild(toggleBtn);
         row.appendChild(nameInput);
         row.appendChild(countSpan);
         row.appendChild(deleteBtn);
@@ -1573,6 +1665,31 @@ async function buildPanel(tabPane) {
     field1.appendChild(lbl1);
     field1.appendChild(flexDiv);
     panelEl.appendChild(field1);
+
+    const customField = document.createElement("div");
+    customField.className = "roadwork-field";
+    const customLbl = document.createElement("label");
+    customLbl.textContent = "Custom sources (index.json URLs)";
+    customField.appendChild(customLbl);
+
+    const customRow = document.createElement("div");
+    customRow.style.cssText = "display:flex;gap:4px;";
+    const customInput = document.createElement("input");
+    customInput.type = "url";
+    customInput.placeholder = "https://example.com/index.json";
+    customInput.style.flex = "1";
+    const addBtn = document.createElement("button");
+    addBtn.className = "roadwork-btn roadwork-btn-secondary";
+    addBtn.textContent = "Add";
+    customRow.appendChild(customInput);
+    customRow.appendChild(addBtn);
+    customField.appendChild(customRow);
+
+    const customList = document.createElement("div");
+    customList.className = "roadwork-custom-sources";
+    customField.appendChild(customList);
+
+    panelEl.appendChild(customField);
 
     const field2 = document.createElement("div");
     field2.className = "roadwork-field";
@@ -1698,6 +1815,8 @@ async function buildPanel(tabPane) {
     });
 
     serviceRefreshBtn.addEventListener("click", async () => {
+        setStatus("Refreshing services...");
+        await syncCustomDescriptorsToWasm(true);
         const services = await fetchServices(true);
         servicesData = services;
         if (services.length > 0) {
@@ -1711,10 +1830,73 @@ async function buildPanel(tabPane) {
     refreshBtn.addEventListener("click", () => {
         refreshData();
     });
+
+    function renderCustomSources() {
+        customList.replaceChildren();
+        const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
+        for (const url of sources) {
+            const row = document.createElement("div");
+            row.className = "roadwork-custom-source-row";
+            const span = document.createElement("span");
+            span.textContent = url;
+            span.style.flex = "1";
+            span.style.wordBreak = "break-all";
+            const del = document.createElement("button");
+            del.className = "roadwork-btn roadwork-btn-icon";
+            del.textContent = "\u00d7";
+            del.title = "Remove";
+            del.addEventListener("click", async () => {
+                settings.customSources = settings.customSources.filter((s) => s !== url);
+                saveSettings();
+                renderCustomSources();
+                setStatus("Reloading services...");
+                await syncCustomDescriptorsToWasm(true);
+                const services = await fetchServices(true);
+                servicesData = services;
+                if (services.length > 0) {
+                    populateServiceSelect(serviceSelect, services);
+                    setStatus("Services refreshed", "success");
+                } else {
+                    setStatus("Failed to load custom sources", "error");
+                }
+            });
+            row.appendChild(span);
+            row.appendChild(del);
+            customList.appendChild(row);
+        }
+    }
+
+    addBtn.addEventListener("click", async () => {
+        const url = customInput.value.trim();
+        if (!/^https?:\/\//i.test(url)) {
+            setStatus("URL must be absolute http(s)", "error");
+            return;
+        }
+        if (settings.customSources.includes(url)) return;
+        settings.customSources = [...settings.customSources, url];
+        saveSettings();
+        customInput.value = "";
+        renderCustomSources();
+        setStatus("Loading custom sources...");
+        await syncCustomDescriptorsToWasm(true);
+        const services = await fetchServices(true);
+        servicesData = services;
+        if (services.length > 0) {
+            populateServiceSelect(serviceSelect, services);
+            setStatus("Services refreshed", "success");
+        } else {
+            setStatus("Failed to load custom sources", "error");
+        }
+    });
+
+    renderCustomSources();
 }
 
 async function init(sdk) {
-    await wasmReady;
+    await Promise.race([
+        wasmReady,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after 20s")), 20000)),
+    ]);
 
     applyLogLevel(settings.logLevel);
 
@@ -1722,6 +1904,9 @@ async function init(sdk) {
     loadSettings();
     loadHideFinished();
     loadSortState();
+    await syncCustomDescriptorsToWasm(false).catch((e) => {
+        console.warn("[Roadwork] Failed to sync custom descriptors:", e);
+    });
 
     document.addEventListener("click", () => {
         document.querySelectorAll(".rw-status-dropdown-menu:not(.rw-hidden)").forEach(menu => {

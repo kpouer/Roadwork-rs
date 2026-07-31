@@ -1,5 +1,6 @@
 use log::info;
 use serde::Serialize;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
@@ -53,6 +54,36 @@ mod descriptors {
     pub const USA_CHICAGO: &str = include_str!("../../../opendata/json/USA-IL-Chicago.json");
 }
 
+thread_local! {
+    static CUSTOM_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
+        RefCell::new(HashMap::new());
+}
+
+#[wasm_bindgen]
+pub fn set_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
+    let pairs: Vec<(String, String)> = serde_wasm_bindgen::from_value(pairs)
+        .map_err(|e| JsValue::from_str(&format!("Invalid descriptor pairs: {e}")))?;
+    info!("[wasm] set_custom_descriptors: {} pairs", pairs.len());
+    let mut map = HashMap::new();
+    for (name, json) in pairs {
+        match serde_json::from_str::<ServiceDescriptor>(&json) {
+            Ok(descriptor) => {
+                map.insert(name, descriptor);
+            }
+            Err(e) => {
+                log::error!("Failed to parse custom descriptor {name}: {e}");
+                return Err(JsValue::from_str(&format!(
+                    "Failed to parse custom descriptor {name}: {e}"
+                )));
+            }
+        }
+    }
+    CUSTOM_DESCRIPTORS.with(|cell| {
+        *cell.borrow_mut() = map;
+    });
+    Ok(())
+}
+
 fn load_descriptors() -> HashMap<String, ServiceDescriptor> {
     let raw: &[(&str, &str)] = &[
         ("Belgium-Liege", descriptors::BELGIUM_LIEGE),
@@ -87,10 +118,20 @@ fn load_descriptors() -> HashMap<String, ServiceDescriptor> {
     map
 }
 
+fn all_descriptors() -> HashMap<String, ServiceDescriptor> {
+    let mut map = load_descriptors();
+    CUSTOM_DESCRIPTORS.with(|cell| {
+        for (name, descriptor) in cell.borrow().iter() {
+            map.insert(name.clone(), descriptor.clone());
+        }
+    });
+    map
+}
+
 #[wasm_bindgen]
 pub fn get_services() -> JsValue {
     info!("[wasm] get_services");
-    let descriptors = load_descriptors();
+    let descriptors = all_descriptors();
     let mut services: Vec<ServiceInfo> = descriptors
         .into_iter()
         .map(|(name, desc)| ServiceInfo {
@@ -105,7 +146,7 @@ pub fn get_services() -> JsValue {
 #[wasm_bindgen]
 pub async fn get_roadworks(service_name: &str) -> Result<JsValue, JsValue> {
     info!("[wasm] get_roadworks");
-    let descriptors = load_descriptors();
+    let descriptors = all_descriptors();
     let descriptor = descriptors
         .get(service_name)
         .ok_or_else(|| JsValue::from_str(&format!("Unknown service: {service_name}")))?;

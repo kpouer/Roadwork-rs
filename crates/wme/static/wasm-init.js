@@ -36,6 +36,9 @@
                 } else if (method === 'set_log_level') {
                     wasm_bindgen.set_log_level(args[0]);
                     result = true;
+                } else if (method === 'set_custom_descriptors') {
+                    wasm_bindgen.set_custom_descriptors(args[0]);
+                    result = true;
                 } else {
                     throw new Error('Unknown method: ' + method);
                 }
