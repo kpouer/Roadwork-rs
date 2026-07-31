@@ -525,12 +525,18 @@ function createFloatingPanel() {
     refreshBtn.title = "Refresh";
     refreshBtn.addEventListener("click", () => refreshData());
 
+    const resetBtn = document.createElement("button");
+    resetBtn.textContent = "\u232b";
+    resetBtn.title = "Reset all data (clear localStorage)";
+    resetBtn.addEventListener("click", () => clearExtensionStorage());
+
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
     closeBtn.title = "Hide";
     closeBtn.addEventListener("click", () => setFloatingPanelVisible(false));
 
     btnGroup.appendChild(refreshBtn);
+    btnGroup.appendChild(resetBtn);
     btnGroup.appendChild(closeBtn);
     header.appendChild(title);
     header.appendChild(filterLabel);
@@ -1158,6 +1164,19 @@ function clearAllPolygonGroups() {
     updatePolygonesPanel();
 }
 
+async function clearExtensionStorage() {
+    if (!confirm("Vider tout le stockage local de l'extension Roadwork ?")) return;
+    try {
+        for (const key of Object.keys(localStorage)) {
+            if (key.startsWith("roadwork-wme-")) {
+                localStorage.removeItem(key);
+            }
+        }
+    } catch (_) {}
+    await syncCustomDescriptorsToWasm(true).catch(() => {});
+    window.location.reload();
+}
+
 function buildWktMarkerIcon() {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
             <path d="M2 28 L22 28 L21 30 L3 30 Z" fill="#333" />
@@ -1455,6 +1474,18 @@ function createPolygonesUI() {
     const title = document.createElement("h4");
     title.textContent = "Polygones";
 
+    const headerBtns = document.createElement("div");
+    headerBtns.style.cssText = "display:flex;gap:4px;";
+
+    const resetBtn = document.createElement("button");
+    resetBtn.textContent = "Reset";
+    resetBtn.title = "Supprimer tous les polygones";
+    resetBtn.addEventListener("click", () => {
+        if (confirm("Supprimer tous les polygones ?")) {
+            clearAllPolygonGroups();
+        }
+    });
+
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
     closeBtn.title = "Fermer";
@@ -1463,8 +1494,10 @@ function createPolygonesUI() {
         polygonesToggleBtn.style.display = "block";
     });
 
+    headerBtns.appendChild(resetBtn);
+    headerBtns.appendChild(closeBtn);
     header.appendChild(title);
-    header.appendChild(closeBtn);
+    header.appendChild(headerBtns);
 
     polygonesPanelBody = document.createElement("div");
     polygonesPanelBody.className = "rw-polygones-body";
