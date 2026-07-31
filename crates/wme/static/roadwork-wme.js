@@ -1949,11 +1949,23 @@ async function init(sdk) {
 
     toolbarEl = document.createElement("div");
     toolbarEl.className = "rw-toolbar";
+    const grip = document.createElement("div");
+    grip.className = "rw-toolbar-grip";
+    grip.title = "Déplacer";
+    grip.setAttribute("aria-label", "Déplacer la barre d'outils");
+    toolbarEl.appendChild(grip);
     document.body.appendChild(toolbarEl);
     (() => {
         let isDragging = false;
         let dragOffsetX = 0;
         let dragOffsetY = 0;
+        grip.addEventListener("mousedown", (e) => {
+            isDragging = true;
+            const rect = toolbarEl.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            e.preventDefault();
+        });
         toolbarEl.addEventListener("mousedown", (e) => {
             if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
             isDragging = true;
