@@ -1,6 +1,11 @@
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+
+use zip::CompressionMethod;
+use zip::write::SimpleFileOptions;
 
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -45,6 +50,69 @@ fn copy_with_replacements(
     fs::write(&dest, &updated).unwrap_or_else(|e| {
         panic!("Failed to write {}: {e}", dest.display());
     });
+}
+
+fn generate_icons(icon_src: &Path, out_dir: &Path) {
+    let img = image::open(icon_src)
+        .unwrap_or_else(|e| panic!("Failed to open icon source {}: {e}", icon_src.display()));
+    let icons_dir = out_dir.join("icons");
+    fs::create_dir_all(&icons_dir).unwrap();
+    for (size, name) in [
+        (16u32, "icon-16.png"),
+        (32u32, "icon-32.png"),
+        (48u32, "icon-48.png"),
+        (128u32, "icon-128.png"),
+    ] {
+        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+        let dest = icons_dir.join(name);
+        resized.save(&dest).unwrap_or_else(|e| {
+            panic!("Failed to write {}: {e}", dest.display());
+        });
+    }
+}
+
+fn create_webstore_zip(out_dir: &Path, version: &str) {
+    let zip_name = format!("roadwork-wme-{version}-webstore.zip");
+    let zip_path = out_dir.join(&zip_name);
+    let file = fs::File::create(&zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_files(out_dir, &mut files);
+    for path in files {
+        let rel = path
+            .strip_prefix(out_dir)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if rel == zip_name || rel == "meta.js" {
+            continue;
+        }
+        if rel.starts_with("pkg/") || rel.starts_with("ts/") {
+            continue;
+        }
+        let bytes = fs::read(&path).unwrap();
+        zip.start_file(&rel, options).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    println!(
+        "cargo:warning=Chrome Web Store package ready at: {}",
+        zip_path.display(),
+    );
+}
+
+fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, files);
+        } else {
+            files.push(path);
+        }
+    }
 }
 
 fn format_build_date() -> String {
@@ -124,16 +192,26 @@ fn main() {
     let static_dir = manifest_dir.join("static");
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
     let out_dir = workspace_root.join("target/wme");
-    let wasm_crate_dir = manifest_dir.parent().unwrap().join("wme-wasm");
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let build_date = format_build_date();
 
     // Expose build date to the crate at compile time
     println!("cargo:rustc-env=WME_BUILD_DATE={build_date}");
 
+    // When this crate is built for wasm32 (from the wasm-pack call below), skip the
+    // whole assembly: build scripts run on the host, so this prevents infinite recursion.
+    let target = std::env::var("TARGET").unwrap_or_default();
+    if target.contains("wasm32") {
+        return;
+    }
+
     println!("cargo:rerun-if-changed=static");
     println!("cargo:rerun-if-changed=tsconfig.json");
-    println!("cargo:rerun-if-changed=../wme-wasm/src");
+    println!("cargo:rerun-if-changed=src");
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("media/icon.png").display()
+    );
 
     fs::create_dir_all(&out_dir).unwrap();
 
@@ -154,7 +232,7 @@ fn main() {
             "--release",
             "--out-dir",
             pkg_dir.to_str().unwrap(),
-            wasm_crate_dir.to_str().unwrap(),
+            manifest_dir.to_str().unwrap(),
         ])
         .status()
         .expect("Failed to run wasm-pack. Install with: cargo install wasm-pack");
@@ -181,7 +259,7 @@ fn main() {
     let ts_out_dir = out_dir.join("ts");
 
     // --- Embed WASM binary as base64 in JS ---
-    let wasm_bytes = fs::read(pkg_dir.join("roadwork_wasm_bg.wasm"))
+    let wasm_bytes = fs::read(pkg_dir.join("roadwork_wme_bg.wasm"))
         .expect("Failed to read WASM binary for base64 encoding");
     let b64 = base64_encode(&wasm_bytes);
     let wasm_js = format!("const WASM_BYTES = \"{}\";\n", b64);
@@ -217,7 +295,7 @@ fn main() {
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))
         .expect("Failed to copy style.css");
     fs::copy(
-        pkg_dir.join("roadwork_wasm.js"),
+        pkg_dir.join("roadwork_wme.js"),
         out_dir.join("wasm_bindgen.js"),
     )
     .expect("Failed to copy wasm_bindgen.js");
@@ -231,6 +309,14 @@ fn main() {
         out_dir.join("wasm-init.js"),
     )
     .expect("Failed to copy wasm-init.js");
+
+    // --- Generate extension icons for the Chrome Web Store ---
+    println!("cargo:warning=Generating extension icons...");
+    generate_icons(&workspace_root.join("media/icon.png"), &out_dir);
+
+    // --- Package the extension for the Chrome Web Store ---
+    println!("cargo:warning=Packaging extension for the Chrome Web Store...");
+    create_webstore_zip(&out_dir, &version);
 
     println!(
         "cargo:warning=Extension generated at: {}",

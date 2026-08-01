@@ -29,14 +29,14 @@ window.addEventListener("message", (e) => {
 
 function rpcCall(method, args = []) {
     console.info("[Roadwork] rpcCall", method);
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
         const id = ++rpcId;
         rpcPending.set(id, { resolve, reject });
         wasmIframe.contentWindow.postMessage({ type: "ROADWORK_RPC", id, method, args }, "*");
     });
 }
 
-const wasmReady = new Promise((resolve, reject) => {
+const wasmReady = new Promise<void>((resolve, reject) => {
     window.addEventListener("message", function onReady(e) {
         if (e.data?.type === "ROADWORK_WASM_READY") {
             window.removeEventListener("message", onReady);
@@ -73,7 +73,7 @@ const DEFAULTS = {
 
 let wmeSDK: WmeSDK = null;
 let settings = {...DEFAULTS};
-let currentRoadworks = {};
+let currentRoadworks: any = {};
 let servicesData = [];
 let panelEl = null;
 let statusEl = null;
@@ -83,7 +83,7 @@ let floatingPanelEl = null;
 let floatingTableBody = null;
 let floatingToggleBtn = null;
 let selectedRoadworkId = null;
-let polygonGroups = {};
+let polygonGroups: any = {};
 let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
 const POLYGON_GROUPS_KEY = "roadwork-wme-polygon-groups";
@@ -350,7 +350,7 @@ async function fetchRoadworks(forceRefresh = false) {
     }
 }
 
-function loadCustomDescriptorsCache(): Array | null {
+function loadCustomDescriptorsCache(): Array<any> | null {
     try {
         const raw = localStorage.getItem(CUSTOM_SOURCES_CACHE_KEY);
         if (!raw) return null;
@@ -361,7 +361,7 @@ function loadCustomDescriptorsCache(): Array | null {
     }
 }
 
-function saveCustomDescriptorsCache(pairs: Array) {
+function saveCustomDescriptorsCache(pairs: Array<any>) {
     try {
         localStorage.setItem(CUSTOM_SOURCES_CACHE_KEY, JSON.stringify({
             data: pairs,
@@ -432,7 +432,7 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
     } catch (_) {}
 }
 
-function setStatus(text: string, type) {
+function setStatus(text: string, type?) {
     if (!statusEl) {
         return;
     }
@@ -615,7 +615,7 @@ function createFloatingPanel() {
     let dragOffsetX = 0;
     let dragOffsetY = 0;
     header.addEventListener("mousedown", (e) => {
-        if (e.target.tagName === "BUTTON") return;
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
         isDragging = true;
         const rect = floatingPanelEl.getBoundingClientRect();
         dragOffsetX = e.clientX - rect.left;
@@ -667,7 +667,7 @@ function createFloatingPanel() {
 function updateFloatingTable() {
     if (!floatingTableBody) return;
     floatingTableBody.replaceChildren();
-    let entries = Object.entries(currentRoadworks);
+    let entries = Object.entries(currentRoadworks as Record<string, any>);
     if (entries.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
@@ -1135,7 +1135,7 @@ function renderAllGroupsToMap() {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
     const allFeatures = [];
-    for (const group of Object.values(polygonGroups)) {
+                for (const group of Object.values(polygonGroups as Record<string, any>)) {
         if (!group.visible) continue;
         for (const feature of group.features) {
             allFeatures.push(feature);
@@ -1299,7 +1299,7 @@ function renderRoadworksToMap(roadworks) {
 
     let totalFeatures = 0;
 
-    for (const [id, rw] of Object.entries(roadworks)) {
+    for (const [id, rw] of Object.entries(roadworks as Record<string, any>)) {
         const status = rw.syncData?.status || "New";
         const features = featuresByStatus[status] || featuresByStatus["New"];
 
@@ -1516,7 +1516,7 @@ function createPolygonesUI() {
     let dragOffsetX = 0;
     let dragOffsetY = 0;
     header.addEventListener("mousedown", (e) => {
-        if (e.target.tagName === "BUTTON") return;
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
         isDragging = true;
         const rect = polygonesPanelEl.getBoundingClientRect();
         dragOffsetX = e.clientX - rect.left;
@@ -1538,7 +1538,7 @@ function createPolygonesUI() {
 function updatePolygonesPanel() {
     if (!polygonesPanelBody) return;
     polygonesPanelBody.replaceChildren();
-    const entries = Object.values(polygonGroups);
+    const entries = Object.values(polygonGroups as Record<string, any>);
     if (entries.length === 0) {
         const empty = document.createElement("div");
         empty.className = "rw-polygones-empty";
@@ -2003,7 +2003,7 @@ async function init(sdk: WmeSDK) {
             eventName: "wme-sidebar-tab-opened",
             eventHandler: async (evt) => {
                 if (
-                    (evt && evt.tabName === SCRIPT_ID) ||
+                    (evt && String(evt.tabName) === SCRIPT_ID) ||
                     (evt && evt.domId && evt.domId.includes(SCRIPT_ID))
                 ) {
                     if (!panelEl) {
@@ -2087,7 +2087,7 @@ async function init(sdk: WmeSDK) {
         const wktStatus = document.getElementById("rw-wkt-status");
         if (wktStatus) {
             const groupCount = Object.keys(restored).length;
-            const featCount = Object.values(restored).reduce((s, g) => s + g.features.length, 0);
+            const featCount = Object.values(restored as Record<string, any>).reduce((s, g) => s + g.features.length, 0);
             wktStatus.textContent = `${groupCount} groupe(s), ${featCount} g\u00e9om\u00e9trie(s)`;
         }
     }
@@ -2118,14 +2118,14 @@ async function init(sdk: WmeSDK) {
             if (!evt || !evt.layerName || !evt.layerName.startsWith("Roadwork - ")) {
                 return;
             }
-            const featureId = evt.featureId;
+            const featureId = evt.featureId as string;
             if (!featureId) {
                 return;
             }
 
             if (evt.layerName === WKT_LAYER) {
                 let feature = null;
-                for (const group of Object.values(polygonGroups)) {
+    for (const group of Object.values(polygonGroups as Record<string, any>)) {
                     feature = group.features.find(f => f.id === featureId);
                     if (feature) break;
                 }

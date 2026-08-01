@@ -38,9 +38,8 @@ web-sys = "0.3"
 [workspace.dependencies]
 sqlx = "0.8"
 
-
 [workspace]
-members = ["crates/sync", "crates/core", "crates/webserver", "crates/wme", "crates/wme-wasm"]
+members = ["crates/sync", "crates/core", "crates/webserver", "crates/wme"]
 
 [profile.dev.package."*"]
 opt-level = 2
