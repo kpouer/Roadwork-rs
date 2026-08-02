@@ -59,6 +59,7 @@ fn generate_icons(icon_src: &Path, out_dir: &Path) {
     fs::create_dir_all(&icons_dir).unwrap();
     for (size, name) in [
         (16u32, "icon-16.png"),
+        (24u32, "icon-24.png"),
         (32u32, "icon-32.png"),
         (48u32, "icon-48.png"),
         (128u32, "icon-128.png"),
