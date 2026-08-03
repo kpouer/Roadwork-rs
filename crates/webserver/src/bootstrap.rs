@@ -4,7 +4,6 @@ use roadwork_core::http_service::HttpService;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fmt::format;
 
 const GITHUB_RAW_PREFIX: &str =
     "https://raw.githubusercontent.com/kpouer/Roadwork-rs/main/opendata/json";
@@ -89,7 +88,7 @@ pub async fn ensure_descriptors_available(descriptor_manager: &DescriptorManager
 
 async fn bootstrap_download(descriptor_manager: &DescriptorManager) -> Result<(), String> {
     let roadwork_index = RoadworkIndex::new(GITHUB_RAW_PREFIX);
-    let descriptors = roadwork_index.get_descriptors()?;
+    let descriptors = roadwork_index.get_descriptors().await?;
 
     descriptor_manager.save_descriptors(&descriptors);
     Ok(())

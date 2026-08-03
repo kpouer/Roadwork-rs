@@ -5,6 +5,7 @@ mod state;
 mod storage;
 
 use crate::descriptor_manager::DescriptorManager;
+use crate::storage::StorageError;
 use axum::{
     Router,
     body::Body,
@@ -22,14 +23,14 @@ use tower_http::cors::{Any, CorsLayer};
 include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), StorageError> {
     env_logger::init();
 
     let data_dir = std::env::var("DATA_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("./data"));
 
-    let storage = Arc::new(SqliteStorage::new(&data_dir).await);
+    let storage = Arc::new(SqliteStorage::new(&data_dir).await?);
 
     let descriptor_manager = DescriptorManager::new(data_dir);
     bootstrap::ensure_descriptors_available(&descriptor_manager).await;
@@ -88,6 +89,8 @@ async fn main() {
     println!("Listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+
+    Ok(())
 }
 
 fn load_sync_config() -> Option<SyncConfig> {

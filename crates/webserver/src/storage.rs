@@ -6,6 +6,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::path::Path;
+use thiserror::Error;
 
 pub struct SqliteStorage {
     pool: SqlitePool,
@@ -13,17 +14,17 @@ pub struct SqliteStorage {
 
 #[allow(dead_code)]
 impl SqliteStorage {
-    pub async fn new(data_dir: &Path) -> Self {
+    pub async fn new(data_dir: &Path) -> Result<Self, StorageError> {
+        std::fs::create_dir_all(data_dir)?;
         let db_path = data_dir.join("roadworks.db");
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect(&url)
-            .await
-            .expect("Failed to open SQLite database");
+            .await?;
         let storage = Self { pool };
         storage.init_schema().await;
-        storage
+        Ok(storage)
     }
 
     async fn init_schema(&self) {
@@ -297,4 +298,12 @@ impl SqliteStorage {
         .await
         .ok();
     }
+}
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("SQLx error: {0}")]
+    Sqlx(#[from] sqlx::Error),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
