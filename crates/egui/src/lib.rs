@@ -1,6 +1,7 @@
 mod convert;
 mod gui;
 pub mod roadwork_app;
+mod waze_livemap;
 
 pub use roadwork_core::MyError;
 pub use roadwork_core::http_service;

@@ -1,9 +1,9 @@
 use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
-use crate::gui::logs_panel::LogsPanel;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::status_panel::StatusPanel;
+use crate::waze_livemap::Waze;
 use chrono::DateTime;
 use eframe::epaint::text::TextWrapMode;
 use eframe::{App, Frame, Storage};
@@ -15,7 +15,6 @@ use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::metadata::Metadata;
 use std::sync::{Arc, Mutex};
-use walkers::sources::OpenStreetMap;
 use walkers::{HttpTiles, Map, MapMemory, Projector};
 
 const DEFAULT_WME_URL: &str =
@@ -45,7 +44,7 @@ impl RoadworkApp {
 
         let app = Self {
             ctx: egui_ctx.clone(),
-            tiles: HttpTiles::new(OpenStreetMap, egui_ctx.clone()),
+            tiles: HttpTiles::new(Waze, egui_ctx.clone()),
             map_memory: Default::default(),
             position,
             services: Vec::new(),
@@ -288,7 +287,6 @@ impl RoadworkApp {
                     self.reload_data();
                 }
                 ui.checkbox(&mut self.hide_expired, "Hide expired");
-                LogsPanel::new(&mut self.logs_panel_open).show_button(ui);
 
                 if ui.button("Info").clicked() {
                     self.show_info_dialog = true;
