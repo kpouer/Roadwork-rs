@@ -3,26 +3,6 @@
 version = 4
 
 [[package]]
-name = "Roadwork"
-version = "0.2.1"
-dependencies = [
- "chrono",
- "eframe",
- "egui",
- "egui-notify",
- "egui_extras",
- "log",
- "reqwest",
- "roadwork-core",
- "roadwork-sync",
- "serde",
- "serde_json",
- "walkers",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4240,6 +4220,26 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.19",
  "urlencoding",
+]
+
+[[package]]
+name = "roadwork-egui"
+version = "0.2.1"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "egui-notify",
+ "egui_extras",
+ "log",
+ "reqwest",
+ "roadwork-core",
+ "roadwork-sync",
+ "serde",
+ "serde_json",
+ "walkers",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

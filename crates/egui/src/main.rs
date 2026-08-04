@@ -1,6 +1,6 @@
 use eframe::wasm_bindgen::JsCast;
 use log::LevelFilter;
-use roadworkapp_lib::roadwork_app::RoadworkApp;
+use roadwork_egui::roadwork_app::RoadworkApp;
 
 fn main() {
     eframe::WebLogger::init(LevelFilter::Info).ok();

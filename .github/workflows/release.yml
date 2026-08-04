@@ -75,7 +75,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: ${{ (matrix.os == 'macos-latest' || matrix.os == 'macos-13') && 'bundle' || 'build' }}
-          args: --release --target ${{ matrix.target }}
+          args: --package roadwork-egui --release --target ${{ matrix.target }}
 
       - name: Prepare artifact (Linux/Windows)
         if: matrix.os != 'macos-latest'

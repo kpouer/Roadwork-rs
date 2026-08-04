@@ -8,7 +8,7 @@ fn main() {
 
     println!(
         "cargo:rerun-if-changed={}",
-        workspace_root.join("src").display()
+        workspace_root.join("crates/egui/src").display()
     );
     println!("cargo:rerun-if-changed=static");
 
@@ -16,6 +16,8 @@ fn main() {
     let output = Command::new("cargo")
         .args([
             "build",
+            "-p",
+            "roadwork-egui",
             "--target",
             "wasm32-unknown-unknown",
             "--release",
