@@ -20,6 +20,16 @@ declare global {
         namespace runtime {
             function getURL(path: string): string;
         }
+
+        namespace action {
+            namespace onClicked {
+                function addListener(callback: () => void): void;
+            }
+        }
+
+        namespace tabs {
+            function create(props: { url: string }): void;
+        }
     }
 
     interface HTMLElement {

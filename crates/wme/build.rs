@@ -213,6 +213,14 @@ fn main() {
         "cargo:rerun-if-changed={}",
         workspace_root.join("media/icon.png").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("crates/egui/src").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("crates/egui/Cargo.toml").display()
+    );
 
     fs::create_dir_all(&out_dir).unwrap();
 
@@ -241,6 +249,57 @@ fn main() {
     if !status.success() {
         panic!("wasm-pack build failed");
     }
+
+    // --- Build the egui desktop/web app for the extension tab ---
+    println!("cargo:warning=Building egui app for the extension tab...");
+
+    let egui_build = Command::new("cargo")
+        .args([
+            "build",
+            "-p",
+            "roadwork-egui",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--release",
+        ])
+        .current_dir(workspace_root)
+        .output()
+        .expect("Failed to run cargo. Is the wasm32-unknown-unknown target installed?\n  rustup target add wasm32-unknown-unknown");
+
+    if !egui_build.status.success() {
+        panic!(
+            "cargo build failed:\n{}",
+            String::from_utf8_lossy(&egui_build.stderr)
+        );
+    }
+
+    let app_dir = out_dir.join("app");
+    fs::create_dir_all(&app_dir).unwrap();
+
+    let egui_wasm = workspace_root.join("target/wasm32-unknown-unknown/release/Roadwork-rs.wasm");
+    let egui_bindgen = Command::new("wasm-bindgen")
+        .args([
+            "--target",
+            "web",
+            "--out-name",
+            "Roadwork",
+            "--out-dir",
+            app_dir.to_str().unwrap(),
+            egui_wasm.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run wasm-bindgen. Install with:\n  cargo install wasm-bindgen-cli");
+
+    if !egui_bindgen.status.success() {
+        panic!(
+            "wasm-bindgen failed:\n{}",
+            String::from_utf8_lossy(&egui_bindgen.stderr)
+        );
+    }
+
+    fs::copy(static_dir.join("app.html"), app_dir.join("index.html"))
+        .expect("Failed to copy app.html");
+    fs::copy(static_dir.join("app.js"), app_dir.join("app.js")).expect("Failed to copy app.js");
 
     // --- Compile TypeScript sources ---
     println!("cargo:warning=Compiling TypeScript sources...");
@@ -293,6 +352,11 @@ fn main() {
     );
     fs::copy(ts_out_dir.join("content.js"), out_dir.join("content.js"))
         .expect("Failed to copy content.js");
+    fs::copy(
+        ts_out_dir.join("background.js"),
+        out_dir.join("background.js"),
+    )
+    .expect("Failed to copy background.js");
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))
         .expect("Failed to copy style.css");
     fs::copy(
