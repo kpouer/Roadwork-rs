@@ -11,8 +11,8 @@ impl<'a> StatusPanel<'a> {
         Self { roadwork }
     }
 
-    pub fn show(self, ui: &mut Ui) {
-        let roadwork_id = self.roadwork.id.clone();
+    pub fn show(&mut self, ui: &mut Ui) -> bool {
+        let mut changed = false;
         egui::Grid::new("status_grid")
             .num_columns(2)
             .show(ui, |ui| {
@@ -24,7 +24,7 @@ impl<'a> StatusPanel<'a> {
                     )
                     .changed()
                 {
-                    send_status_update(&roadwork_id, "New");
+                    changed = true;
                 }
                 if ui
                     .radio_value(
@@ -34,7 +34,7 @@ impl<'a> StatusPanel<'a> {
                     )
                     .changed()
                 {
-                    send_status_update(&roadwork_id, "Later");
+                    changed = true;
                 }
                 ui.end_row();
                 if ui
@@ -45,7 +45,7 @@ impl<'a> StatusPanel<'a> {
                     )
                     .changed()
                 {
-                    send_status_update(&roadwork_id, "Ignored");
+                    changed = true;
                 }
                 if ui
                     .radio_value(
@@ -55,7 +55,7 @@ impl<'a> StatusPanel<'a> {
                     )
                     .changed()
                 {
-                    send_status_update(&roadwork_id, "Finished");
+                    changed = true;
                 }
                 ui.end_row();
                 if ui
@@ -66,22 +66,13 @@ impl<'a> StatusPanel<'a> {
                     )
                     .changed()
                 {
-                    send_status_update(&roadwork_id, "Treated");
+                    changed = true;
                 }
                 ui.end_row();
             });
-    }
-}
-
-fn send_status_update(roadwork_id: &str, status: &str) {
-    let id = roadwork_id.to_string();
-    let status = status.to_string();
-    wasm_bindgen_futures::spawn_local(async move {
-        let url = format!("/api/roadworks/{}/status", id);
-        let client = reqwest::Client::new();
-        let body = serde_json::json!({ "status": &status });
-        if let Err(e) = client.put(&url).json(&body).send().await {
-            log::error!("Failed to update status for {id}: {e}");
+        if changed {
+            self.roadwork.sync_data.set_dirty(true);
         }
-    });
+        changed
+    }
 }

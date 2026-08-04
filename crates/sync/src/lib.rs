@@ -43,11 +43,6 @@ impl SyncData {
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
-
-    pub(crate) fn update_time(&mut self, server_update_time: u64) {
-        self.local_update_time = server_update_time;
-        self.server_update_time = server_update_time;
-    }
 }
 
 #[derive(

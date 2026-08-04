@@ -4232,14 +4232,28 @@ dependencies = [
  "egui-notify",
  "egui_extras",
  "log",
+ "pollster",
  "reqwest",
  "roadwork-core",
+ "roadwork-service",
  "roadwork-sync",
  "serde",
  "serde_json",
  "walkers",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "roadwork-service"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "roadwork-core",
+ "roadwork-sync",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4260,6 +4274,7 @@ dependencies = [
  "env_logger",
  "log",
  "roadwork-core",
+ "roadwork-service",
  "roadwork-sync",
  "serde",
  "serde_json",
@@ -4277,6 +4292,7 @@ dependencies = [
  "image",
  "log",
  "roadwork-core",
+ "roadwork-service",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

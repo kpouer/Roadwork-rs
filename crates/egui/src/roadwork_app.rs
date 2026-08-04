@@ -2,6 +2,7 @@ use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
+use crate::gui::settings_dialog::SettingsDialog;
 use crate::gui::status_panel::StatusPanel;
 use crate::waze_livemap::Waze;
 use chrono::DateTime;
@@ -12,50 +13,80 @@ use egui::{Button, Context, Label, Response, RichText, Ui};
 use egui_notify::Toasts;
 use log::info;
 use roadwork_core::model::roadwork_data::RoadworkData;
+use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::metadata::Metadata;
+use roadwork_core::settings::Settings;
 use std::sync::{Arc, Mutex};
 use walkers::{HttpTiles, Map, MapMemory, Projector};
 
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
-const API_BASE: &str = "/api";
+
+#[cfg(target_arch = "wasm32")]
+fn spawn_task<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + 'static,
+{
+    wasm_bindgen_futures::spawn_local(future);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_task<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    std::thread::spawn(move || pollster::block_on(future));
+}
 
 pub struct RoadworkApp {
     ctx: Context,
     tiles: HttpTiles,
     map_memory: MapMemory,
     position: LatLng,
-    services: Vec<String>,
+    services: Vec<ServiceInfo>,
     selected_service: String,
+    settings: Settings,
     roadwork_data: Arc<Mutex<Option<RoadworkData>>>,
     current_metadata: Arc<Mutex<Option<Metadata>>>,
     selected_roadwork: Option<String>,
     hide_expired: bool,
-    logs_panel_open: bool,
     toasts: Toasts,
     show_about_dialog: bool,
+    show_settings_dialog: bool,
     show_info_dialog: bool,
 }
 
 impl RoadworkApp {
     pub fn new(egui_ctx: Context) -> Self {
-        let position = LatLng::default();
+        let settings = crate::app_settings::load_settings();
+        let services = roadwork_service::get_services();
+        let selected_service = if services.iter().any(|s| s.name == settings.opendata_service) {
+            settings.opendata_service.clone()
+        } else {
+            services.first().map(|s| s.name.clone()).unwrap_or_default()
+        };
+        let position = services
+            .iter()
+            .find(|s| s.name == selected_service)
+            .map(|s| s.center)
+            .unwrap_or_default();
 
         let app = Self {
             ctx: egui_ctx.clone(),
             tiles: HttpTiles::new(Waze, egui_ctx.clone()),
             map_memory: Default::default(),
             position,
-            services: Vec::new(),
-            selected_service: "France-Paris".to_string(),
+            services,
+            selected_service,
+            settings,
             roadwork_data: Arc::new(Mutex::new(None)),
             current_metadata: Arc::new(Mutex::new(None)),
             selected_roadwork: None,
             hide_expired: false,
-            logs_panel_open: false,
             toasts: Toasts::default(),
             show_about_dialog: false,
+            show_settings_dialog: false,
             show_info_dialog: false,
         };
 
@@ -64,59 +95,32 @@ impl RoadworkApp {
     }
 
     fn spawn_init(&self) {
-        let roadwork_data = Arc::clone(&self.roadwork_data);
-        let ctx = self.ctx.clone();
-        let selected_service = self.selected_service.clone();
-
-        wasm_bindgen_futures::spawn_local(async move {
-            let fetched_services = fetch_services().await.unwrap_or_default();
-
-            if !fetched_services.is_empty() {
-                let service = if fetched_services.contains(&selected_service) {
-                    selected_service
-                } else {
-                    fetched_services[0].clone()
-                };
-
-                match fetch_roadworks(&service).await {
-                    Ok(data) => {
-                        *roadwork_data.lock().unwrap() = Some(data);
-                    }
-                    Err(e) => log::error!("Failed to fetch roadworks: {e}"),
-                }
-            }
-
-            ctx.request_repaint();
-        });
-    }
-
-    fn reload_data(&self) {
-        let roadwork_data = Arc::clone(&self.roadwork_data);
-        let ctx = self.ctx.clone();
-        let service = self.selected_service.clone();
-
-        wasm_bindgen_futures::spawn_local(async move {
-            match refresh_roadworks(&service).await {
-                Ok(data) => {
-                    *roadwork_data.lock().unwrap() = Some(data);
-                }
-                Err(e) => log::error!("Failed to refresh roadworks: {e}"),
-            }
-            ctx.request_repaint();
-        });
+        self.load_roadworks(&self.selected_service);
     }
 
     fn load_data(&self) {
-        let roadwork_data = Arc::clone(&self.roadwork_data);
-        let ctx = self.ctx.clone();
-        let service = self.selected_service.clone();
+        self.load_roadworks(&self.selected_service);
+    }
 
-        wasm_bindgen_futures::spawn_local(async move {
-            match fetch_roadworks(&service).await {
-                Ok(data) => {
+    fn load_roadworks(&self, service: &str) {
+        let roadwork_data = Arc::clone(&self.roadwork_data);
+        let current_metadata = Arc::clone(&self.current_metadata);
+        let ctx = self.ctx.clone();
+        let service = service.to_string();
+        let sync_config = crate::app_settings::sync_config(&self.settings);
+
+        spawn_task(async move {
+            match roadwork_service::get_roadworks(&service).await {
+                Ok(mut data) => {
+                    if let Some(descriptor) = roadwork_service::get_descriptor(&service) {
+                        *current_metadata.lock().unwrap() = Some(descriptor.metadata);
+                    }
+                    if let Some(config) = &sync_config {
+                        roadwork_service::synchronize(config, &mut data).await;
+                    }
                     *roadwork_data.lock().unwrap() = Some(data);
                 }
-                Err(e) => log::error!("Failed to fetch roadworks: {e}"),
+                Err(e) => log::error!("Failed to fetch roadworks for {service}: {e}"),
             }
             ctx.request_repaint();
         });
@@ -141,21 +145,20 @@ impl RoadworkApp {
     }
 
     fn open_url(url: &str) {
-        web_sys::window()
-            .unwrap()
-            .open_with_url_and_target(url, "_blank")
-            .ok();
+        crate::open_url::open_url(url);
     }
 
     fn show_left_panel(&mut self, ui: &mut Ui) {
         let url = self.get_wme_url_pattern();
         let selected_id = self.selected_roadwork.clone();
+        let sync_config = crate::app_settings::sync_config(&self.settings);
 
         if let Some(id) = selected_id {
             let mut guard = self.roadwork_data.lock().unwrap();
             if let Some(roadwork_data) = guard.as_mut()
                 && let Some(roadwork) = roadwork_data.roadworks.get_mut(&id)
             {
+                let mut status_changed = false;
                 egui::Panel::left("left_panel").show_inside(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.label(RichText::new("Id:").strong());
@@ -232,9 +235,23 @@ impl RoadworkApp {
                             Self::open_url(&roadwork.url);
                         }
 
-                        StatusPanel::new(roadwork).show(ui);
+                        status_changed = StatusPanel::new(roadwork).show(ui);
                     });
                 });
+                if status_changed {
+                    let ctx = self.ctx.clone();
+                    let data = Arc::clone(&self.roadwork_data);
+                    spawn_task(async move {
+                        if let Some(config) = sync_config {
+                            let mut current = data.lock().unwrap().take();
+                            if let Some(current) = current.as_mut() {
+                                roadwork_service::synchronize(&config, current).await;
+                            }
+                            *data.lock().unwrap() = current;
+                        }
+                        ctx.request_repaint();
+                    });
+                }
             }
         }
     }
@@ -269,27 +286,33 @@ impl RoadworkApp {
                     .selected_text(&current_service)
                     .show_ui(ui, |ui| {
                         for service in &self.services {
-                            let service_name = service.clone();
+                            let service_name = service.name.clone();
                             if ui
                                 .selectable_value(
                                     &mut self.selected_service,
-                                    service.clone(),
-                                    service.clone(),
+                                    service.name.clone(),
+                                    service.name.clone(),
                                 )
                                 .changed()
                             {
+                                self.position = service.center;
+                                self.map_memory
+                                    .center_at(latlng_to_position(service.center));
                                 self.load_data();
                                 self.toasts.success(format!("Switching to {service_name}"));
                             }
                         }
                     });
                 if ui.button("Reload").clicked() {
-                    self.reload_data();
+                    self.load_data();
                 }
                 ui.checkbox(&mut self.hide_expired, "Hide expired");
 
                 if ui.button("Info").clicked() {
                     self.show_info_dialog = true;
+                }
+                if ui.button("Settings").clicked() {
+                    self.show_settings_dialog = true;
                 }
             });
         });
@@ -307,6 +330,10 @@ impl RoadworkApp {
                         ui.add(Label::new("No source selected").wrap_mode(TextWrapMode::Wrap));
                     });
             }
+        }
+
+        if self.show_settings_dialog {
+            SettingsDialog::new(&mut self.show_settings_dialog, &mut self.settings).show(ui.ctx());
         }
     }
 
@@ -394,30 +421,4 @@ impl App for RoadworkApp {
     fn persist_egui_memory(&self) -> bool {
         true
     }
-}
-
-// --- API Client functions ---
-
-async fn fetch_services() -> Result<Vec<String>, reqwest::Error> {
-    let url = format!("{API_BASE}/services");
-    let resp = reqwest::get(&url).await?.json::<Vec<String>>().await?;
-    Ok(resp)
-}
-
-async fn fetch_roadworks(service: &str) -> Result<RoadworkData, reqwest::Error> {
-    let url = format!("{API_BASE}/roadworks?service={service}");
-    let resp = reqwest::get(&url).await?.json::<RoadworkData>().await?;
-    Ok(resp)
-}
-
-async fn refresh_roadworks(service: &str) -> Result<RoadworkData, reqwest::Error> {
-    let url = format!("{API_BASE}/roadworks/refresh?service={service}");
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(&url)
-        .send()
-        .await?
-        .json::<RoadworkData>()
-        .await?;
-    Ok(resp)
 }

@@ -32,28 +32,27 @@ impl DescriptorManager {
 
     fn load_descriptors(&self) -> HashMap<String, ServiceDescriptor> {
         let path = self.descriptors_path();
-        if !path.exists() {
-            info!("No descriptors file found at {}", path.display());
-            return HashMap::new();
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                match serde_json::from_str::<HashMap<String, ServiceDescriptor>>(&content) {
-                    Ok(descriptors) => {
-                        info!("Loaded {} descriptors", descriptors.len());
-                        descriptors
-                    }
-                    Err(e) => {
-                        error!("Failed to parse descriptors: {e}");
-                        HashMap::new()
+        if path.exists() {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    match serde_json::from_str::<HashMap<String, ServiceDescriptor>>(&content) {
+                        Ok(descriptors) => {
+                            info!(
+                                "Loaded {} descriptors from {}",
+                                descriptors.len(),
+                                path.display()
+                            );
+                            return descriptors;
+                        }
+                        Err(e) => error!("Failed to parse descriptors: {e}"),
                     }
                 }
-            }
-            Err(e) => {
-                error!("Failed to read descriptors: {e}");
-                HashMap::new()
+                Err(e) => error!("Failed to read descriptors: {e}"),
             }
         }
+        let descriptors = roadwork_service::load_descriptors();
+        info!("Loaded {} built-in descriptors", descriptors.len());
+        descriptors
     }
 
     pub fn save_descriptors(&self, descriptors: &HashMap<String, ServiceDescriptor>) {

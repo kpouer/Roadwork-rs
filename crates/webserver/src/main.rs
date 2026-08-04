@@ -1,5 +1,4 @@
 mod api;
-mod bootstrap;
 pub mod descriptor_manager;
 mod state;
 mod storage;
@@ -13,7 +12,8 @@ use axum::{
     response::IntoResponse,
     routing::{get, post, put},
 };
-use state::{AppState, SyncConfig};
+use roadwork_service::SyncConfig;
+use state::AppState;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -33,7 +33,6 @@ async fn main() -> Result<(), StorageError> {
     let storage = Arc::new(SqliteStorage::new(&data_dir).await?);
 
     let descriptor_manager = DescriptorManager::new(data_dir);
-    bootstrap::ensure_descriptors_available(&descriptor_manager).await;
 
     let sync_config = load_sync_config();
 

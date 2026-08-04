@@ -1,5 +1,7 @@
+mod app_settings;
 mod convert;
 mod gui;
+mod open_url;
 pub mod roadwork_app;
 mod waze_livemap;
 

@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 roadwork-core = { path = "../core", version = "0.1.0" }
+roadwork-service = { path = "../service", version = "0.1.0" }
 roadwork-sync = { path = "../sync", version = "0.1.0" }
 axum = "0.8"
 base64 = "0.22"

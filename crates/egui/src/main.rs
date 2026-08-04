@@ -1,7 +1,24 @@
-use eframe::wasm_bindgen::JsCast;
-use log::LevelFilter;
 use roadwork_egui::roadwork_app::RoadworkApp;
 
+#[cfg(target_arch = "wasm32")]
+use eframe::wasm_bindgen::JsCast;
+#[cfg(target_arch = "wasm32")]
+use log::LevelFilter;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn main() -> eframe::Result {
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Roadwork",
+        options,
+        Box::new(|cc| {
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(RoadworkApp::new(cc.egui_ctx.clone())))
+        }),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
 fn main() {
     eframe::WebLogger::init(LevelFilter::Info).ok();
 
