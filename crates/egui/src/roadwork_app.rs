@@ -2,6 +2,7 @@ use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
+use crate::gui::service_helper_dialog::ServiceHelperDialog;
 use crate::gui::settings_dialog::SettingsDialog;
 use crate::gui::status_panel::StatusPanel;
 use crate::waze_livemap::Waze;
@@ -24,7 +25,7 @@ const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
 
 #[cfg(target_arch = "wasm32")]
-fn spawn_task<F>(future: F)
+pub(crate) fn spawn_task<F>(future: F)
 where
     F: std::future::Future<Output = ()> + 'static,
 {
@@ -32,7 +33,7 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_task<F>(future: F)
+pub(crate) fn spawn_task<F>(future: F)
 where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
@@ -55,6 +56,8 @@ pub struct RoadworkApp {
     show_about_dialog: bool,
     show_settings_dialog: bool,
     show_info_dialog: bool,
+    show_service_helper_dialog: bool,
+    service_helper: ServiceHelperDialog,
 }
 
 impl RoadworkApp {
@@ -71,6 +74,7 @@ impl RoadworkApp {
             .find(|s| s.name == selected_service)
             .map(|s| s.center)
             .unwrap_or_default();
+        let service_helper = ServiceHelperDialog::new(&selected_service);
 
         let app = Self {
             ctx: egui_ctx.clone(),
@@ -88,6 +92,8 @@ impl RoadworkApp {
             show_about_dialog: false,
             show_settings_dialog: false,
             show_info_dialog: false,
+            show_service_helper_dialog: false,
+            service_helper,
         };
 
         app.spawn_init();
@@ -314,6 +320,9 @@ impl RoadworkApp {
                 if ui.button("Settings").clicked() {
                     self.show_settings_dialog = true;
                 }
+                if ui.button("Service helper").clicked() {
+                    self.show_service_helper_dialog = true;
+                }
             });
         });
 
@@ -335,6 +344,11 @@ impl RoadworkApp {
         if self.show_settings_dialog {
             SettingsDialog::new(&mut self.show_settings_dialog, &mut self.settings).show(ui.ctx());
         }
+        self.service_helper.show(
+            ui.ctx(),
+            &mut self.show_service_helper_dialog,
+            &self.selected_service,
+        );
     }
 
     fn draw_zoom_level(&mut self, ui: &mut Ui, response: Response) {
