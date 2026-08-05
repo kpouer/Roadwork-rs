@@ -6,21 +6,21 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Metadata {
-    country: String,
+    pub country: String,
     pub center: LatLng,
     #[serde(rename = "sourceUrl")]
-    source_url: String,
+    pub source_url: String,
     pub url: String,
-    name: String,
-    producer: Option<String>,
+    pub name: String,
+    pub producer: Option<String>,
     #[serde(rename = "licenceName")]
-    licence_name: Option<String>,
+    pub licence_name: Option<String>,
     #[serde(rename = "licenceUrl")]
-    licence_url: Option<String>,
-    locale: Option<String>,
+    pub licence_url: Option<String>,
+    pub locale: Option<String>,
     pub url_params: Option<HashMap<String, String>>,
     #[serde(rename = "tileServer")]
-    tile_server: Option<String>,
+    pub tile_server: Option<String>,
     #[serde(rename = "editorPattern")]
     pub editor_pattern: Option<String>,
 }
