@@ -24,6 +24,10 @@ impl<'a> AboutDialog<'a> {
                         .wrap_mode(TextWrapMode::Wrap),
                 );
                 ui.add(Label::new("Created by Matthieu Casanova").wrap_mode(TextWrapMode::Wrap));
+                let size = egui::vec2(48.0, 48.0);
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 4.0, crate::build_color::build_color());
             });
     }
 }

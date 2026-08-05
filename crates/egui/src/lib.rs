@@ -1,4 +1,5 @@
 mod app_settings;
+mod build_color;
 mod convert;
 mod gui;
 mod open_url;

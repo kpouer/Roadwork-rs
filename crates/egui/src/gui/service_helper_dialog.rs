@@ -1,4 +1,5 @@
 use egui::{Context, RichText, Ui};
+use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
@@ -6,6 +7,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::center_picker_dialog::CenterPickerDialog;
+
+#[derive(Clone)]
+enum FetchState {
+    Connecting,
+    Downloading,
+    Done(Result<String, String>),
+}
 
 pub(crate) struct ServiceHelperDialog {
     service: String,
@@ -18,9 +26,10 @@ pub(crate) struct ServiceHelperDialog {
     result_json: String,
     error: Option<String>,
     dirty: bool,
-    pending_fetch: Arc<Mutex<Option<Result<String, String>>>>,
+    fetch_state: Arc<Mutex<Option<FetchState>>>,
     center_picker: CenterPickerDialog,
     center_picker_open: bool,
+    was_open: bool,
 }
 
 impl ServiceHelperDialog {
@@ -36,37 +45,63 @@ impl ServiceHelperDialog {
             result_json: String::new(),
             error: None,
             dirty: false,
-            pending_fetch: Arc::new(Mutex::new(None)),
+            fetch_state: Arc::new(Mutex::new(None)),
             center_picker: CenterPickerDialog::new(LatLng::default()),
             center_picker_open: false,
+            was_open: false,
         };
         dialog.reload();
         dialog
     }
 
-    pub(crate) fn show(&mut self, ctx: &Context, open: &mut bool, service: &str) {
+    pub(crate) fn show(
+        &mut self,
+        ctx: &Context,
+        open: &mut bool,
+        service: &str,
+        toasts: &mut Toasts,
+    ) {
         self.service = service.to_string();
-        if let Some(result) = self.pending_fetch.lock().unwrap().take() {
+        let is_open = *open;
+        if is_open && !self.was_open {
+            self.reload();
+            if !self.url.is_empty() {
+                self.fetch(ctx.clone());
+            }
+        }
+        self.was_open = is_open;
+        let result = match &*self.fetch_state.lock().unwrap() {
+            Some(FetchState::Done(result)) => Some(result.clone()),
+            _ => None,
+        };
+        if let Some(result) = result {
+            *self.fetch_state.lock().unwrap() = None;
             match result {
                 Ok(text) => {
                     self.raw_json = text;
                     self.error = None;
                     self.dirty = true;
+                    toasts.success("Fetch succeeded");
                 }
                 Err(e) => {
                     self.error = Some(e.clone());
                     self.result_json = format!("Fetch error: {e}");
+                    toasts.error(format!("Fetch error: {e}"));
                 }
             }
         }
         self.recompute_if_dirty();
 
         let screen = ctx.content_rect().size();
-        let max = egui::vec2(screen.x * 0.98, screen.y * 0.98);
+        let default_size = egui::vec2(
+            (screen.x * 0.75).clamp(360.0, 900.0),
+            (screen.y * 0.8).clamp(320.0, 650.0),
+        );
+        let max = egui::vec2(screen.x * 0.96, screen.y * 0.96);
         egui::Window::new("Service helper")
             .open(open)
             .resizable(true)
-            .default_size([900.0, 600.0])
+            .default_size(default_size)
             .max_size(max)
             .show(ctx, |ui| {
                 self.show_content(ui);
@@ -74,19 +109,43 @@ impl ServiceHelperDialog {
     }
 
     fn show_content(&mut self, ui: &mut Ui) {
+        let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
+            Some(FetchState::Connecting) => (true, "Connecting…"),
+            Some(FetchState::Downloading) => (true, "Getting data…"),
+            _ => (false, ""),
+        };
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.form_mode, "Form mode");
             ui.separator();
+            if ui
+                .add_enabled(!fetching, egui::Button::new("Fetch"))
+                .clicked()
+            {
+                self.fetch(ui.ctx().clone());
+            }
             if ui.button("Reload").clicked() {
                 self.reload();
             }
         });
         ui.separator();
         let available_height = ui.available_height();
+        let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+        let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+            let mut job = egui_extras::syntax_highlighting::highlight(
+                ui.ctx(),
+                ui.style(),
+                &theme,
+                text.as_str(),
+                "json",
+            );
+            job.wrap.max_width = wrap_width;
+            ui.fonts_mut(|f| f.layout_job(job))
+        };
+        let screen = ui.ctx().content_rect().size();
         egui::Panel::left("helper_left")
             .resizable(true)
-            .default_size(460.0)
-            .size_range(280.0..=1200.0)
+            .default_size(380.0)
+            .size_range(240.0..=(screen.x * 0.45))
             .show_inside(ui, |ui| {
                 if self.form_mode {
                     ui.label(RichText::new("Service descriptor (form)").strong());
@@ -102,7 +161,8 @@ impl ServiceHelperDialog {
                                     .code_editor()
                                     .interactive(false)
                                     .desired_width(f32::INFINITY)
-                                    .desired_rows(30),
+                                    .desired_rows(30)
+                                    .layouter(&mut json_layouter),
                             );
                         });
                 }
@@ -115,8 +175,15 @@ impl ServiceHelperDialog {
                         .hint_text("https://...")
                         .desired_width(f32::INFINITY),
                 );
-                if ui.button("Fetch").clicked() {
+                if ui
+                    .add_enabled(!fetching, egui::Button::new("Fetch"))
+                    .clicked()
+                {
                     self.fetch(ui.ctx().clone());
+                }
+                if fetching {
+                    ui.spinner();
+                    ui.label(step);
                 }
             });
             if let Some(error) = &self.error {
@@ -133,7 +200,8 @@ impl ServiceHelperDialog {
                             .code_editor()
                             .interactive(false)
                             .desired_width(f32::INFINITY)
-                            .desired_rows(15),
+                            .desired_rows(15)
+                            .layouter(&mut json_layouter),
                     );
                 });
 
@@ -147,7 +215,8 @@ impl ServiceHelperDialog {
                             .code_editor()
                             .interactive(false)
                             .desired_width(f32::INFINITY)
-                            .desired_rows(15),
+                            .desired_rows(15)
+                            .layouter(&mut json_layouter),
                     );
                 });
         });
@@ -220,16 +289,18 @@ impl ServiceHelperDialog {
 
     fn fetch(&mut self, ctx: Context) {
         let url = self.url.clone();
-        let pending_fetch = Arc::clone(&self.pending_fetch);
+        let fetch_state = Arc::clone(&self.fetch_state);
         crate::roadwork_app::spawn_task(async move {
-            let result = match reqwest::get(&url).await {
-                Ok(response) => match response.text().await {
-                    Ok(text) => Ok(text),
-                    Err(e) => Err(e.to_string()),
-                },
-                Err(e) => Err(e.to_string()),
-            };
-            *pending_fetch.lock().unwrap() = Some(result);
+            *fetch_state.lock().unwrap() = Some(FetchState::Connecting);
+            ctx.request_repaint();
+            let result = async {
+                let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+                *fetch_state.lock().unwrap() = Some(FetchState::Downloading);
+                ctx.request_repaint();
+                response.text().await.map_err(|e| e.to_string())
+            }
+            .await;
+            *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
             ctx.request_repaint();
         });
     }

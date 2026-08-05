@@ -272,19 +272,6 @@ impl RoadworkApp {
     }
 
     fn show_top_panel(&mut self, ui: &mut Ui) {
-        egui::Panel::top("menu_bar").show_inside(ui, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Help", |ui| {
-                    if ui.button("About").clicked() {
-                        self.show_about_dialog = true;
-                        ui.close();
-                    }
-                });
-            });
-            if self.show_about_dialog {
-                AboutDialog::new(&mut self.show_about_dialog).show(ui);
-            }
-        });
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let current_service = self.selected_service.clone();
@@ -323,8 +310,21 @@ impl RoadworkApp {
                 if ui.button("Service helper").clicked() {
                     self.show_service_helper_dialog = true;
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let size = egui::vec2(18.0, 18.0);
+                    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                    ui.painter()
+                        .rect_filled(rect, 3.0, crate::build_color::build_color());
+                    if response.clicked() {
+                        self.show_about_dialog = true;
+                    }
+                });
             });
         });
+
+        if self.show_about_dialog {
+            AboutDialog::new(&mut self.show_about_dialog).show(ui.ctx());
+        }
 
         if self.show_info_dialog {
             if let Some(md) = self.current_metadata.lock().unwrap().as_ref() {
@@ -348,6 +348,7 @@ impl RoadworkApp {
             ui.ctx(),
             &mut self.show_service_helper_dialog,
             &self.selected_service,
+            &mut self.toasts,
         );
     }
 

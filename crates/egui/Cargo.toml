@@ -20,7 +20,7 @@ icon = ["../../media/icon.png", "../../media/AppIcon.icns"]
 [dependencies]
 chrono = "0.4"
 egui = "0.34"
-egui_extras = { version = "0.34", features = ["svg"] }
+egui_extras = { version = "0.34", features = ["svg", "syntect"] }
 eframe = { version = "0.34", features = ["persistence"] }
 egui-notify = "0.22.0"
 log = "0.4"
