@@ -1,5 +1,6 @@
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
+use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
@@ -7,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::center_picker_dialog::CenterPickerDialog;
+use super::service_helper_form::{FieldsValidation, FieldsValues};
 
 #[derive(Clone)]
 enum FetchState {
@@ -223,7 +225,8 @@ impl ServiceHelperDialog {
     }
 
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
-        let roadwork_array_valid = self.roadwork_array_is_valid();
+        let field_validation = self.field_validation();
+        let field_values = self.field_values();
         let Self {
             descriptor,
             descriptor_json,
@@ -244,7 +247,8 @@ impl ServiceHelperDialog {
                         url_params,
                         center_picker,
                         center_picker_open,
-                        roadwork_array_valid,
+                        &field_validation,
+                        &field_values,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -317,6 +321,97 @@ impl ServiceHelperDialog {
                 ods.roadwork_array_targets_array(&self.raw_json)
             }
             None => false,
+        }
+    }
+
+    fn field_values(&self) -> FieldsValues {
+        let Some(descriptor) = &self.descriptor else {
+            return FieldsValues::default();
+        };
+        if self.raw_json.trim().is_empty() {
+            return FieldsValues::default();
+        }
+        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let path = |path: &str| ods.path_fetched_value(&self.raw_json, path);
+        let optional_path = |optional: &Option<String>| optional.as_deref().and_then(path);
+        let date_path = |date: &Option<DateParser>| {
+            date.as_ref()
+                .map(|date| date.path.clone())
+                .as_deref()
+                .and_then(path)
+        };
+        FieldsValues {
+            roadwork_array: path(&descriptor.roadwork_array),
+            id: path(&descriptor.id),
+            latitude: optional_path(&descriptor.latitude),
+            longitude: optional_path(&descriptor.longitude),
+            polygon: optional_path(&descriptor.polygon),
+            road: optional_path(&descriptor.road),
+            description: optional_path(&descriptor.description),
+            location_details: optional_path(&descriptor.location_details),
+            impact_circulation_detail: optional_path(&descriptor.impact_circulation_detail),
+            url: optional_path(&descriptor.url),
+            from_path: date_path(&descriptor.from),
+            to_path: date_path(&descriptor.to),
+        }
+    }
+
+    fn field_validation(&self) -> FieldsValidation {
+        let Some(descriptor) = &self.descriptor else {
+            return FieldsValidation::valid();
+        };
+        if self.raw_json.trim().is_empty() {
+            return FieldsValidation::valid();
+        }
+        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        FieldsValidation {
+            roadwork_array: self.roadwork_array_is_valid(),
+            id: ods.path_points_to_scalar(&self.raw_json, &descriptor.id),
+            latitude: descriptor
+                .latitude
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            longitude: descriptor
+                .longitude
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            polygon: descriptor
+                .polygon
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar_or_array(&self.raw_json, path))
+                .unwrap_or(true),
+            road: descriptor
+                .road
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            description: descriptor
+                .description
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            location_details: descriptor
+                .location_details
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            impact_circulation_detail: descriptor
+                .impact_circulation_detail
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .unwrap_or(true),
+            from_path: descriptor
+                .from
+                .as_ref()
+                .map(|date| ods.path_points_to_scalar(&self.raw_json, &date.path))
+                .unwrap_or(true),
+            to_path: descriptor
+                .to
+                .as_ref()
+                .map(|date| ods.path_points_to_scalar(&self.raw_json, &date.path))
+                .unwrap_or(true),
         }
     }
 

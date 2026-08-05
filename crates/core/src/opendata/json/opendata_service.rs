@@ -53,6 +53,57 @@ impl OpendataService {
             || self.service_descriptor.roadwork_array.contains('[')
     }
 
+    pub fn path_points_to_scalar(&self, json: &str, path: &str) -> bool {
+        self.path_matches(json, path, is_scalar)
+    }
+
+    pub fn path_fetched_value(&self, json: &str, path: &str) -> Option<String> {
+        if path.trim().is_empty() {
+            return None;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(json) else {
+            return None;
+        };
+        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+            return None;
+        };
+        for node in results.iter() {
+            if let Ok(found) = node.query(path)
+                && let Some(first) = found.first()
+            {
+                return Some(format_fetched_value(first));
+            }
+        }
+        None
+    }
+
+    pub fn path_points_to_scalar_or_array(&self, json: &str, path: &str) -> bool {
+        self.path_matches(json, path, |value| is_scalar(value) || value.is_array())
+    }
+
+    fn path_matches<F>(&self, json: &str, path: &str, matches: F) -> bool
+    where
+        F: Fn(&Value) -> bool,
+    {
+        if path.trim().is_empty() {
+            return true;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(json) else {
+            return false;
+        };
+        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+            return false;
+        };
+        if results.is_empty() {
+            return true;
+        }
+        results.iter().any(|node| {
+            node.query(path)
+                .map(|found| found.iter().any(|v| matches(v)))
+                .unwrap_or(false)
+        })
+    }
+
     pub fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;
@@ -220,5 +271,24 @@ impl OpendataService {
                 Ok(DateRange::without_end(start_time))
             }
         }
+    }
+}
+
+fn is_scalar(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+    )
+}
+
+fn format_fetched_value(value: &Value) -> String {
+    let text = match value {
+        Value::String(s) => s.clone(),
+        _ => value.to_string(),
+    };
+    if text.len() > 200 {
+        format!("{}…", &text[..200])
+    } else {
+        text
     }
 }
