@@ -349,7 +349,17 @@ impl ServiceHelperDialog {
                 let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
                 *fetch_state.lock().unwrap() = Some(FetchState::Downloading);
                 ctx.request_repaint();
-                response.text().await.map_err(|e| e.to_string())
+                response
+                    .text()
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|text| {
+                        serde_json::from_str::<serde_json::Value>(&text)
+                            .map(|value| {
+                                serde_json::to_string_pretty(&value).unwrap_or(text.clone())
+                            })
+                            .unwrap_or(text)
+                    })
             }
             .await;
             *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
