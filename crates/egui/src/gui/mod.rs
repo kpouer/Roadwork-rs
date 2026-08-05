@@ -1,4 +1,5 @@
 pub mod about_dialog;
+pub mod center_picker_dialog;
 pub mod metada_dialog;
 pub mod roadwork_marker;
 pub mod service_helper_dialog;

@@ -1,8 +1,11 @@
 use egui::{Context, RichText, Ui};
+use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use super::center_picker_dialog::CenterPickerDialog;
 
 pub(crate) struct ServiceHelperDialog {
     service: String,
@@ -16,6 +19,8 @@ pub(crate) struct ServiceHelperDialog {
     error: Option<String>,
     dirty: bool,
     pending_fetch: Arc<Mutex<Option<Result<String, String>>>>,
+    center_picker: CenterPickerDialog,
+    center_picker_open: bool,
 }
 
 impl ServiceHelperDialog {
@@ -32,6 +37,8 @@ impl ServiceHelperDialog {
             error: None,
             dirty: false,
             pending_fetch: Arc::new(Mutex::new(None)),
+            center_picker: CenterPickerDialog::new(LatLng::default()),
+            center_picker_open: false,
         };
         dialog.reload();
         dialog
@@ -152,6 +159,8 @@ impl ServiceHelperDialog {
             descriptor_json,
             dirty,
             url_params,
+            center_picker,
+            center_picker_open,
             ..
         } = self;
         egui::ScrollArea::vertical()
@@ -159,7 +168,13 @@ impl ServiceHelperDialog {
             .max_height(available_height - 24.0)
             .show(ui, |ui| match descriptor {
                 Some(descriptor) => {
-                    let changed = crate::gui::service_helper_form::show(ui, descriptor, url_params);
+                    let changed = crate::gui::service_helper_form::show(
+                        ui,
+                        descriptor,
+                        url_params,
+                        center_picker,
+                        center_picker_open,
+                    );
                     if changed {
                         let params: HashMap<String, String> = url_params
                             .iter()
@@ -180,6 +195,14 @@ impl ServiceHelperDialog {
                     ui.colored_label(ui.visuals().error_fg_color, "No descriptor available");
                 }
             });
+        if *center_picker_open
+            && let Some(center) = center_picker.show(ui.ctx(), center_picker_open)
+            && let Some(descriptor) = descriptor
+        {
+            descriptor.metadata.center = center;
+            *dirty = true;
+            *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+        }
     }
 
     fn reload(&mut self) {

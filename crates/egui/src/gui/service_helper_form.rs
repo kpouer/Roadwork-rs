@@ -1,7 +1,10 @@
 use egui::{DragValue, Grid, RichText, TextEdit, Ui};
 use roadwork_core::opendata::json::model::date_parser::DateParser;
+use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::parser::Parser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
+
+use super::center_picker_dialog::CenterPickerDialog;
 
 const LABEL_WIDTH: f32 = 150.0;
 
@@ -9,6 +12,8 @@ pub(crate) fn show(
     ui: &mut Ui,
     descriptor: &mut ServiceDescriptor,
     url_params: &mut Vec<(String, String)>,
+    center_picker: &mut CenterPickerDialog,
+    center_picker_open: &mut bool,
 ) -> bool {
     let mut changed = false;
 
@@ -27,7 +32,12 @@ pub(crate) fn show(
         "Editor pattern",
         &mut descriptor.metadata.editor_pattern,
     );
-    changed |= center_row(ui, &mut descriptor.metadata.center);
+    changed |= center_row(
+        ui,
+        &mut descriptor.metadata.center,
+        center_picker,
+        center_picker_open,
+    );
 
     ui.add_space(8.0);
     ui.heading("Fields");
@@ -99,7 +109,9 @@ fn optional_text_row(ui: &mut Ui, label: &str, value: &mut Option<String>) -> bo
 
 fn center_row(
     ui: &mut Ui,
-    center: &mut roadwork_core::opendata::json::model::lat_lng::LatLng,
+    center: &mut LatLng,
+    center_picker: &mut CenterPickerDialog,
+    center_picker_open: &mut bool,
 ) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -115,6 +127,10 @@ fn center_row(
         changed |= ui
             .add(DragValue::new(&mut center.lon).speed(0.0001))
             .changed();
+        if ui.button("Pick on map").clicked() {
+            center_picker.open(*center);
+            *center_picker_open = true;
+        }
     });
     changed
 }
