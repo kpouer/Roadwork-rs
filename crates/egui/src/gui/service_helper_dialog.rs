@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::center_picker_dialog::CenterPickerDialog;
-use super::service_helper_form::{FieldsValidation, FieldsValues};
+use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 
 #[derive(Clone)]
 enum FetchState {
@@ -233,6 +233,7 @@ impl ServiceHelperDialog {
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
         let field_validation = self.field_validation();
         let field_values = self.field_values();
+        let path_candidates = self.path_candidates();
         let Self {
             descriptor,
             descriptor_json,
@@ -256,6 +257,7 @@ impl ServiceHelperDialog {
                         &field_validation,
                         &field_values,
                         &self.array_paths,
+                        &path_candidates,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -361,6 +363,26 @@ impl ServiceHelperDialog {
             url: optional_path(&descriptor.url),
             from_path: date_path(&descriptor.from),
             to_path: date_path(&descriptor.to),
+        }
+    }
+
+    fn path_candidates(&self) -> PathCandidates {
+        let Some(descriptor) = &self.descriptor else {
+            return PathCandidates::default();
+        };
+        if self.raw_json.trim().is_empty() {
+            return PathCandidates::default();
+        }
+        let array_path = &descriptor.roadwork_array;
+        PathCandidates {
+            scalars: roadwork_core::opendata::json::opendata_service::find_element_scalar_paths(
+                &self.raw_json,
+                array_path,
+            ),
+            arrays: roadwork_core::opendata::json::opendata_service::find_element_array_paths(
+                &self.raw_json,
+                array_path,
+            ),
         }
     }
 

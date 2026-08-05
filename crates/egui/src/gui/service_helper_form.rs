@@ -39,6 +39,18 @@ pub(crate) struct FieldsValues {
     pub to_path: Option<String>,
 }
 
+#[derive(Default)]
+pub(crate) struct PathCandidates {
+    pub scalars: Vec<(String, String)>,
+    pub arrays: Vec<(String, usize)>,
+}
+
+struct Wand<'a> {
+    scalars: &'a [(String, String)],
+    arrays: Option<&'a [(String, usize)]>,
+    hint: &'static str,
+}
+
 impl FieldsValidation {
     pub fn valid() -> Self {
         Self {
@@ -67,17 +79,35 @@ pub(crate) fn show(
     validation: &FieldsValidation,
     values: &FieldsValues,
     array_paths: &[(String, usize)],
+    path_candidates: &PathCandidates,
 ) -> bool {
     let mut changed = false;
+    let scalar_wand = Wand {
+        scalars: &path_candidates.scalars,
+        arrays: None,
+        hint: "Fetch the JSON first and make sure roadworkArray points to the array of roadworks.",
+    };
+    let polygon_wand = Wand {
+        scalars: &path_candidates.scalars,
+        arrays: Some(&path_candidates.arrays),
+        hint: scalar_wand.hint,
+    };
 
     ui.heading("Metadata");
-    changed |= text_row(ui, "Country", &mut descriptor.metadata.country, None);
-    changed |= text_row(ui, "Name", &mut descriptor.metadata.name, None);
-    changed |= optional_text_row(ui, "Producer", &mut descriptor.metadata.producer, None);
+    changed |= text_row(ui, "Country", &mut descriptor.metadata.country, None, None);
+    changed |= text_row(ui, "Name", &mut descriptor.metadata.name, None, None);
+    changed |= optional_text_row(
+        ui,
+        "Producer",
+        &mut descriptor.metadata.producer,
+        None,
+        None,
+    );
     changed |= optional_text_row(
         ui,
         "Licence name",
         &mut descriptor.metadata.licence_name,
+        None,
         None,
     );
     changed |= optional_text_row(
@@ -85,20 +115,29 @@ pub(crate) fn show(
         "Licence URL",
         &mut descriptor.metadata.licence_url,
         None,
+        None,
     );
-    changed |= text_row(ui, "Source URL", &mut descriptor.metadata.source_url, None);
-    changed |= text_row(ui, "URL", &mut descriptor.metadata.url, None);
-    changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None);
+    changed |= text_row(
+        ui,
+        "Source URL",
+        &mut descriptor.metadata.source_url,
+        None,
+        None,
+    );
+    changed |= text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
+    changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
     changed |= optional_text_row(
         ui,
         "Tile server",
         &mut descriptor.metadata.tile_server,
+        None,
         None,
     );
     changed |= optional_text_row(
         ui,
         "Editor pattern",
         &mut descriptor.metadata.editor_pattern,
+        None,
         None,
     );
     changed |= center_row(
@@ -121,42 +160,82 @@ pub(crate) fn show(
         ui,
         validation.id,
         "id must point to a scalar value in the fetched JSON",
-        |ui, tooltip| text_row(ui, "id", &mut descriptor.id, tooltip),
+        |ui, tooltip| text_row(ui, "id", &mut descriptor.id, tooltip, Some(&scalar_wand)),
         values.id.as_deref(),
     );
     changed |= validated(
         ui,
         validation.latitude,
         "latitude must point to a scalar value in the fetched JSON",
-        |ui, tooltip| optional_text_row(ui, "latitude", &mut descriptor.latitude, tooltip),
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "latitude",
+                &mut descriptor.latitude,
+                tooltip,
+                Some(&scalar_wand),
+            )
+        },
         values.latitude.as_deref(),
     );
     changed |= validated(
         ui,
         validation.longitude,
         "longitude must point to a scalar value in the fetched JSON",
-        |ui, tooltip| optional_text_row(ui, "longitude", &mut descriptor.longitude, tooltip),
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "longitude",
+                &mut descriptor.longitude,
+                tooltip,
+                Some(&scalar_wand),
+            )
+        },
         values.longitude.as_deref(),
     );
     changed |= validated(
         ui,
         validation.polygon,
         "polygon must point to a value in the fetched JSON",
-        |ui, tooltip| optional_text_row(ui, "polygon", &mut descriptor.polygon, tooltip),
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "polygon",
+                &mut descriptor.polygon,
+                tooltip,
+                Some(&polygon_wand),
+            )
+        },
         values.polygon.as_deref(),
     );
     changed |= validated(
         ui,
         validation.road,
         "road must point to a scalar value in the fetched JSON",
-        |ui, tooltip| optional_text_row(ui, "road", &mut descriptor.road, tooltip),
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "road",
+                &mut descriptor.road,
+                tooltip,
+                Some(&scalar_wand),
+            )
+        },
         values.road.as_deref(),
     );
     changed |= validated(
         ui,
         validation.description,
         "description must point to a scalar value in the fetched JSON",
-        |ui, tooltip| optional_text_row(ui, "description", &mut descriptor.description, tooltip),
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "description",
+                &mut descriptor.description,
+                tooltip,
+                Some(&scalar_wand),
+            )
+        },
         values.description.as_deref(),
     );
     changed |= validated(
@@ -169,6 +248,7 @@ pub(crate) fn show(
                 "locationDetails",
                 &mut descriptor.location_details,
                 tooltip,
+                Some(&scalar_wand),
             )
         },
         values.location_details.as_deref(),
@@ -183,11 +263,12 @@ pub(crate) fn show(
                 "impactCirculationDetail",
                 &mut descriptor.impact_circulation_detail,
                 tooltip,
+                Some(&scalar_wand),
             )
         },
         values.impact_circulation_detail.as_deref(),
     );
-    changed |= optional_text_row(ui, "url", &mut descriptor.url, values.url.as_deref());
+    changed |= optional_text_row(ui, "url", &mut descriptor.url, values.url.as_deref(), None);
 
     ui.add_space(8.0);
     ui.heading("Dates");
@@ -291,19 +372,69 @@ where
     changed
 }
 
-fn text_row(ui: &mut Ui, label: &str, value: &mut String, tooltip: Option<&str>) -> bool {
+fn wand_button(ui: &mut Ui, field_label: &str, wand: &Wand, picked: &mut Option<String>) {
+    let button = ui
+        .add(egui::Button::new("✨"))
+        .on_hover_text(format!("Magic wand: pick a path for {field_label}"));
+    let _ = egui::Popup::menu(&button).show(|ui| {
+        let has_items =
+            !wand.scalars.is_empty() || wand.arrays.is_some_and(|arrays| !arrays.is_empty());
+        if !has_items {
+            ui.label(wand.hint);
+            return;
+        }
+        egui::ScrollArea::vertical()
+            .id_salt(format!("wand_{field_label}_scroll"))
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for (path, sample) in wand.scalars {
+                    if ui.button(format!("{path} — {sample}")).clicked() {
+                        *picked = Some(path.clone());
+                    }
+                }
+                if let Some(arrays) = wand.arrays {
+                    for (path, count) in arrays {
+                        if ui.button(format!("{path} ({count} items)")).clicked() {
+                            *picked = Some(path.clone());
+                        }
+                    }
+                }
+            });
+    });
+}
+
+fn text_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut String,
+    tooltip: Option<&str>,
+    wand: Option<&Wand>,
+) -> bool {
     ui.horizontal(|ui| {
-        let label = ui.add_sized(
+        let label_widget = ui.add_sized(
             [LABEL_WIDTH, 20.0],
             egui::Label::new(RichText::new(label).strong()),
         );
-        let width = ui.available_width();
+        let width = if wand.is_some() {
+            ui.available_width() - 30.0
+        } else {
+            ui.available_width()
+        };
         let mut response = ui.add(TextEdit::singleline(value).desired_width(width));
         if let Some(tooltip) = tooltip {
-            label.on_hover_text(tooltip);
+            label_widget.on_hover_text(tooltip);
             response = response.on_hover_text(tooltip);
         }
-        response.changed()
+        let mut changed = response.changed();
+        if let Some(wand) = wand {
+            let mut picked = None;
+            wand_button(ui, label, wand, &mut picked);
+            if let Some(path) = picked {
+                *value = path;
+                changed = true;
+            }
+        }
+        changed
     })
     .inner
 }
@@ -313,10 +444,11 @@ fn optional_text_row(
     label: &str,
     value: &mut Option<String>,
     tooltip: Option<&str>,
+    wand: Option<&Wand>,
 ) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        let label = ui.add_sized(
+        let label_widget = ui.add_sized(
             [LABEL_WIDTH, 20.0],
             egui::Label::new(RichText::new(label).strong()),
         );
@@ -326,18 +458,30 @@ fn optional_text_row(
             changed = true;
         }
         let mut text = value.clone().unwrap_or_default();
-        let width = ui.available_width();
+        let width = if wand.is_some() {
+            ui.available_width() - 30.0
+        } else {
+            ui.available_width()
+        };
         let mut response = ui.add_enabled(
             present,
             TextEdit::singleline(&mut text).desired_width(width),
         );
         if let Some(tooltip) = tooltip {
-            label.on_hover_text(tooltip);
+            label_widget.on_hover_text(tooltip);
             response = response.on_hover_text(tooltip);
         }
         if response.changed() {
             *value = Some(text);
             changed = true;
+        }
+        if let Some(wand) = wand {
+            let mut picked = None;
+            wand_button(ui, label, wand, &mut picked);
+            if let Some(path) = picked {
+                *value = Some(path);
+                changed = true;
+            }
         }
     });
     changed
