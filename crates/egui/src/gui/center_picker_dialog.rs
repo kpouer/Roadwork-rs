@@ -12,14 +12,6 @@ pub(crate) struct CenterPickerDialog {
 }
 
 impl CenterPickerDialog {
-    pub(crate) fn new(center: LatLng) -> Self {
-        Self {
-            map_memory: MapMemory::default(),
-            tiles: None,
-            selected: center,
-        }
-    }
-
     pub(crate) fn open(&mut self, center: LatLng) {
         self.selected = center;
         self.map_memory.center_at(latlng_to_position(center));

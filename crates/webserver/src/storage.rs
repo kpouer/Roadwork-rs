@@ -101,7 +101,7 @@ impl SqliteStorage {
 
         let roadworks: HashMap<String, Roadwork> = rows
             .into_iter()
-            .filter_map(|row| {
+            .map(|row| {
                 let status = Status::from(&row.13);
                 let polygons = row.3.as_deref().and_then(|s| serde_json::from_str(s).ok());
 
@@ -124,7 +124,7 @@ impl SqliteStorage {
                         dirty: row.14 != 0,
                     },
                 };
-                Some((row.0, roadwork))
+                (row.0, roadwork)
             })
             .collect();
 

@@ -23,7 +23,7 @@ impl AppState {
                 info!("No cached data for {service_name}, fetching");
                 let data = self.fetch_from_opendata(service_name).await;
                 if let Some(data) = &data {
-                    let _ = self.storage.save_cache(service_name, &data).await;
+                    let _ = self.storage.save_cache(service_name, data).await;
                 }
                 data
             }
