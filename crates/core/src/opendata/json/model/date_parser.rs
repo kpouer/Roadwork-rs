@@ -3,10 +3,10 @@ use crate::opendata::json::model::parser::Parser;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct DateParser {
     pub path: String,
-    parsers: Vec<Parser>,
+    pub parsers: Vec<Parser>,
 }
 
 impl DateParser {
