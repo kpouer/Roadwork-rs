@@ -4,7 +4,7 @@ use chrono_tz::Tz;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Parser {
     pub matcher: String,
     pub format: Option<String>,
