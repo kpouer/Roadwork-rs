@@ -13,7 +13,7 @@
     },
     "locale": "fr_FR"
   },
-  "roadworkArray": "$.features",
+  "roadworkArray": "$.features[*]",
   "id": "$.properties.idarrete",
   "latitude": "$.geometry.coordinates[0][0][0][1]",
   "longitude": "$.geometry.coordinates[0][0][0][0]",

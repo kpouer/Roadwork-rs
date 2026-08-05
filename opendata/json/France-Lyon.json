@@ -17,8 +17,8 @@
     "editorPattern": null
   },
   "id": "$.properties.gid",
-  "latitude": "$.bbox[0]",
-  "longitude": "$.bbox[1]",
+  "latitude": "$.bbox[1]",
+  "longitude": "$.bbox[0]",
   "polygon": "$.geometry.coordinates",
   "road": "$.properties.nom",
   "description": null,
@@ -29,7 +29,7 @@
     "parsers": [
       {
         "matcher": ".*",
-        "format": "%Y-%m-%d'T'HH:mm:ss'Z'",
+        "format": "%Y-%m-%d",
         "addYear": false,
         "resetHour": false
       }
@@ -40,7 +40,7 @@
     "parsers": [
       {
         "matcher": ".*",
-        "format": "%Y-%m-%d'T'HH:mm:ss'Z'",
+        "format": "%Y-%m-%d",
         "addYear": false,
         "resetHour": false
       }

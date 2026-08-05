@@ -200,7 +200,7 @@ impl ServiceHelperDialog {
                     ui.add(
                         egui::TextEdit::multiline(&mut self.raw_json)
                             .code_editor()
-                            .interactive(false)
+                            .interactive(true)
                             .desired_width(f32::INFINITY)
                             .desired_rows(15)
                             .layouter(&mut json_layouter),

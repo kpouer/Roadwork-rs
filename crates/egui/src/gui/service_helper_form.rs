@@ -313,12 +313,19 @@ fn roadwork_array_row(
                     egui::Label::new(RichText::new("roadworkArray").strong()),
                 );
                 let width = ui.available_width() - 30.0;
-                let mut response = ui.add(TextEdit::singleline(value).desired_width(width));
+                let mut text = value.strip_suffix("[*]").unwrap_or(value).to_string();
+                let mut response = ui.add(TextEdit::singleline(&mut text).desired_width(width));
                 if let Some(tooltip) = tooltip {
                     label.on_hover_text(tooltip);
                     response = response.on_hover_text(tooltip);
                 }
-                changed |= response.changed();
+                if response.changed() {
+                    if !text.is_empty() && !text.ends_with("[*]") {
+                        text.push_str("[*]");
+                    }
+                    *value = text;
+                    changed = true;
+                }
                 let wand = ui
                     .add(egui::Button::new("✨"))
                     .on_hover_text("Magic wand: pick an array path from the fetched JSON");
@@ -331,9 +338,8 @@ fn roadwork_array_row(
                             .max_height(300.0)
                             .show(ui, |ui| {
                                 for (path, count) in array_paths {
-                                    let selector = format!("{path}[*]");
-                                    if ui.button(format!("{selector} ({count} items)")).clicked() {
-                                        *value = selector;
+                                    if ui.button(format!("{path} ({count} items)")).clicked() {
+                                        *value = format!("{path}[*]");
                                         changed = true;
                                     }
                                 }
@@ -357,18 +363,22 @@ fn validated<F>(
 where
     F: FnOnce(&mut Ui, Option<&str>) -> bool,
 {
-    if valid {
-        return inner(ui, value_tooltip);
-    }
+    let stroke = if valid {
+        egui::Stroke::NONE
+    } else {
+        egui::Stroke::new(1.0_f32, egui::Color32::RED)
+    };
     let mut changed = false;
     let response = egui::Frame::default()
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::RED))
+        .stroke(stroke)
         .inner_margin(4.0)
         .show(ui, |ui| {
-            changed = inner(ui, None);
+            changed = inner(ui, value_tooltip);
         })
         .response;
-    response.on_hover_text(error_tooltip);
+    if !valid {
+        response.on_hover_text(error_tooltip);
+    }
     changed
 }
 

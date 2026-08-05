@@ -12,7 +12,7 @@
     },
     "locale": "de_DE"
   },
-  "roadworkArray": "$.features",
+  "roadworkArray": "$.features[*]",
   "id": "$.properties.id",
   "latitude": "$.geometry.coordinates[1]",
   "longitude": "$.geometry.coordinates[0]",
@@ -24,16 +24,16 @@
     "parsers": [
       {
         "matcher": ".*",
-        "format": "dd.MM.yyyy HH:mm"
+        "format": "%d.%m.%Y %H:%M"
       }
     ]
   },
   "to": {
-    "path": "$.properties.validity.from",
+    "path": "$.properties.validity.to",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "dd.MM.yyyy HH:mm"
+        "format": "%d.%m.%Y %H:%M"
       }
     ]
   }
