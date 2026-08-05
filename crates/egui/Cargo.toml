@@ -37,4 +37,4 @@ wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pollster = "0.4"
+pollster = "1.0.1"
