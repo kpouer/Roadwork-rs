@@ -57,6 +57,7 @@ impl FieldsValidation {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn show(
     ui: &mut Ui,
     descriptor: &mut ServiceDescriptor,
@@ -65,6 +66,7 @@ pub(crate) fn show(
     center_picker_open: &mut bool,
     validation: &FieldsValidation,
     values: &FieldsValues,
+    array_paths: &[(String, usize)],
 ) -> bool {
     let mut changed = false;
 
@@ -113,6 +115,7 @@ pub(crate) fn show(
         &mut descriptor.roadwork_array,
         validation.roadwork_array,
         values.roadwork_array.as_deref(),
+        array_paths,
     );
     changed |= validated(
         ui,
@@ -210,12 +213,55 @@ pub(crate) fn show(
     changed
 }
 
-fn roadwork_array_row(ui: &mut Ui, value: &mut String, valid: bool, tooltip: Option<&str>) -> bool {
+fn roadwork_array_row(
+    ui: &mut Ui,
+    value: &mut String,
+    valid: bool,
+    tooltip: Option<&str>,
+    array_paths: &[(String, usize)],
+) -> bool {
     validated(
         ui,
         valid,
         "roadworkArray must point to an array in the fetched JSON",
-        |ui, tooltip| text_row(ui, "roadworkArray", value, tooltip),
+        |ui, tooltip| {
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                let label = ui.add_sized(
+                    [LABEL_WIDTH, 20.0],
+                    egui::Label::new(RichText::new("roadworkArray").strong()),
+                );
+                let width = ui.available_width() - 30.0;
+                let mut response = ui.add(TextEdit::singleline(value).desired_width(width));
+                if let Some(tooltip) = tooltip {
+                    label.on_hover_text(tooltip);
+                    response = response.on_hover_text(tooltip);
+                }
+                changed |= response.changed();
+                let wand = ui
+                    .add(egui::Button::new("✨"))
+                    .on_hover_text("Magic wand: pick an array path from the fetched JSON");
+                let _ = egui::Popup::menu(&wand).show(|ui| {
+                    if array_paths.is_empty() {
+                        ui.label("No array found in the fetched JSON. Fetch the JSON first.");
+                    } else {
+                        egui::ScrollArea::vertical()
+                            .id_salt("wand_arrays_scroll")
+                            .max_height(300.0)
+                            .show(ui, |ui| {
+                                for (path, count) in array_paths {
+                                    let selector = format!("{path}[*]");
+                                    if ui.button(format!("{selector} ({count} items)")).clicked() {
+                                        *value = selector;
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    }
+                });
+            });
+            changed
+        },
         tooltip,
     )
 }

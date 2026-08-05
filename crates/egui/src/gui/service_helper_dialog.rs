@@ -32,6 +32,7 @@ pub(crate) struct ServiceHelperDialog {
     center_picker: CenterPickerDialog,
     center_picker_open: bool,
     was_open: bool,
+    array_paths: Vec<(String, usize)>,
 }
 
 impl ServiceHelperDialog {
@@ -51,6 +52,7 @@ impl ServiceHelperDialog {
             center_picker: CenterPickerDialog::new(LatLng::default()),
             center_picker_open: false,
             was_open: false,
+            array_paths: Vec::new(),
         };
         dialog.reload();
         dialog
@@ -81,6 +83,10 @@ impl ServiceHelperDialog {
             match result {
                 Ok(text) => {
                     self.raw_json = text;
+                    self.array_paths =
+                        roadwork_core::opendata::json::opendata_service::find_json_arrays(
+                            &self.raw_json,
+                        );
                     self.error = None;
                     self.dirty = true;
                     toasts.success("Fetch succeeded");
@@ -249,6 +255,7 @@ impl ServiceHelperDialog {
                         center_picker_open,
                         &field_validation,
                         &field_values,
+                        &self.array_paths,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -291,6 +298,7 @@ impl ServiceHelperDialog {
             None => String::new(),
         };
         self.dirty = true;
+        self.array_paths = Vec::new();
     }
 
     fn fetch(&mut self, ctx: Context) {
