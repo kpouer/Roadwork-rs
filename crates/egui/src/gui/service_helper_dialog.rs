@@ -1,7 +1,6 @@
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::date_parser::DateParser;
-use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use std::collections::HashMap;
@@ -17,6 +16,7 @@ enum FetchState {
     Done(Result<String, String>),
 }
 
+#[derive(Default)]
 pub(crate) struct ServiceHelperDialog {
     service: String,
     descriptor: Option<ServiceDescriptor>,
@@ -39,20 +39,8 @@ impl ServiceHelperDialog {
     pub(crate) fn new(service: &str) -> Self {
         let mut dialog = Self {
             service: service.to_string(),
-            descriptor: None,
-            descriptor_json: String::new(),
             form_mode: true,
-            url_params: Vec::new(),
-            url: String::new(),
-            raw_json: String::new(),
-            result_json: String::new(),
-            error: None,
-            dirty: false,
-            fetch_state: Arc::new(Mutex::new(None)),
-            center_picker: CenterPickerDialog::new(LatLng::default()),
-            center_picker_open: false,
-            was_open: false,
-            array_paths: Vec::new(),
+            ..Default::default()
         };
         dialog.reload();
         dialog

@@ -4,6 +4,7 @@ use egui::{Color32, Context, DragValue, RichText, Stroke};
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use walkers::{HttpTiles, Map, MapMemory, Tiles};
 
+#[derive(Default)]
 pub(crate) struct CenterPickerDialog {
     map_memory: MapMemory,
     tiles: Option<HttpTiles>,
