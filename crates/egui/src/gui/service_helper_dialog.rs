@@ -286,15 +286,21 @@ impl ServiceHelperDialog {
     }
 
     fn propagate_url(&mut self) {
-        let Some(descriptor) = &mut self.descriptor else {
-            return;
-        };
-        if descriptor.metadata.url == self.url {
-            return;
+        let mut changed = false;
+        if let Some(descriptor) = &mut self.descriptor
+            && descriptor.metadata.url != self.url
+        {
+            descriptor.metadata.url = self.url.clone();
+            self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+            changed = true;
         }
-        descriptor.metadata.url = self.url.clone();
-        self.dirty = true;
-        self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+        if changed {
+            self.raw_json.clear();
+            self.result_json.clear();
+            self.array_paths.clear();
+            self.error = None;
+            self.dirty = true;
+        }
     }
 
     fn apply_descriptor_json(&mut self) {
@@ -306,6 +312,9 @@ impl ServiceHelperDialog {
                 self.url = descriptor.metadata.url.clone();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
                 self.descriptor = Some(descriptor);
+                self.raw_json.clear();
+                self.result_json.clear();
+                self.array_paths.clear();
                 self.error = None;
                 self.dirty = true;
             }
