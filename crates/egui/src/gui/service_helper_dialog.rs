@@ -223,6 +223,7 @@ impl ServiceHelperDialog {
     }
 
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
+        let roadwork_array_valid = self.roadwork_array_is_valid();
         let Self {
             descriptor,
             descriptor_json,
@@ -243,6 +244,7 @@ impl ServiceHelperDialog {
                         url_params,
                         center_picker,
                         center_picker_open,
+                        roadwork_array_valid,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -303,6 +305,19 @@ impl ServiceHelperDialog {
             *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
             ctx.request_repaint();
         });
+    }
+
+    fn roadwork_array_is_valid(&self) -> bool {
+        if self.raw_json.trim().is_empty() {
+            return true;
+        }
+        match &self.descriptor {
+            Some(descriptor) => {
+                let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+                ods.roadwork_array_targets_array(&self.raw_json)
+            }
+            None => false,
+        }
     }
 
     fn recompute_if_dirty(&mut self) {

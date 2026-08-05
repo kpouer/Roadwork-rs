@@ -38,6 +38,21 @@ impl OpendataService {
         self.parse_json(&json)
     }
 
+    pub fn roadwork_array_targets_array(&self, json: &str) -> bool {
+        let Ok(value) = serde_json::from_str::<Value>(json) else {
+            return false;
+        };
+        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+            return false;
+        };
+        if results.is_empty() {
+            return false;
+        }
+        results.iter().any(|v| v.is_array())
+            || results.len() > 1
+            || self.service_descriptor.roadwork_array.contains('[')
+    }
+
     pub fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;

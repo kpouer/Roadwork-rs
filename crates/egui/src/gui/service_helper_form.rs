@@ -14,6 +14,7 @@ pub(crate) fn show(
     url_params: &mut Vec<(String, String)>,
     center_picker: &mut CenterPickerDialog,
     center_picker_open: &mut bool,
+    roadwork_array_valid: bool,
 ) -> bool {
     let mut changed = false;
 
@@ -41,7 +42,7 @@ pub(crate) fn show(
 
     ui.add_space(8.0);
     ui.heading("Fields");
-    changed |= text_row(ui, "roadworkArray", &mut descriptor.roadwork_array);
+    changed |= roadwork_array_row(ui, &mut descriptor.roadwork_array, roadwork_array_valid);
     changed |= text_row(ui, "id", &mut descriptor.id);
     changed |= optional_text_row(ui, "latitude", &mut descriptor.latitude);
     changed |= optional_text_row(ui, "longitude", &mut descriptor.longitude);
@@ -65,6 +66,22 @@ pub(crate) fn show(
     ui.heading("URL params");
     changed |= url_params_grid(ui, url_params);
 
+    changed
+}
+
+fn roadwork_array_row(ui: &mut Ui, value: &mut String, valid: bool) -> bool {
+    if valid {
+        return text_row(ui, "roadworkArray", value);
+    }
+    let mut changed = false;
+    let response = egui::Frame::default()
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::RED))
+        .inner_margin(4.0)
+        .show(ui, |ui| {
+            changed = text_row(ui, "roadworkArray", value);
+        })
+        .response;
+    response.on_hover_text("roadworkArray must point to an array in the fetched JSON");
     changed
 }
 
