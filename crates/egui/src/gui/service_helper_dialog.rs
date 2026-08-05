@@ -164,25 +164,31 @@ impl ServiceHelperDialog {
                         .id_salt("descriptor_scroll")
                         .max_height(available_height - 24.0)
                         .show(ui, |ui| {
-                            ui.add(
+                            let response = ui.add(
                                 egui::TextEdit::multiline(&mut self.descriptor_json)
                                     .code_editor()
-                                    .interactive(false)
+                                    .interactive(true)
                                     .desired_width(f32::INFINITY)
                                     .desired_rows(30)
                                     .layouter(&mut json_layouter),
                             );
+                            if response.changed() {
+                                self.apply_descriptor_json();
+                            }
                         });
                 }
             });
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.label(RichText::new("URL").strong());
             ui.horizontal(|ui| {
-                ui.add(
+                let response = ui.add(
                     egui::TextEdit::singleline(&mut self.url)
                         .hint_text("https://...")
                         .desired_width(f32::INFINITY),
                 );
+                if response.changed() {
+                    self.propagate_url();
+                }
                 if ui
                     .add_enabled(!fetching, egui::Button::new("Fetch"))
                     .clicked()
@@ -241,6 +247,7 @@ impl ServiceHelperDialog {
             url_params,
             center_picker,
             center_picker_open,
+            url,
             ..
         } = self;
         egui::ScrollArea::vertical()
@@ -273,6 +280,7 @@ impl ServiceHelperDialog {
                         *dirty = true;
                         *descriptor_json =
                             serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                        *url = descriptor.metadata.url.clone();
                     }
                 }
                 None => {
@@ -286,6 +294,34 @@ impl ServiceHelperDialog {
             descriptor.metadata.center = center;
             *dirty = true;
             *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+        }
+    }
+
+    fn propagate_url(&mut self) {
+        let Some(descriptor) = &mut self.descriptor else {
+            return;
+        };
+        if descriptor.metadata.url == self.url {
+            return;
+        }
+        descriptor.metadata.url = self.url.clone();
+        self.dirty = true;
+        self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+    }
+
+    fn apply_descriptor_json(&mut self) {
+        if self.descriptor_json.trim().is_empty() {
+            return;
+        }
+        match serde_json::from_str::<ServiceDescriptor>(&self.descriptor_json) {
+            Ok(descriptor) => {
+                self.url = descriptor.metadata.url.clone();
+                self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
+                self.descriptor = Some(descriptor);
+                self.error = None;
+                self.dirty = true;
+            }
+            Err(e) => self.error = Some(format!("Invalid descriptor JSON: {e}")),
         }
     }
 
