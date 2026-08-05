@@ -1,32 +1,37 @@
 {
   "metadata": {
     "country": "France",
+    "center": {
+      "lat": 45.75627,
+      "lon": 4.85115
+    },
+    "sourceUrl": "https://data.grandlyon.com/jeux-de-donnees/chantiers-perturbants-metropole-lyon/info",
+    "url": "https://download.data.grandlyon.com/wfs/grandlyon?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=pvo_patrimoine_voirie.pvochantierperturbant&outputFormat=application/json;%20subtype=geojson&SRSNAME=EPSG:4171&startIndex=0&count=1000",
     "name": "Lyon",
     "producer": "Métropole de Lyon",
     "licenceName": "Licence Ouverte",
     "licenceUrl": "https://download.data.grandlyon.com/licences/ETALAB-Licence-Ouverte-v2.0.pdf",
-    "sourceUrl": "https://data.grandlyon.com/jeux-de-donnees/chantiers-perturbants-metropole-lyon/info",
-    "url": "https://download.data.grandlyon.com/wfs/grandlyon?SERVICE=WFS&VERSION=2.0.0&request=GetFeature&typename=pvo_patrimoine_voirie.pvochantierperturbant&outputFormat=application/json;%20subtype=geojson&SRSNAME=EPSG:4171&startIndex=0&count=1000",
-    "center": {
-     "lat": 45.75627,
-     "lon": 4.85115
-    },
-    "locale": "fr_FR"
+    "locale": "fr_FR",
+    "url_params": null,
+    "tileServer": null,
+    "editorPattern": null
   },
-  "roadworkArray": "$.features",
   "id": "$.properties.gid",
-  "latitude": "$.geometry.coordinates[0][0][1]",
-  "longitude": "$.geometry.coordinates[0][0][0]",
+  "latitude": "$.bbox[0]",
+  "longitude": "$.bbox[1]",
   "polygon": "$.geometry.coordinates",
   "road": "$.properties.nom",
-  "impactCirculationDetail": "$.properties.typeperturbation",
+  "description": null,
   "locationDetails": "$.properties.precisionlocalisation",
+  "impactCirculationDetail": "$.properties.typeperturbation",
   "from": {
     "path": "$.properties.debutchantier",
     "parsers": [
       {
         "matcher": ".*",
-        "format": "%Y-%m-%d'T'HH:mm:ss'Z'"
+        "format": "%Y-%m-%d'T'HH:mm:ss'Z'",
+        "addYear": false,
+        "resetHour": false
       }
     ]
   },
@@ -35,8 +40,12 @@
     "parsers": [
       {
         "matcher": ".*",
-        "format": "%Y-%m-%d'T'HH:mm:ss'Z'"
+        "format": "%Y-%m-%d'T'HH:mm:ss'Z'",
+        "addYear": false,
+        "resetHour": false
       }
     ]
-  }
+  },
+  "roadworkArray": "$.features[*]",
+  "url": null
 }

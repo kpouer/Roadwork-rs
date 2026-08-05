@@ -36,13 +36,16 @@ pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
     };
     let mut arrays = Vec::new();
     collect_arrays(&value, "$", &mut arrays);
+    arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
     arrays
 }
 
 fn collect_arrays(value: &Value, path: &str, arrays: &mut Vec<(String, usize)>) {
     match value {
         Value::Array(elements) => {
-            arrays.push((path.to_string(), elements.len()));
+            if !elements.is_empty() && elements.iter().all(Value::is_object) {
+                arrays.push((path.to_string(), elements.len()));
+            }
             for (i, element) in elements.iter().enumerate() {
                 if element.is_array() || element.is_object() {
                     collect_arrays(element, &format!("{path}[{i}]"), arrays);
