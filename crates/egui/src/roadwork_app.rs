@@ -96,12 +96,8 @@ impl RoadworkApp {
             service_helper,
         };
 
-        app.spawn_init();
+        app.load_data();
         app
-    }
-
-    fn spawn_init(&self) {
-        self.load_roadworks(&self.selected_service);
     }
 
     fn load_data(&self) {

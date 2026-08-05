@@ -9,7 +9,7 @@ pub(crate) struct MetadataDialog<'a> {
 }
 
 impl<'a> MetadataDialog<'a> {
-    pub(crate) fn new(open: &'a mut bool, metadata: &'a Metadata) -> Self {
+    pub(crate) const fn new(open: &'a mut bool, metadata: &'a Metadata) -> Self {
         Self { open, metadata }
     }
 

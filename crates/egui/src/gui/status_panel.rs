@@ -7,7 +7,7 @@ pub struct StatusPanel<'a> {
 }
 
 impl<'a> StatusPanel<'a> {
-    pub fn new(roadwork: &'a mut Roadwork) -> Self {
+    pub const fn new(roadwork: &'a mut Roadwork) -> Self {
         Self { roadwork }
     }
 

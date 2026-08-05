@@ -8,7 +8,7 @@ pub(crate) struct SettingsDialog<'a> {
 }
 
 impl<'a> SettingsDialog<'a> {
-    pub(crate) fn new(open: &'a mut bool, settings: &'a mut Settings) -> Self {
+    pub(crate) const fn new(open: &'a mut bool, settings: &'a mut Settings) -> Self {
         Self { open, settings }
     }
 

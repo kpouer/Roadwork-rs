@@ -12,7 +12,11 @@ pub struct RoadworkMarker<'a> {
 }
 
 impl<'a> RoadworkMarker<'a> {
-    pub(crate) fn new(roadwork: &'a Roadwork, projector: &'a Projector, clicked: bool) -> Self {
+    pub(crate) const fn new(
+        roadwork: &'a Roadwork,
+        projector: &'a Projector,
+        clicked: bool,
+    ) -> Self {
         Self {
             roadwork,
             projector,
