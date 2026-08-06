@@ -12,6 +12,7 @@ use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
 use log::{error, info, warn};
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct OpendataService {
@@ -27,6 +28,43 @@ impl OpendataService {
             service_descriptor,
             http_service: HttpService,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PathValidation {
+    pub label: &'static str,
+    pub path: String,
+    pub required: bool,
+    pub expected: &'static str,
+    pub failures: Vec<usize>,
+    pub element_count: usize,
+    pub message: Option<&'static str>,
+}
+
+impl PathValidation {
+    pub fn new(
+        label: &'static str,
+        path: &str,
+        required: bool,
+        expected: &'static str,
+        failures: Vec<usize>,
+        element_count: usize,
+        message: Option<&'static str>,
+    ) -> Self {
+        Self {
+            label,
+            path: path.to_string(),
+            required,
+            expected,
+            failures,
+            element_count,
+            message,
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.failures.is_empty()
     }
 }
 
@@ -205,6 +243,180 @@ impl OpendataService {
 
     pub fn element_at(&self, json: &str, index: usize) -> Option<Value> {
         self.roadwork_elements(json).get(index).cloned()
+    }
+
+    /// Validates every descriptor path against every element of the roadwork array.
+    pub fn validate(&self, json: &str) -> Vec<PathValidation> {
+        let elements = self.roadwork_elements(json);
+        let descriptor = &self.service_descriptor;
+        let mut report = Vec::with_capacity(12);
+
+        let array_valid = self.roadwork_array_targets_array(json) && !elements.is_empty();
+        report.push(PathValidation::new(
+            "roadworkArray",
+            &descriptor.roadwork_array,
+            true,
+            "array of roadworks",
+            if array_valid { Vec::new() } else { vec![0] },
+            elements.len(),
+            if array_valid {
+                None
+            } else {
+                Some("must target a non-empty array of roadworks")
+            },
+        ));
+
+        if elements.is_empty() {
+            return report;
+        }
+
+        let count = elements.len();
+
+        let id_failures = self.path_failures(&elements, |element| {
+            self.path_matches_in(element, &descriptor.id, is_scalar)
+        });
+        report.push(PathValidation::new(
+            "id",
+            &descriptor.id,
+            true,
+            "scalar",
+            id_failures,
+            count,
+            None,
+        ));
+
+        let duplicate_failures = self.duplicate_id_failures(&elements);
+        report.push(PathValidation::new(
+            "id unique",
+            &descriptor.id,
+            true,
+            "unique",
+            duplicate_failures,
+            count,
+            None,
+        ));
+
+        report.extend(
+            [
+                self.optional_scalar_report(&elements, "latitude", descriptor.latitude.as_ref()),
+                self.optional_scalar_report(&elements, "longitude", descriptor.longitude.as_ref()),
+                self.optional_scalar_report(&elements, "road", descriptor.road.as_ref()),
+                self.optional_scalar_report(
+                    &elements,
+                    "description",
+                    descriptor.description.as_ref(),
+                ),
+                self.optional_scalar_report(
+                    &elements,
+                    "locationDetails",
+                    descriptor.location_details.as_ref(),
+                ),
+                self.optional_scalar_report(
+                    &elements,
+                    "impactCirculationDetail",
+                    descriptor.impact_circulation_detail.as_ref(),
+                ),
+                self.optional_scalar_report(&elements, "url", descriptor.url.as_ref()),
+            ]
+            .into_iter()
+            .flatten(),
+        );
+
+        if let Some(polygon) = descriptor.polygon.as_ref().filter(|p| !p.trim().is_empty()) {
+            let failures = self.path_failures(&elements, |element| {
+                self.path_matches_in(element, polygon, |value| {
+                    is_scalar(value) || value.is_array()
+                })
+            });
+            report.push(PathValidation::new(
+                "polygon",
+                polygon,
+                false,
+                "scalar or array",
+                failures,
+                count,
+                None,
+            ));
+        }
+
+        let locale = descriptor.metadata.get_locale();
+        for (label, date) in [
+            ("from", descriptor.from.as_ref()),
+            ("to", descriptor.to.as_ref()),
+        ] {
+            let Some(date) = date else { continue };
+            if date.path.trim().is_empty() {
+                continue;
+            }
+            let failures = self.path_failures(&elements, |element| {
+                element
+                    .get_path(&date.path)
+                    .map(|value| date.parse(&value, locale).is_ok())
+                    .unwrap_or(false)
+            });
+            report.push(PathValidation::new(
+                label,
+                &date.path,
+                false,
+                "parseable date",
+                failures,
+                count,
+                None,
+            ));
+        }
+
+        report
+    }
+
+    fn optional_scalar_report(
+        &self,
+        elements: &[Value],
+        label: &'static str,
+        path: Option<&String>,
+    ) -> Option<PathValidation> {
+        let path = path.filter(|p| !p.trim().is_empty())?;
+        let failures = self.path_failures(elements, |element| {
+            self.path_matches_in(element, path, is_scalar)
+        });
+        Some(PathValidation::new(
+            label,
+            path,
+            false,
+            "scalar",
+            failures,
+            elements.len(),
+            None,
+        ))
+    }
+
+    fn path_failures<F>(&self, elements: &[Value], element_ok: F) -> Vec<usize>
+    where
+        F: Fn(&Value) -> bool,
+    {
+        let mut failures = Vec::new();
+        for (index, element) in elements.iter().enumerate() {
+            if !element_ok(element) {
+                failures.push(index);
+            }
+        }
+        failures
+    }
+
+    fn duplicate_id_failures(&self, elements: &[Value]) -> Vec<usize> {
+        let mut occurrences: HashMap<String, Vec<usize>> = HashMap::new();
+        for (index, element) in elements.iter().enumerate() {
+            if let Ok(id) = element.get_path(&self.service_descriptor.id) {
+                occurrences.entry(id).or_default().push(index);
+            }
+        }
+        let mut failures: Vec<usize> = occurrences
+            .values()
+            .filter(|indices| indices.len() > 1)
+            .flatten()
+            .copied()
+            .collect();
+        failures.sort_unstable();
+        failures
     }
 
     fn roadwork_elements(&self, json: &str) -> Vec<Value> {
@@ -511,5 +723,88 @@ fn format_fetched_value(value: &Value) -> String {
         format!("{}…", &text[..200])
     } else {
         text
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+    use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
+
+    fn descriptor() -> ServiceDescriptor {
+        serde_json::from_str::<ServiceDescriptor>(
+            r#"{
+                "metadata": {
+                    "country": "France", "name": "Paris", "sourceUrl": "s", "url": "u",
+                    "center": {"lat": 48.0, "lon": 2.0}, "locale": "fr_FR"
+                },
+                "roadworkArray": "$.records[*]",
+                "id": "$.recordid",
+                "latitude": "$.geometry.coordinates[1]",
+                "longitude": "$.geometry.coordinates[0]",
+                "polygon": "$.fields.geo_shape.coordinates[0]",
+                "road": "$.fields.voie",
+                "locationDetails": "$.fields.precision_localisation",
+                "impactCirculationDetail": "$.fields.impact_circulation_detail",
+                "from": {"path": "$.fields.date_debut", "parsers": [{"matcher": ".*", "format": "%Y-%m-%d"}]},
+                "to": {"path": "$.fields.date_fin", "parsers": [{"matcher": ".*", "format": "%Y-%m-%d"}]}
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn json() -> &'static str {
+        r#"{
+            "records": [
+                {
+                    "recordid": "abc",
+                    "geometry": {"coordinates": [2.35, 48.85]},
+                    "fields": {
+                        "voie": "Rue X",
+                        "precision_localisation": "Precise",
+                        "impact_circulation_detail": "Some",
+                        "geo_shape": {"coordinates": [[[2.34,48.84],[2.36,48.86]]]},
+                        "date_debut": "2023-01-01",
+                        "date_fin": "2023-01-31"
+                    }
+                },
+                {
+                    "recordid": "abc",
+                    "fields": {
+                        "geo_shape": {"coordinates": null},
+                        "date_debut": "not-a-date"
+                    }
+                }
+            ]
+        }"#
+    }
+
+    #[test]
+    fn validates_all_elements() {
+        let ods = OpendataService::new("test".to_string(), descriptor());
+        let report = ods.validate(json());
+        let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
+        assert!(get("roadworkArray").is_valid());
+        assert!(get("id").is_valid());
+        assert_eq!(get("id unique").failures, vec![0, 1]);
+        assert_eq!(get("latitude").failures, vec![1]);
+        assert_eq!(get("longitude").failures, vec![1]);
+        assert_eq!(get("road").failures, vec![1]);
+        assert_eq!(get("locationDetails").failures, vec![1]);
+        assert_eq!(get("impactCirculationDetail").failures, vec![1]);
+        assert_eq!(get("polygon").failures, vec![1]);
+        assert_eq!(get("from").failures, vec![1]);
+        assert_eq!(get("to").failures, vec![1]);
+    }
+
+    #[test]
+    fn reports_bad_array_path() {
+        let mut descriptor = descriptor();
+        descriptor.roadwork_array = "$.nope".to_string();
+        let ods = OpendataService::new("test".to_string(), descriptor);
+        let report = ods.validate(json());
+        assert!(!report[0].is_valid());
+        assert_eq!(report[0].label, "roadworkArray");
+        assert_eq!(report.len(), 1);
     }
 }

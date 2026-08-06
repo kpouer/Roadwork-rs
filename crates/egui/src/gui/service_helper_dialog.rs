@@ -2,7 +2,7 @@ use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
-use roadwork_core::opendata::json::opendata_service::OpendataService;
+use roadwork_core::opendata::json::opendata_service::{OpendataService, PathValidation};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -35,6 +35,7 @@ pub(crate) struct ServiceHelperDialog {
     array_paths: Vec<(String, usize)>,
     current_index: usize,
     roadwork_count: usize,
+    validation_report: Option<Vec<PathValidation>>,
 }
 
 impl ServiceHelperDialog {
@@ -79,6 +80,7 @@ impl ServiceHelperDialog {
                         );
                     self.error = None;
                     self.dirty = true;
+                    self.validation_report = None;
                     toasts.success("Fetch succeeded");
                 }
                 Err(e) => {
@@ -102,11 +104,11 @@ impl ServiceHelperDialog {
             .default_size(default_size)
             .max_size(max)
             .show(ctx, |ui| {
-                self.show_content(ui);
+                self.show_content(ui, toasts);
             });
     }
 
-    fn show_content(&mut self, ui: &mut Ui) {
+    fn show_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
         let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
             Some(FetchState::Connecting) => (true, "Connecting…"),
             Some(FetchState::Downloading) => (true, "Getting data…"),
@@ -123,6 +125,17 @@ impl ServiceHelperDialog {
             }
             if ui.button("Reload").clicked() {
                 self.reload();
+            }
+            ui.separator();
+            let can_validate = !fetching && !self.raw_json.trim().is_empty();
+            if ui
+                .add_enabled(can_validate, egui::Button::new("Validate"))
+                .on_hover_text(
+                    "Validate every JSON path against all elements of the roadwork array",
+                )
+                .clicked()
+            {
+                self.validate_all(toasts);
             }
         });
         ui.separator();
@@ -201,6 +214,10 @@ impl ServiceHelperDialog {
                         }
                     }
                 });
+                if let Some(report) = &self.validation_report {
+                    ui.separator();
+                    self.show_validation_report(ui, report);
+                }
                 egui::ScrollArea::vertical()
                     .id_salt("result_json_scroll")
                     .auto_shrink([false, false])
@@ -246,7 +263,7 @@ impl ServiceHelperDialog {
                 .id_salt("raw_json_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(
+                    let response = ui.add(
                         egui::TextEdit::multiline(&mut self.raw_json)
                             .code_editor()
                             .interactive(true)
@@ -254,6 +271,9 @@ impl ServiceHelperDialog {
                             .desired_rows(15)
                             .layouter(&mut json_layouter),
                     );
+                    if response.changed() {
+                        self.validation_report = None;
+                    }
                 });
         });
     }
@@ -334,6 +354,7 @@ impl ServiceHelperDialog {
             self.array_paths.clear();
             self.error = None;
             self.dirty = true;
+            self.validation_report = None;
         }
     }
 
@@ -351,6 +372,7 @@ impl ServiceHelperDialog {
                 self.array_paths.clear();
                 self.error = None;
                 self.dirty = true;
+                self.validation_report = None;
             }
             Err(e) => self.error = Some(format!("Invalid descriptor JSON: {e}")),
         }
@@ -368,6 +390,7 @@ impl ServiceHelperDialog {
         };
         self.dirty = true;
         self.array_paths = Vec::new();
+        self.validation_report = None;
     }
 
     fn fetch(&mut self, ctx: Context) {
@@ -409,6 +432,88 @@ impl ServiceHelperDialog {
             }
             None => false,
         }
+    }
+
+    fn validate_all(&mut self, toasts: &mut Toasts) {
+        let Some(descriptor) = &self.descriptor else {
+            self.error = Some("No descriptor available".to_string());
+            return;
+        };
+        if self.raw_json.trim().is_empty() {
+            self.error = Some("Fetch the JSON first".to_string());
+            return;
+        }
+        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let report = ods.validate(&self.raw_json);
+        let valid = report
+            .iter()
+            .filter(|validation| validation.is_valid())
+            .count();
+        let total = report.len();
+        let failed = total - valid;
+        self.validation_report = Some(report);
+        if failed == 0 {
+            toasts.success(format!("Validation: all {total} checks passed"));
+        } else {
+            let message = format!("Validation: {failed}/{total} checks failed");
+            self.error = Some(message.clone());
+            toasts.error(message);
+        }
+    }
+
+    fn show_validation_report(&self, ui: &mut Ui, report: &[PathValidation]) {
+        let valid = report
+            .iter()
+            .filter(|validation| validation.is_valid())
+            .count();
+        let total = report.len();
+        let summary_color = if valid == total {
+            ui.visuals().hyperlink_color
+        } else {
+            ui.visuals().error_fg_color
+        };
+        ui.label(
+            RichText::new(format!("Validation: {valid}/{total} checks passed"))
+                .color(summary_color)
+                .strong(),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("validation_scroll")
+            .max_height(120.0)
+            .show(ui, |ui| {
+                for validation in report {
+                    ui.horizontal(|ui| {
+                        if validation.is_valid() {
+                            ui.label(RichText::new("✓").color(ui.visuals().hyperlink_color));
+                            ui.label(format!(
+                                "{} → {} ({})",
+                                validation.label, validation.path, validation.expected
+                            ));
+                        } else {
+                            ui.label(RichText::new("✗").color(ui.visuals().error_fg_color));
+                            let message = match validation.message {
+                                Some(message) => message.to_string(),
+                                None => {
+                                    let indices: Vec<String> = validation
+                                        .failures
+                                        .iter()
+                                        .map(|index| index.to_string())
+                                        .collect();
+                                    format!(
+                                        "{} → {}: failed in {}/{} elements ({})",
+                                        validation.label,
+                                        validation.path,
+                                        validation.failures.len(),
+                                        validation.element_count,
+                                        indices.join(", ")
+                                    )
+                                }
+                            };
+                            ui.colored_label(ui.visuals().error_fg_color, message);
+                        }
+                    });
+                }
+            });
     }
 
     fn field_values(&self) -> FieldsValues {
