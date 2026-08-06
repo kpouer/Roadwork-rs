@@ -323,7 +323,7 @@ impl OpendataService {
         );
 
         if let Some(polygon) = descriptor.polygon.as_ref().filter(|p| !p.trim().is_empty()) {
-            let failures = self.path_failures(&elements, |element| {
+            let failures = self.optional_path_failures(&elements, |element| {
                 self.path_matches_in(element, polygon, |value| {
                     is_scalar(value) || value.is_array()
                 })
@@ -348,7 +348,7 @@ impl OpendataService {
             if date.path.trim().is_empty() {
                 continue;
             }
-            let failures = self.path_failures(&elements, |element| {
+            let failures = self.optional_path_failures(&elements, |element| {
                 element
                     .get_path(&date.path)
                     .map(|value| date.parse(&value, locale).is_ok())
@@ -375,7 +375,7 @@ impl OpendataService {
         path: Option<&String>,
     ) -> Option<PathValidation> {
         let path = path.filter(|p| !p.trim().is_empty())?;
-        let failures = self.path_failures(elements, |element| {
+        let failures = self.optional_path_failures(elements, |element| {
             self.path_matches_in(element, path, is_scalar)
         });
         Some(PathValidation::new(
@@ -400,6 +400,17 @@ impl OpendataService {
             }
         }
         failures
+    }
+
+    fn optional_path_failures<F>(&self, elements: &[Value], element_ok: F) -> Vec<usize>
+    where
+        F: Fn(&Value) -> bool,
+    {
+        if elements.iter().any(&element_ok) {
+            Vec::new()
+        } else {
+            (0..elements.len()).collect()
+        }
     }
 
     fn duplicate_id_failures(&self, elements: &[Value]) -> Vec<usize> {
@@ -787,14 +798,48 @@ mod validate_tests {
         assert!(get("roadworkArray").is_valid());
         assert!(get("id").is_valid());
         assert_eq!(get("id unique").failures, vec![0, 1]);
-        assert_eq!(get("latitude").failures, vec![1]);
-        assert_eq!(get("longitude").failures, vec![1]);
-        assert_eq!(get("road").failures, vec![1]);
-        assert_eq!(get("locationDetails").failures, vec![1]);
-        assert_eq!(get("impactCirculationDetail").failures, vec![1]);
-        assert_eq!(get("polygon").failures, vec![1]);
-        assert_eq!(get("from").failures, vec![1]);
-        assert_eq!(get("to").failures, vec![1]);
+        assert!(get("latitude").is_valid());
+        assert!(get("longitude").is_valid());
+        assert!(get("road").is_valid());
+        assert!(get("locationDetails").is_valid());
+        assert!(get("impactCirculationDetail").is_valid());
+        assert!(get("polygon").is_valid());
+        assert!(get("from").is_valid());
+        assert!(get("to").is_valid());
+    }
+
+    #[test]
+    fn optional_path_valid_when_matches_at_least_one() {
+        let mut descriptor = descriptor();
+        descriptor.road = Some("$.fields.voie".to_string());
+        let json = r#"{
+            "records": [
+                {"recordid": "1", "fields": {"voie": "Rue X"}},
+                {"recordid": "2", "fields": {}}
+            ]
+        }"#;
+        let ods = OpendataService::new("test".to_string(), descriptor);
+        let report = ods.validate(json);
+        let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
+        assert!(get("road").is_valid());
+        assert_eq!(get("road").failures, Vec::<usize>::new());
+    }
+
+    #[test]
+    fn optional_path_invalid_when_matches_none() {
+        let mut descriptor = descriptor();
+        descriptor.road = Some("$.fields.nonexistent".to_string());
+        let json = r#"{
+            "records": [
+                {"recordid": "1", "fields": {"voie": "Rue X"}},
+                {"recordid": "2", "fields": {"voie": "Rue Y"}}
+            ]
+        }"#;
+        let ods = OpendataService::new("test".to_string(), descriptor);
+        let report = ods.validate(json);
+        let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
+        assert!(!get("road").is_valid());
+        assert_eq!(get("road").failures, vec![0, 1]);
     }
 
     #[test]

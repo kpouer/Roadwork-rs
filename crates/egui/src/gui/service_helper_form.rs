@@ -582,24 +582,27 @@ fn date_section(
 fn parsers_grid(ui: &mut Ui, parsers: &mut Vec<Parser>) -> bool {
     let mut changed = false;
     let mut remove: Option<usize> = None;
-    let col_width = ((ui.available_width() - 300.0) / 2.0).max(80.0);
-    Grid::new("parsers_grid")
-        .num_columns(6)
-        .spacing([8.0, 4.0])
-        .show(ui, |ui| {
-            for (i, parser) in parsers.iter_mut().enumerate() {
+    for (i, parser) in parsers.iter_mut().enumerate() {
+        ui.push_id(i, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("matcher");
                 changed |= ui
-                    .add(TextEdit::singleline(&mut parser.matcher).desired_width(col_width))
+                    .add(
+                        TextEdit::singleline(&mut parser.matcher)
+                            .desired_width(ui.available_width()),
+                    )
                     .changed();
-                let mut present = parser.format.is_some();
-                if ui.checkbox(&mut present, "").changed() {
+            });
+            let mut present = parser.format.is_some();
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut present, "format").changed() {
                     parser.format = if present { Some(String::new()) } else { None };
                     changed = true;
                 }
                 let mut format_text = parser.format.clone().unwrap_or_default();
                 let response = ui.add_enabled(
                     present,
-                    TextEdit::singleline(&mut format_text).desired_width(col_width),
+                    TextEdit::singleline(&mut format_text).desired_width(ui.available_width()),
                 );
                 if response.changed() {
                     parser.format = if format_text.is_empty() {
@@ -609,14 +612,16 @@ fn parsers_grid(ui: &mut Ui, parsers: &mut Vec<Parser>) -> bool {
                     };
                     changed = true;
                 }
+            });
+            ui.horizontal(|ui| {
                 changed |= ui.checkbox(&mut parser.add_year, "addYear").changed();
                 changed |= ui.checkbox(&mut parser.reset_hour, "resetHour").changed();
                 if ui.button("Remove").clicked() {
                     remove = Some(i);
                 }
-                ui.end_row();
-            }
+            });
         });
+    }
     if let Some(i) = remove {
         parsers.remove(i);
         changed = true;
