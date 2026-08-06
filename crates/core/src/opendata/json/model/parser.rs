@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Parser {
     pub matcher: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     #[serde(default)]
     #[serde(rename = "addYear")]

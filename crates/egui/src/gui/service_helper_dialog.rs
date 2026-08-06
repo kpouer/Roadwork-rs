@@ -166,6 +166,26 @@ impl ServiceHelperDialog {
                         });
                 }
             });
+        egui::Panel::bottom("helper_result_json")
+            .resizable(true)
+            .default_size(((available_height - 100.0) * 0.4).max(60.0))
+            .min_size(60.0)
+            .show_inside(ui, |ui| {
+                ui.label(RichText::new("Result JSON").strong());
+                egui::ScrollArea::vertical()
+                    .id_salt("result_json_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.result_json)
+                                .code_editor()
+                                .interactive(false)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(15)
+                                .layouter(&mut json_layouter),
+                        );
+                    });
+            });
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.label(RichText::new("URL").strong());
             ui.horizontal(|ui| {
@@ -195,27 +215,12 @@ impl ServiceHelperDialog {
             ui.label(RichText::new("Fetched JSON").strong());
             egui::ScrollArea::vertical()
                 .id_salt("raw_json_scroll")
-                .max_height((available_height - 100.0) * 0.55)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.add(
                         egui::TextEdit::multiline(&mut self.raw_json)
                             .code_editor()
                             .interactive(true)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(15)
-                            .layouter(&mut json_layouter),
-                    );
-                });
-
-            ui.label(RichText::new("Result JSON").strong());
-            egui::ScrollArea::vertical()
-                .id_salt("result_json_scroll")
-                .max_height((available_height - 100.0) * 0.4)
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.result_json)
-                            .code_editor()
-                            .interactive(false)
                             .desired_width(f32::INFINITY)
                             .desired_rows(15)
                             .layouter(&mut json_layouter),
@@ -500,7 +505,7 @@ impl ServiceHelperDialog {
         match &self.descriptor {
             Some(descriptor) => {
                 let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
-                match ods.parse_json(&self.raw_json) {
+                match ods.parse_json_preview(&self.raw_json) {
                     Ok(data) => {
                         self.result_json = serde_json::to_string_pretty(&data).unwrap_or_default();
                     }

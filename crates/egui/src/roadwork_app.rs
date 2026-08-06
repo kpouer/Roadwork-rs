@@ -24,6 +24,12 @@ use walkers::{HttpTiles, Map, MapMemory, Projector};
 const DEFAULT_WME_URL: &str =
     "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
 
+#[derive(Default)]
+pub struct StartupParams {
+    pub service: Option<String>,
+    pub open_service_helper: bool,
+}
+
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn spawn_task<F>(future: F)
 where
@@ -61,10 +67,15 @@ pub struct RoadworkApp {
 }
 
 impl RoadworkApp {
-    pub fn new(egui_ctx: Context) -> Self {
+    pub fn new(egui_ctx: Context, params: StartupParams) -> Self {
         let settings = crate::app_settings::load_settings();
         let services = roadwork_service::get_services();
-        let selected_service = if services.iter().any(|s| s.name == settings.opendata_service) {
+        let selected_service = if let Some(service) = params
+            .service
+            .filter(|s| services.iter().any(|srv| srv.name == *s))
+        {
+            service
+        } else if services.iter().any(|s| s.name == settings.opendata_service) {
             settings.opendata_service.clone()
         } else {
             services.first().map(|s| s.name.clone()).unwrap_or_default()
@@ -92,7 +103,7 @@ impl RoadworkApp {
             show_about_dialog: false,
             show_settings_dialog: false,
             show_info_dialog: false,
-            show_service_helper_dialog: false,
+            show_service_helper_dialog: params.open_service_helper,
             service_helper,
         };
 

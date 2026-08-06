@@ -12,17 +12,14 @@
     "licenceName" : "Licence Ouverte v2.0",
     "licenceUrl" : "https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf",
     "locale" : "fr_FR",
-    "urlParams" : null,
     "tileServer" : "WazeINTL",
     "editorPattern" : "https://waze.com/fr/editor?env=row&lat=${lat}&lon=${lon}&zoomLevel=19"
   },
   "id" : "$.nid",
   "latitude" : "$.field_coordonnees.lat",
   "longitude" : "$.field_coordonnees.lon",
-  "polygon" : null,
   "road" : "$.title",
   "description" : "$.field_corps_de_texte",
-  "locationDetails" : null,
   "impactCirculationDetail" :  "$.field_resume",
   "from" : {
     "path" : "$.field_date_debut_1",
@@ -30,8 +27,7 @@
       "format" : "%Y-%m-%d",
       "matcher" : ".*",
       "addYear" : false,
-      "resetHour" : true,
-      "pattern" : null
+      "resetHour" : true
     } ]
   },
   "to" : {
@@ -40,8 +36,7 @@
       "format" : "%Y-%m-%d",
       "matcher" : ".*",
       "addYear" : false,
-      "resetHour" : true,
-      "pattern" : null
+      "resetHour" : true
     } ]
   },
   "roadworkArray" : "$.results",

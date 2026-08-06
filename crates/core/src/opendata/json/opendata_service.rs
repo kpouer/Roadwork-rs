@@ -262,6 +262,20 @@ impl OpendataService {
         Ok(RoadworkData::new(&self.service_name, roadworks))
     }
 
+    pub fn parse_json_preview(&self, json: &str) -> Result<RoadworkData, MyError> {
+        let json: serde_json::Value = serde_json::from_str(json)?;
+        let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;
+        let mut roadworks = Vec::with_capacity(roadwork_array.len());
+        for (index, value) in roadwork_array.into_iter().enumerate() {
+            let mut roadwork = self.build_roadwork_preview(value);
+            if roadwork.id.is_empty() {
+                roadwork.id = format!("element#{index}");
+            }
+            roadworks.push(roadwork);
+        }
+        Ok(RoadworkData::new(&self.service_name, roadworks))
+    }
+
     pub fn build_url(&self) -> String {
         let metadata = &self.service_descriptor.metadata;
 
@@ -295,6 +309,43 @@ impl OpendataService {
             id: node.get_path(&self.service_descriptor.id)?,
             ..Roadwork::default()
         };
+        self.fill_roadwork_fields(node, &mut roadwork_builder);
+        let date_range = self.get_date_range(node)?;
+        roadwork_builder.start = date_range.from.timestamp_millis();
+        roadwork_builder.end = date_range
+            .to
+            .map(|date| date.timestamp_millis())
+            .unwrap_or(0);
+        if let Some(url) = &self.service_descriptor.url {
+            roadwork_builder.url = node.get_path(url)?;
+        }
+        Ok(roadwork_builder)
+    }
+
+    fn build_roadwork_preview(&self, node: &Value) -> Roadwork {
+        let mut roadwork_builder = Roadwork {
+            id: node
+                .get_path(&self.service_descriptor.id)
+                .unwrap_or_default(),
+            ..Roadwork::default()
+        };
+        self.fill_roadwork_fields(node, &mut roadwork_builder);
+        if self.service_descriptor.from.is_some()
+            && let Ok(date_range) = self.get_date_range(node)
+        {
+            roadwork_builder.start = date_range.from.timestamp_millis();
+            roadwork_builder.end = date_range
+                .to
+                .map(|date| date.timestamp_millis())
+                .unwrap_or(0);
+        }
+        if let Some(url) = &self.service_descriptor.url {
+            roadwork_builder.url = node.get_path(url).unwrap_or_default();
+        }
+        roadwork_builder
+    }
+
+    fn fill_roadwork_fields(&self, node: &Value, roadwork_builder: &mut Roadwork) {
         if let Some(latitude_path) = &self.service_descriptor.latitude
             && !latitude_path.is_empty()
         {
@@ -316,25 +367,14 @@ impl OpendataService {
         if let Some(description) = &self.service_descriptor.description {
             roadwork_builder.description = node.get_path(description).ok();
         }
-
         if let Some(location_details) = &self.service_descriptor.location_details {
             roadwork_builder.location_details = node.get_path(location_details).ok();
         }
-        let date_range = self.get_date_range(node)?;
-        roadwork_builder.start = date_range.from.timestamp_millis();
-        roadwork_builder.end = date_range
-            .to
-            .map(|date| date.timestamp_millis())
-            .unwrap_or(0);
         if let Some(impact_circulation_detail) = &self.service_descriptor.impact_circulation_detail
         {
             roadwork_builder.impact_circulation_detail =
                 node.get_path(impact_circulation_detail).ok();
         }
-        if let Some(url) = &self.service_descriptor.url {
-            roadwork_builder.url = node.get_path(url)?;
-        }
-        Ok(roadwork_builder)
     }
 
     fn parse_date(

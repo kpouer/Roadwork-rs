@@ -4,9 +4,13 @@ const wasmIframe = document.getElementById('roadwork-wasm-iframe');
 
 let rpcId = 0;
 const rpcPending = new Map();
+let helperAcked = false;
 
 window.addEventListener("message", (e) => {
-    if (e.data?.type === "ROADWORK_RPC_RESULT") {
+    if (e.data?.type === "ROADWORK_OPEN_HELPER_ACK") {
+        helperAcked = true;
+        setStatus("Descriptor helper opened", "success");
+    } else if (e.data?.type === "ROADWORK_RPC_RESULT") {
         console.info("[Roadwork] RPC_RESULT received for id", e.data.id, "has result:", e.data.result !== undefined);
         const p = rpcPending.get(e.data.id);
         if (p) {
@@ -465,6 +469,22 @@ function setFloatingPanelVisible(visible: boolean) {
     if (floatingToggleBtn) {
         floatingToggleBtn.style.display = visible ? "none" : "block";
     }
+}
+
+function openDescriptorHelper() {
+    console.log("[Roadwork] openDescriptorHelper, service =", settings.service);
+    if (!wasmIframe) {
+        setStatus("WASM iframe not available", "error");
+        return;
+    }
+    setStatus("Opening descriptor helper...", "info");
+    helperAcked = false;
+    window.postMessage({ type: "ROADWORK_OPEN_HELPER", service: settings.service }, "*");
+    setTimeout(() => {
+        if (!helperAcked) {
+            setStatus("Content script did not respond - reload the extension (chrome://extensions)", "error");
+        }
+    }, 1000);
 }
 
 function createFloatingPanel() {
@@ -1725,6 +1745,12 @@ async function buildPanel(tabPane: Element) {
     refBtn.id = "rw-refresh-btn";
     refBtn.textContent = "Refresh now";
     btnDiv.appendChild(refBtn);
+    const debugBtn = document.createElement("button");
+    debugBtn.className = "roadwork-btn roadwork-btn-secondary";
+    debugBtn.id = "rw-debug-btn";
+    debugBtn.textContent = "Debug";
+    debugBtn.title = "Open the descriptor helper for the current service";
+    btnDiv.appendChild(debugBtn);
     panelEl.appendChild(btnDiv);
 
     const lbl3 = document.createElement("label");
@@ -1843,6 +1869,9 @@ async function buildPanel(tabPane: Element) {
     refreshBtn.addEventListener("click", () => {
         refreshData();
     });
+
+    const debugBtnEl = panelEl.querySelector("#rw-debug-btn");
+    debugBtnEl.addEventListener("click", openDescriptorHelper);
 
     function renderCustomSources() {
         customList.replaceChildren();

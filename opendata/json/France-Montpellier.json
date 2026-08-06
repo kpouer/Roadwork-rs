@@ -20,7 +20,6 @@
   "description": "$.properties.ch_type",
   "locationDetails": "$.properties.incidence_station",
   "impactCirculationDetail": "$.properties.incidence_circu",
-  "road": null,
   "from": {
     "path": "$.properties.datedebut",
     "parsers": [

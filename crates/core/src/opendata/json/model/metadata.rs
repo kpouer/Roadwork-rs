@@ -12,16 +12,23 @@ pub struct Metadata {
     pub source_url: String,
     pub url: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub producer: Option<String>,
     #[serde(rename = "licenceName")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub licence_name: Option<String>,
     #[serde(rename = "licenceUrl")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub licence_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url_params: Option<HashMap<String, String>>,
     #[serde(rename = "tileServer")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_server: Option<String>,
     #[serde(rename = "editorPattern")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub editor_pattern: Option<String>,
 }
 

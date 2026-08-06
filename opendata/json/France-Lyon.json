@@ -11,17 +11,13 @@
     "producer": "Métropole de Lyon",
     "licenceName": "Licence Ouverte",
     "licenceUrl": "https://download.data.grandlyon.com/licences/ETALAB-Licence-Ouverte-v2.0.pdf",
-    "locale": "fr_FR",
-    "url_params": null,
-    "tileServer": null,
-    "editorPattern": null
+    "locale": "fr_FR"
   },
   "id": "$.properties.gid",
   "latitude": "$.bbox[1]",
   "longitude": "$.bbox[0]",
   "polygon": "$.geometry.coordinates",
   "road": "$.properties.nom",
-  "description": null,
   "locationDetails": "$.properties.precisionlocalisation",
   "impactCirculationDetail": "$.properties.typeperturbation",
   "from": {
@@ -46,6 +42,5 @@
       }
     ]
   },
-  "roadworkArray": "$.features[*]",
-  "url": null
+  "roadworkArray": "$.features[*]"
 }
