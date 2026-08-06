@@ -56,6 +56,7 @@ const CACHE_KEY_PREFIX = "roadwork-wme-cache-";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
 const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
+const MAX_WAIT = 120000;
 
 const STATUS_COLORS = {
     New: "#ef4444",
@@ -119,7 +120,6 @@ function bootstrap() {
     if (tryInit()) return;
 
     const POLL_INTERVAL = 250;
-    const MAX_WAIT = 20000;
     const start = Date.now();
     const poll = setInterval(() => {
         if (tryInit()) {
@@ -1929,7 +1929,7 @@ async function buildPanel(tabPane: Element) {
 async function init(sdk: WmeSDK) {
     await Promise.race([
         wasmReady,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after 20s")), 20000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after " + MAX_WAIT / 1000 + "s")), MAX_WAIT)),
     ]);
 
     applyLogLevel(settings.logLevel);
