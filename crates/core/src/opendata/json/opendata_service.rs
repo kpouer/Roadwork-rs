@@ -2,6 +2,7 @@ use crate::MyError;
 use crate::http_service::HttpService;
 use crate::json_tools::JsonTools;
 use crate::model::date_range::DateRange;
+use crate::model::opendata::Opendata;
 use crate::model::roadwork::Roadwork;
 use crate::model::roadwork_data::RoadworkData;
 use crate::opendata::json::model::date_parser::DateParser;
@@ -17,18 +18,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct OpendataService {
     pub service_name: String,
-    http_service: HttpService,
     pub service_descriptor: ServiceDescriptor,
-}
-
-impl OpendataService {
-    pub fn new(service_name: String, service_descriptor: ServiceDescriptor) -> Self {
-        Self {
-            service_name,
-            service_descriptor,
-            http_service: HttpService,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -218,7 +208,7 @@ impl OpendataService {
     pub async fn get_data(&self) -> Result<RoadworkData, MyError> {
         let url = self.build_url();
         info!("getData {url}");
-        let json = self.http_service.get_url(&url).await?;
+        let json = HttpService.get_url(&url).await?;
         self.parse_json(&json)
     }
 
@@ -252,19 +242,19 @@ impl OpendataService {
         let mut report = Vec::with_capacity(12);
 
         let array_valid = self.roadwork_array_targets_array(json) && !elements.is_empty();
-        report.push(PathValidation::new(
-            "roadworkArray",
-            &descriptor.roadwork_array,
-            true,
-            "array of roadworks",
-            if array_valid { Vec::new() } else { vec![0] },
-            elements.len(),
-            if array_valid {
+        report.push(PathValidation {
+            label: "roadworkArray",
+            path: descriptor.roadwork_array.to_owned(),
+            required: true,
+            expected: "array of roadworks",
+            failures: if array_valid { Vec::new() } else { vec![0] },
+            element_count: elements.len(),
+            message: if array_valid {
                 None
             } else {
                 Some("must target a non-empty array of roadworks")
             },
-        ));
+        });
 
         if elements.is_empty() {
             return report;
@@ -528,8 +518,8 @@ impl OpendataService {
         let mut roadworks = Vec::with_capacity(roadwork_array.len());
         for (index, value) in roadwork_array.into_iter().enumerate() {
             let mut roadwork = self.build_roadwork_preview(value);
-            if roadwork.id.is_empty() {
-                roadwork.id = format!("element#{index}");
+            if roadwork.opendata.id.is_empty() {
+                roadwork.opendata.id = format!("element#{index}");
             }
             roadworks.push(roadwork);
         }
@@ -563,7 +553,7 @@ impl OpendataService {
     }
 
     fn is_valid(roadwork: &Roadwork) -> bool {
-        if roadwork.longitude == 0.0 && roadwork.latitude == 0.0 {
+        if roadwork.opendata.longitude == 0.0 && roadwork.opendata.latitude == 0.0 {
             warn!("{roadwork:?} is invalid because it has no location");
             return false;
         }
@@ -572,7 +562,10 @@ impl OpendataService {
 
     fn build_roadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
         let mut roadwork_builder = Roadwork {
-            id: node.get_path(&self.service_descriptor.id)?,
+            opendata: Opendata {
+                id: node.get_path(&self.service_descriptor.id)?,
+                ..Opendata::default()
+            },
             ..Roadwork::default()
         };
         self.fill_roadwork_fields(node, &mut roadwork_builder);
@@ -590,9 +583,12 @@ impl OpendataService {
 
     fn build_roadwork_preview(&self, node: &Value) -> Roadwork {
         let mut roadwork_builder = Roadwork {
-            id: node
-                .get_path(&self.service_descriptor.id)
-                .unwrap_or_default(),
+            opendata: Opendata {
+                id: node
+                    .get_path(&self.service_descriptor.id)
+                    .unwrap_or_default(),
+                ..Opendata::default()
+            },
             ..Roadwork::default()
         };
         self.fill_roadwork_fields(node, &mut roadwork_builder);
@@ -615,23 +611,25 @@ impl OpendataService {
         if let Some(latitude_path) = &self.service_descriptor.latitude
             && !latitude_path.is_empty()
         {
-            roadwork_builder.latitude = node.get_path_as_double(latitude_path).unwrap_or(0.0);
+            roadwork_builder.opendata.latitude =
+                node.get_path_as_double(latitude_path).unwrap_or(0.0);
         }
         if let Some(longitude_path) = &self.service_descriptor.longitude
             && !longitude_path.is_empty()
         {
-            roadwork_builder.longitude = node.get_path_as_double(longitude_path).unwrap_or(0.0);
+            roadwork_builder.opendata.longitude =
+                node.get_path_as_double(longitude_path).unwrap_or(0.0);
         }
         if let Some(polygon_path) = &self.service_descriptor.polygon
             && !polygon_path.is_empty()
         {
-            roadwork_builder.polygons = node.get_path_as_polygons(polygon_path);
+            roadwork_builder.opendata.polygons = node.get_path_as_polygons(polygon_path);
         }
         if let Some(road) = &self.service_descriptor.road {
             roadwork_builder.road = node.get_path(road).ok();
         }
         if let Some(description) = &self.service_descriptor.description {
-            roadwork_builder.description = node.get_path(description).ok();
+            roadwork_builder.opendata.description = node.get_path(description).ok();
         }
         if let Some(location_details) = &self.service_descriptor.location_details {
             roadwork_builder.location_details = node.get_path(location_details).ok();
@@ -708,11 +706,17 @@ impl OpendataService {
                         }
                     }
                 }
-                Ok(DateRange::new(start_time, end_date))
+                Ok(DateRange {
+                    from: start_time,
+                    to: Some(end_date),
+                })
             }
             Err(e) => {
                 error!("Error parsing end date {}", e);
-                Ok(DateRange::without_end(start_time))
+                Ok(DateRange {
+                    from: start_time,
+                    to: None,
+                })
             }
         }
     }
@@ -792,7 +796,10 @@ mod validate_tests {
 
     #[test]
     fn validates_all_elements() {
-        let ods = OpendataService::new("test".to_string(), descriptor());
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor: descriptor(),
+        };
         let report = ods.validate(json());
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
         assert!(get("roadworkArray").is_valid());
@@ -810,15 +817,18 @@ mod validate_tests {
 
     #[test]
     fn optional_path_valid_when_matches_at_least_one() {
-        let mut descriptor = descriptor();
-        descriptor.road = Some("$.fields.voie".to_string());
+        let mut service_descriptor = descriptor();
+        service_descriptor.road = Some("$.fields.voie".to_string());
         let json = r#"{
             "records": [
                 {"recordid": "1", "fields": {"voie": "Rue X"}},
                 {"recordid": "2", "fields": {}}
             ]
         }"#;
-        let ods = OpendataService::new("test".to_string(), descriptor);
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
         let report = ods.validate(json);
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
         assert!(get("road").is_valid());
@@ -827,15 +837,18 @@ mod validate_tests {
 
     #[test]
     fn optional_path_invalid_when_matches_none() {
-        let mut descriptor = descriptor();
-        descriptor.road = Some("$.fields.nonexistent".to_string());
+        let mut service_descriptor = descriptor();
+        service_descriptor.road = Some("$.fields.nonexistent".to_string());
         let json = r#"{
             "records": [
                 {"recordid": "1", "fields": {"voie": "Rue X"}},
                 {"recordid": "2", "fields": {"voie": "Rue Y"}}
             ]
         }"#;
-        let ods = OpendataService::new("test".to_string(), descriptor);
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
         let report = ods.validate(json);
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
         assert!(!get("road").is_valid());
@@ -844,9 +857,12 @@ mod validate_tests {
 
     #[test]
     fn reports_bad_array_path() {
-        let mut descriptor = descriptor();
-        descriptor.roadwork_array = "$.nope".to_string();
-        let ods = OpendataService::new("test".to_string(), descriptor);
+        let mut service_descriptor = descriptor();
+        service_descriptor.roadwork_array = "$.nope".to_string();
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
         let report = ods.validate(json());
         assert!(!report[0].is_valid());
         assert_eq!(report[0].label, "roadworkArray");

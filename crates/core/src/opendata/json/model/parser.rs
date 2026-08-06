@@ -27,11 +27,12 @@ impl Parser {
                 groups[1].to_string()
             };
             let timestamp = self.parse_date(&date_string, locale)?;
-            return Some(DateResult::new(
-                DateTime::from_timestamp_millis(timestamp).map(|d| d.with_timezone(&locale))?,
-                self.add_year,
-                self.reset_hour,
-            ));
+            return Some(DateResult {
+                date: DateTime::from_timestamp_millis(timestamp)
+                    .map(|d| d.with_timezone(&locale))?,
+                add_year: self.add_year,
+                reset_hour: self.reset_hour,
+            });
         }
         None
     }

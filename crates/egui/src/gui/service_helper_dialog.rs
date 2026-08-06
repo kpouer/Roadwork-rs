@@ -427,7 +427,10 @@ impl ServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+                let ods = OpendataService {
+                    service_name: "Service helper".to_string(),
+                    service_descriptor: descriptor.clone(),
+                };
                 ods.roadwork_array_targets_array(&self.raw_json)
             }
             None => false,
@@ -443,7 +446,10 @@ impl ServiceHelperDialog {
             self.error = Some("Fetch the JSON first".to_string());
             return;
         }
-        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let ods = OpendataService {
+            service_name: "Service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
         let report = ods.validate(&self.raw_json);
         let valid = report
             .iter()
@@ -523,7 +529,10 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValues::default();
         }
-        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let ods = OpendataService {
+            service_name: "Service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return FieldsValues::default();
         };
@@ -558,7 +567,10 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return PathCandidates::default();
         }
-        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let ods = OpendataService {
+            service_name: "Service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return PathCandidates::default();
         };
@@ -577,7 +589,10 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValidation::valid();
         }
-        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let ods = OpendataService {
+            service_name: "Service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return FieldsValidation::valid();
         };
@@ -645,7 +660,10 @@ impl ServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+                let ods = OpendataService {
+                    service_name: "Service helper".to_string(),
+                    service_descriptor: descriptor.clone(),
+                };
                 self.roadwork_count = ods.roadwork_count(&self.raw_json);
                 if self.roadwork_count == 0 {
                     self.current_index = 0;
@@ -671,7 +689,10 @@ impl ServiceHelperDialog {
             self.result_json.clear();
             return;
         }
-        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let ods = OpendataService {
+            service_name: "Service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
         match ods.extract_roadwork_array(&self.raw_json) {
             Ok(array) => {
                 let element = array

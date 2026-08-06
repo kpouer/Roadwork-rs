@@ -65,7 +65,10 @@ pub async fn fetch_roadworks(
     service_name: &str,
     descriptor: &ServiceDescriptor,
 ) -> Result<RoadworkData, MyError> {
-    let ods = OpendataService::new(service_name.to_string(), descriptor.clone());
+    let ods = OpendataService {
+        service_name: service_name.to_string(),
+        service_descriptor: descriptor.clone(),
+    };
     let mut data = ods.get_data().await?;
     data.apply_finished_status();
     Ok(data)
@@ -98,7 +101,7 @@ pub async fn synchronize(sync_config: &SyncConfig, roadwork_data: &mut RoadworkD
 
     let mut body: HashMap<String, SyncData> = HashMap::new();
     roadwork_data.iter().for_each(|roadwork| {
-        body.insert(roadwork.id.clone(), roadwork.sync_data.clone());
+        body.insert(roadwork.opendata.id.clone(), roadwork.sync_data.clone());
     });
 
     let auth = format!("{}:{}", sync_config.login, sync_config.password);

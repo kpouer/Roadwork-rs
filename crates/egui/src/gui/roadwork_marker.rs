@@ -53,8 +53,8 @@ impl Widget for RoadworkMarker<'_> {
         //     self.roadwork.sync_data.status == Status::New,
         // )
         let screen_position = self.projector.project(Position::new(
-            self.roadwork.longitude,
-            self.roadwork.latitude,
+            self.roadwork.opendata.longitude,
+            self.roadwork.opendata.latitude,
         ));
         let painter = ui.painter();
         let color32 = Self::status_2_color(self.roadwork.sync_data.status);

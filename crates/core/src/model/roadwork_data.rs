@@ -24,7 +24,7 @@ impl RoadworkData {
     pub fn new(source: &str, roadworks: Vec<Roadwork>) -> Self {
         let mut roadworks_map = HashMap::new();
         roadworks.into_iter().for_each(|roadwork| {
-            roadworks_map.insert(roadwork.id.clone(), roadwork);
+            roadworks_map.insert(roadwork.opendata.id.clone(), roadwork);
         });
         Self {
             source: source.to_string(),
@@ -43,7 +43,7 @@ impl RoadworkData {
 
     pub fn merge(&mut self, cached_data: &RoadworkData) {
         for existing_roadwork in cached_data.roadworks.values() {
-            if let Some(new_roadwork) = self.roadworks.get_mut(&existing_roadwork.id) {
+            if let Some(new_roadwork) = self.roadworks.get_mut(&existing_roadwork.opendata.id) {
                 new_roadwork.sync_data = SyncData::new_from(&existing_roadwork.sync_data);
             }
         }

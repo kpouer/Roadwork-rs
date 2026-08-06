@@ -109,5 +109,5 @@ fn get_polygon(polygon: &Value) -> Result<Polygon, MyError> {
             "Unable to get point from polygon".to_string(),
         ))?);
     }
-    Ok(Polygon::new(xpoints, ypoints))
+    Ok(Polygon { xpoints, ypoints })
 }

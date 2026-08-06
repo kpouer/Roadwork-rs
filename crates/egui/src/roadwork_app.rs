@@ -175,7 +175,7 @@ impl RoadworkApp {
                 egui::Panel::left("left_panel").show_inside(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.label(RichText::new("Id:").strong());
-                        ui.add(Label::new(&roadwork.id).wrap_mode(TextWrapMode::Truncate));
+                        ui.add(Label::new(&roadwork.opendata.id).wrap_mode(TextWrapMode::Truncate));
                         ui.horizontal(|ui| {
                             egui::Grid::new("loc_grid")
                                 .num_columns(2)
@@ -183,21 +183,21 @@ impl RoadworkApp {
                                 .show(ui, |ui| {
                                     ui.label(RichText::new("Latitude:").strong());
                                     ui.add(
-                                        Label::new(roadwork.latitude.to_string())
+                                        Label::new(roadwork.opendata.latitude.to_string())
                                             .wrap_mode(TextWrapMode::Truncate),
                                     );
                                     ui.end_row();
                                     ui.label(RichText::new("Longitude:").strong());
                                     ui.add(
-                                        Label::new(roadwork.longitude.to_string())
+                                        Label::new(roadwork.opendata.longitude.to_string())
                                             .wrap_mode(TextWrapMode::Truncate),
                                     );
                                     ui.end_row();
                                 });
                             if ui.button("WME").clicked() {
                                 let url = url
-                                    .replace("${lat}", &format!("{}", roadwork.latitude))
-                                    .replace("${lon}", &format!("{}", roadwork.longitude));
+                                    .replace("${lat}", &format!("{}", roadwork.opendata.latitude))
+                                    .replace("${lon}", &format!("{}", roadwork.opendata.longitude));
                                 Self::open_url(&url);
                             }
                         });
@@ -236,7 +236,7 @@ impl RoadworkApp {
                             ui.label(RichText::new("Impact:").strong());
                             ui.label(Self::get_multiline_text(text));
                         }
-                        if let Some(text) = &roadwork.description {
+                        if let Some(text) = &roadwork.opendata.description {
                             ui.label(RichText::new("Description:").strong());
                             ui.label(Self::get_multiline_text(text));
                         }

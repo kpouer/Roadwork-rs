@@ -691,7 +691,7 @@ function updateFloatingTable() {
                 case 1: return (rw.road || "");
                 case 2: return rw.start != null ? rw.start : Infinity;
                 case 3: return rw.end != null ? rw.end : Infinity;
-                case 4: return (rw.description || "");
+                case 4: return (rw.opendata?.description || "");
                 case 5: return (rw.impactCirculationDetail || "");
                 default: return "";
             }
@@ -728,7 +728,7 @@ function updateFloatingTable() {
         const road = rw.road || "";
         const start = formatTimestamp(rw.start);
         const end = formatTimestamp(rw.end);
-        const desc = rw.description || "";
+        const desc = rw.opendata?.description || "";
         const impact = rw.impactCirculationDetail || "";
 
         const tr = document.createElement("tr");
@@ -741,8 +741,8 @@ function updateFloatingTable() {
                 showDetailPanel(rw);
                 renderRoadworksToMap(currentRoadworks);
             }
-            if (rw.latitude && rw.longitude && wmeSDK?.Map?.setMapCenter) {
-                wmeSDK.Map.setMapCenter({lonLat: {lon: rw.longitude, lat: rw.latitude}});
+            if (rw.opendata?.latitude && rw.opendata?.longitude && wmeSDK?.Map?.setMapCenter) {
+                wmeSDK.Map.setMapCenter({lonLat: {lon: rw.opendata?.longitude, lat: rw.opendata?.latitude}});
             }
         });
 
@@ -932,7 +932,7 @@ function buildPopupContent(rw) {
     const start = formatTimestamp(rw.start);
     const end = formatTimestamp(rw.end);
     const road = rw.road || "";
-    const desc = rw.description || "";
+    const desc = rw.opendata?.description || "";
     const impact = rw.impactCirculationDetail || "";
     const status = rw.syncData?.status || "New";
 
@@ -998,7 +998,7 @@ function showDetailPanel(rw) {
     const road = rw.road || "";
     const start = formatTimestamp(rw.start);
     const end = formatTimestamp(rw.end);
-    const desc = rw.description || "";
+    const desc = rw.opendata?.description || "";
     const impact = rw.impactCirculationDetail || "";
 
     body.replaceChildren();
@@ -1069,10 +1069,10 @@ function showDetailPanel(rw) {
         addField("Période", val);
     }
 
-    if (rw.latitude && rw.longitude) {
+    if (rw.opendata?.latitude && rw.opendata?.longitude) {
         const val = document.createElement("span");
         val.className = "rw-detail-value";
-        val.textContent = `${rw.latitude.toFixed(6)}, ${rw.longitude.toFixed(6)}`;
+        val.textContent = `${rw.opendata?.latitude.toFixed(6)}, ${rw.opendata?.longitude.toFixed(6)}`;
         addField("Coordonnées", val);
     }
 
@@ -1302,9 +1302,9 @@ function renderRoadworksToMap(roadworks) {
         const status = rw.syncData?.status || "New";
         const features = featuresByStatus[status] || featuresByStatus["New"];
 
-        if (rw.polygons && rw.polygons.length > 0) {
-            for (let polyIdx = 0; polyIdx < rw.polygons.length; polyIdx++) {
-                const polygon = rw.polygons[polyIdx];
+        if (rw.opendata?.polygons && rw.opendata?.polygons.length > 0) {
+            for (let polyIdx = 0; polyIdx < rw.opendata?.polygons.length; polyIdx++) {
+                const polygon = rw.opendata?.polygons[polyIdx];
                 if (
                     !polygon.xpoints ||
                     !polygon.ypoints ||
@@ -1337,13 +1337,13 @@ function renderRoadworksToMap(roadworks) {
                 });
             }
         }
-        if ((!rw.polygons || rw.polygons.length === 0) && rw.latitude && rw.longitude) {
+        if ((!rw.opendata?.polygons || rw.opendata?.polygons.length === 0) && rw.opendata?.latitude && rw.opendata?.longitude) {
             features.push({
                 id: `roadwork-marker-${id}`,
                 type: "Feature",
                 geometry: {
                     type: "Point",
-                    coordinates: [rw.longitude, rw.latitude],
+                    coordinates: [rw.opendata?.longitude, rw.opendata?.latitude],
                 },
                 properties: {
                     roadworkId: id,
