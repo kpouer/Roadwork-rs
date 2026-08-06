@@ -218,22 +218,6 @@ function loadPolygonGroups() {
     return {};
 }
 
-function migrateWktFromLegacy() {
-    try {
-        const raw = localStorage.getItem("roadwork-wme-wkt");
-        if (!raw) return;
-        const features = JSON.parse(raw);
-        if (Array.isArray(features) && features.length > 0) {
-            const name = "Import " + new Date().toLocaleDateString("fr-FR");
-            const gid = "group_" + nextGroupId;
-            polygonGroups[gid] = { id: gid, name, features, visible: true };
-            nextGroupId++;
-            savePolygonGroups();
-        }
-        localStorage.removeItem("roadwork-wme-wkt");
-    } catch (_) {}
-}
-
 function loadStatusOverrides() {
     try {
         const raw = localStorage.getItem(STATUS_OVERRIDES_KEY);
@@ -2091,7 +2075,6 @@ async function init(sdk: WmeSDK) {
             wktStatus.textContent = `${groupCount} groupe(s), ${featCount} g\u00e9om\u00e9trie(s)`;
         }
     }
-    migrateWktFromLegacy();
     renderAllGroupsToMap();
 
     createPolygonesUI();
