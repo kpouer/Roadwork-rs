@@ -24,6 +24,10 @@ window.addEventListener("message", (e) => {
     } else if (e.data?.type === "ROADWORK_CONSOLE_LOG") {
         const method = e.data.level === "error" ? console.error : e.data.level === "warn" ? console.warn : console.log;
         method("[Roadwork WASM]", ...e.data.args);
+    } else if (e.data?.type === "ROADWORK_WASM_READY") {
+        if (wasmIframe?.contentWindow && e.source === wasmIframe.contentWindow) {
+            wasmIframe.contentWindow.postMessage({ type: "ROADWORK_WASM_ACK" }, "*");
+        }
     }
 });
 
@@ -31,7 +35,14 @@ function rpcCall(method: string, args = []) {
     console.info("[Roadwork] rpcCall", method);
     return new Promise<any>((resolve, reject) => {
         const id = ++rpcId;
-        rpcPending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+            rpcPending.delete(id);
+            reject(new Error("RPC timeout: " + method));
+        }, 30000);
+        rpcPending.set(id, {
+            resolve: (v) => { clearTimeout(timer); resolve(v); },
+            reject: (e) => { clearTimeout(timer); reject(e); },
+        });
         wasmIframe.contentWindow.postMessage({ type: "ROADWORK_RPC", id, method, args }, "*");
     });
 }
@@ -93,47 +104,31 @@ let hideFinished = false;
 let sortColumn = -1;
 let sortDirection = 'asc';
 
-let initialized = false;
-
-function tryInit() {
-    if (initialized) return false;
-    if (typeof window.getWmeSdk !== "function") return false;
-    initialized = true;
-    let wmeSdk = window.getWmeSdk({
+async function initScript() {
+    console.log("Roadwork tryInit");
+    wmeSDK = window.getWmeSdk({
         scriptId: SCRIPT_ID,
         scriptName: SCRIPT_NAME,
     });
-    init(wmeSdk).catch((e) => {
+    try {
+        console.log("Roadwork waiting iframe");
+        await Promise.race([
+            wasmReady,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after " + MAX_WAIT / 1000 + "s")), MAX_WAIT)),
+        ]);
+    } catch (e) {
+        console.error("[Roadwork] init failed:", e);
+        return;
+    }
+    console.log("Roadwork found iframe");
+    init().catch((e) => {
         console.error("[Roadwork] init failed:", e);
     });
-    return true;
+    console.log("Roadwork init done");
 }
 
-function bootstrap() {
-    document.addEventListener("wme-ready", tryInit);
-
-    const sdkInitialized = window.SDK_INITIALIZED;
-    if (sdkInitialized && typeof sdkInitialized.then === "function") {
-        sdkInitialized.then(tryInit);
-    }
-
-    if (tryInit()) return;
-
-    const POLL_INTERVAL = 250;
-    const start = Date.now();
-    const poll = setInterval(() => {
-        if (tryInit()) {
-            clearInterval(poll);
-            return;
-        }
-        if (Date.now() - start > MAX_WAIT) {
-            clearInterval(poll);
-            console.error("[Roadwork] WME SDK not available after " + (MAX_WAIT / 1000) + "s, giving up");
-        }
-    }, POLL_INTERVAL);
-}
-
-bootstrap();
+console.log("Roadwork initializing");
+window.SDK_INITIALIZED.then(initScript);
 
 const ALL_STATUSES = Object.keys(STATUS_COLORS);
 
@@ -1910,15 +1905,9 @@ async function buildPanel(tabPane: Element) {
     renderCustomSources();
 }
 
-async function init(sdk: WmeSDK) {
-    await Promise.race([
-        wasmReady,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("WASM iframe not ready after " + MAX_WAIT / 1000 + "s")), MAX_WAIT)),
-    ]);
+async function init() {
+    await applyLogLevel(settings.logLevel);
 
-    applyLogLevel(settings.logLevel);
-
-    wmeSDK = sdk;
     loadSettings();
     loadHideFinished();
     loadSortState();
@@ -2165,4 +2154,5 @@ async function init(sdk: WmeSDK) {
         setStatus(`${count} roadwork(s) from cache`, "success");
     }
     refreshData();
+    console.log("Roadwork init done");
 }

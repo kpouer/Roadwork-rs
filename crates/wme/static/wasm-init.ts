@@ -1,4 +1,42 @@
 (async () => {
+    const postReady = (error?: string) => {
+        const payload: any = { type: 'ROADWORK_WASM_READY' };
+        if (error) payload.error = error;
+        window.parent.postMessage(payload, '*');
+    };
+
+    let acked = false;
+    let readyError: string | undefined;
+
+    window.addEventListener('message', async (e) => {
+        if (e.data?.type === 'ROADWORK_WASM_ACK') {
+            acked = true;
+            return;
+        }
+        if (e.data?.type !== 'ROADWORK_RPC') return;
+        const { id, method, args } = e.data;
+        try {
+            let result;
+            if (method === 'get_services') {
+                result = wasm_bindgen.get_services();
+            } else if (method === 'get_roadworks') {
+                result = await wasm_bindgen.get_roadworks(args[0]);
+            } else if (method === 'set_log_level') {
+                wasm_bindgen.set_log_level(args[0]);
+                result = true;
+            } else if (method === 'set_custom_descriptors') {
+                wasm_bindgen.set_custom_descriptors(args[0]);
+                result = true;
+            } else {
+                throw new Error('Unknown method: ' + method);
+            }
+            console.info('[wasm] posting RPC result for id', id, 'method', method);
+            window.parent.postMessage({ type: 'ROADWORK_RPC_RESULT', id, result }, '*');
+        } catch (err) {
+            window.parent.postMessage({ type: 'ROADWORK_RPC_ERROR', id, error: String(err) }, '*');
+        }
+    });
+
     try {
         const _origLog = console.log;
         const _origWarn = console.warn;
@@ -22,33 +60,19 @@
             bytes[i] = raw.charCodeAt(i);
         }
         await wasm_bindgen({ module_or_path: bytes });
-        window.parent.postMessage({ type: 'ROADWORK_WASM_READY' }, '*');
-
-        window.addEventListener('message', async (e) => {
-            if (e.data?.type !== 'ROADWORK_RPC') return;
-            const { id, method, args } = e.data;
-            try {
-                let result;
-                if (method === 'get_services') {
-                    result = wasm_bindgen.get_services();
-                } else if (method === 'get_roadworks') {
-                    result = await wasm_bindgen.get_roadworks(args[0]);
-                } else if (method === 'set_log_level') {
-                    wasm_bindgen.set_log_level(args[0]);
-                    result = true;
-                } else if (method === 'set_custom_descriptors') {
-                    wasm_bindgen.set_custom_descriptors(args[0]);
-                    result = true;
-                } else {
-                    throw new Error('Unknown method: ' + method);
-                }
-                console.info('[wasm] posting RPC result for id', id, 'method', method);
-                window.parent.postMessage({ type: 'ROADWORK_RPC_RESULT', id, result }, '*');
-            } catch (err) {
-                window.parent.postMessage({ type: 'ROADWORK_RPC_ERROR', id, error: String(err) }, '*');
-            }
-        });
     } catch (e) {
-        window.parent.postMessage({ type: 'ROADWORK_WASM_READY', error: String(e) }, '*');
+        readyError = String(e);
     }
+
+    // READY is one-shot and can be missed if the page has not yet registered its
+    // listener. Re-send it until the parent acknowledges (capped at 30s).
+    postReady(readyError);
+    const retry = setInterval(() => {
+        if (acked) {
+            clearInterval(retry);
+            return;
+        }
+        postReady(readyError);
+    }, 200);
+    setTimeout(() => clearInterval(retry), 30000);
 })();
