@@ -157,3 +157,101 @@ pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
     arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
     arrays
 }
+
+pub fn element_scalar_paths(element: &Value) -> Vec<(String, String)> {
+    let mut scalars = Vec::new();
+    collect_scalar_leaves(element, "$", &mut scalars);
+    scalars.sort();
+    scalars
+}
+
+pub fn element_array_paths(element: &Value) -> Vec<(String, usize)> {
+    let mut arrays = Vec::new();
+    collect_element_arrays(element, "$", &mut arrays, 0);
+    arrays.sort();
+    arrays
+}
+
+fn collect_scalar_leaves(value: &Value, path: &str, out: &mut Vec<(String, String)>) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if out.len() >= MAX_SCALAR_PATHS {
+                    return;
+                }
+                let child_path = if is_plain_key(key) {
+                    format!("{path}.{key}")
+                } else {
+                    format!("{path}[\"{key}\"]")
+                };
+                collect_scalar_leaves(child, &child_path, out);
+            }
+        }
+        Value::Array(elements) => {
+            for (i, element) in elements.iter().enumerate().take(MAX_ARRAY_INDEX) {
+                if out.len() >= MAX_SCALAR_PATHS {
+                    return;
+                }
+                collect_scalar_leaves(element, &format!("{path}[{i}]"), out);
+            }
+        }
+        _ => out.push((path.to_string(), format_fetched_value(value))),
+    }
+}
+
+fn collect_element_arrays(
+    value: &Value,
+    path: &str,
+    arrays: &mut Vec<(String, usize)>,
+    depth: usize,
+) {
+    if depth > MAX_ARRAY_DEPTH {
+        return;
+    }
+    match value {
+        Value::Array(elements) => {
+            arrays.push((path.to_string(), elements.len()));
+            for (i, element) in elements.iter().enumerate().take(MAX_ARRAY_INDEX) {
+                if element.is_array() || element.is_object() {
+                    collect_element_arrays(element, &format!("{path}[{i}]"), arrays, depth + 1);
+                }
+            }
+        }
+        Value::Object(map) => {
+            for (key, child) in map {
+                if child.is_array() || child.is_object() {
+                    let child_path = if is_plain_key(key) {
+                        format!("{path}.{key}")
+                    } else {
+                        format!("{path}[\"{key}\"]")
+                    };
+                    collect_element_arrays(child, &child_path, arrays, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn is_scalar(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+    )
+}
+
+pub fn format_fetched_value(value: &Value) -> String {
+    let text = match value {
+        Value::String(s) => s.clone(),
+        _ => value.to_string(),
+    };
+    if text.len() > 200 {
+        format!("{}…", &text[..200])
+    } else {
+        text
+    }
+}
+
+const MAX_ARRAY_INDEX: usize = 8;
+const MAX_ARRAY_DEPTH: usize = 4;
+const MAX_SCALAR_PATHS: usize = 200;

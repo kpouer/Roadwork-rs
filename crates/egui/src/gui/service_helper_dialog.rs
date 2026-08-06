@@ -572,10 +572,8 @@ impl ServiceHelperDialog {
             return PathCandidates::default();
         };
         PathCandidates {
-            scalars: roadwork_core::opendata::json::opendata_service::element_scalar_paths(
-                &element,
-            ),
-            arrays: roadwork_core::opendata::json::opendata_service::element_array_paths(&element),
+            scalars: roadwork_core::json_tools::element_scalar_paths(&element),
+            arrays: roadwork_core::json_tools::element_array_paths(&element),
         }
     }
 
