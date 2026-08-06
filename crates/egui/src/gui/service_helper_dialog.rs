@@ -33,6 +33,8 @@ pub(crate) struct ServiceHelperDialog {
     center_picker_open: bool,
     was_open: bool,
     array_paths: Vec<(String, usize)>,
+    current_index: usize,
+    roadwork_count: usize,
 }
 
 impl ServiceHelperDialog {
@@ -171,7 +173,34 @@ impl ServiceHelperDialog {
             .default_size(((available_height - 100.0) * 0.4).max(60.0))
             .min_size(60.0)
             .show_inside(ui, |ui| {
-                ui.label(RichText::new("Result JSON").strong());
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Result JSON").strong());
+                    if self.roadwork_count > 0 {
+                        ui.separator();
+                        let up = ui
+                            .add_enabled(self.current_index > 0, egui::Button::new("⬆"))
+                            .on_hover_text("Previous roadwork");
+                        let down = ui
+                            .add_enabled(
+                                self.current_index + 1 < self.roadwork_count,
+                                egui::Button::new("⬇"),
+                            )
+                            .on_hover_text("Next roadwork");
+                        ui.label(format!(
+                            "{}/{}",
+                            self.current_index + 1,
+                            self.roadwork_count
+                        ));
+                        if up.clicked() {
+                            self.current_index -= 1;
+                            self.update_result_json();
+                        }
+                        if down.clicked() {
+                            self.current_index += 1;
+                            self.update_result_json();
+                        }
+                    }
+                });
                 egui::ScrollArea::vertical()
                     .id_salt("result_json_scroll")
                     .auto_shrink([false, false])
@@ -390,7 +419,10 @@ impl ServiceHelperDialog {
             return FieldsValues::default();
         }
         let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
-        let path = |path: &str| ods.path_fetched_value(&self.raw_json, path);
+        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+            return FieldsValues::default();
+        };
+        let path = |path: &str| ods.path_fetched_value_in(&element, path);
         let optional_path = |optional: &Option<String>| optional.as_deref().and_then(path);
         let date_path = |date: &Option<DateParser>| {
             date.as_ref()
@@ -421,16 +453,15 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return PathCandidates::default();
         }
-        let array_path = &descriptor.roadwork_array;
+        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+            return PathCandidates::default();
+        };
         PathCandidates {
-            scalars: roadwork_core::opendata::json::opendata_service::find_element_scalar_paths(
-                &self.raw_json,
-                array_path,
+            scalars: roadwork_core::opendata::json::opendata_service::element_scalar_paths(
+                &element,
             ),
-            arrays: roadwork_core::opendata::json::opendata_service::find_element_array_paths(
-                &self.raw_json,
-                array_path,
-            ),
+            arrays: roadwork_core::opendata::json::opendata_service::element_array_paths(&element),
         }
     }
 
@@ -442,53 +473,56 @@ impl ServiceHelperDialog {
             return FieldsValidation::valid();
         }
         let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+            return FieldsValidation::valid();
+        };
         FieldsValidation {
             roadwork_array: self.roadwork_array_is_valid(),
-            id: ods.path_points_to_scalar(&self.raw_json, &descriptor.id),
+            id: ods.path_points_to_scalar_in(&element, &descriptor.id),
             latitude: descriptor
                 .latitude
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             longitude: descriptor
                 .longitude
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             polygon: descriptor
                 .polygon
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar_or_array(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_or_array_in(&element, path))
                 .unwrap_or(true),
             road: descriptor
                 .road
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             description: descriptor
                 .description
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             location_details: descriptor
                 .location_details
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             impact_circulation_detail: descriptor
                 .impact_circulation_detail
                 .as_deref()
-                .map(|path| ods.path_points_to_scalar(&self.raw_json, path))
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             from_path: descriptor
                 .from
                 .as_ref()
-                .map(|date| ods.path_points_to_scalar(&self.raw_json, &date.path))
+                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
                 .unwrap_or(true),
             to_path: descriptor
                 .to
                 .as_ref()
-                .map(|date| ods.path_points_to_scalar(&self.raw_json, &date.path))
+                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
                 .unwrap_or(true),
         }
     }
@@ -500,19 +534,49 @@ impl ServiceHelperDialog {
         self.dirty = false;
         if self.raw_json.is_empty() {
             self.result_json.clear();
+            self.roadwork_count = 0;
+            self.current_index = 0;
             return;
         }
         match &self.descriptor {
             Some(descriptor) => {
                 let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
-                match ods.parse_json_preview(&self.raw_json) {
-                    Ok(data) => {
-                        self.result_json = serde_json::to_string_pretty(&data).unwrap_or_default();
-                    }
-                    Err(e) => self.result_json = format!("Parse error: {e}"),
+                self.roadwork_count = ods.roadwork_count(&self.raw_json);
+                if self.roadwork_count == 0 {
+                    self.current_index = 0;
+                } else {
+                    self.current_index = self.current_index.min(self.roadwork_count - 1);
                 }
+                self.update_result_json();
             }
-            None => self.result_json = "No descriptor".to_string(),
+            None => {
+                self.roadwork_count = 0;
+                self.current_index = 0;
+                self.result_json = "No descriptor".to_string();
+            }
+        }
+    }
+
+    fn update_result_json(&mut self) {
+        let Some(descriptor) = &self.descriptor else {
+            self.result_json = "No descriptor".to_string();
+            return;
+        };
+        if self.raw_json.is_empty() {
+            self.result_json.clear();
+            return;
+        }
+        let ods = OpendataService::new("Service helper".to_string(), descriptor.clone());
+        match ods.extract_roadwork_array(&self.raw_json) {
+            Ok(array) => {
+                let element = array
+                    .as_array()
+                    .and_then(|elements| elements.get(self.current_index))
+                    .cloned()
+                    .unwrap_or(array);
+                self.result_json = serde_json::to_string_pretty(&element).unwrap_or_default();
+            }
+            Err(e) => self.result_json = format!("Parse error: {e}"),
         }
     }
 }

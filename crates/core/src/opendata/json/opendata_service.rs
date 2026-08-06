@@ -82,18 +82,26 @@ pub fn find_element_scalar_paths(json: &str, array_path: &str) -> Vec<(String, S
     let Some(element) = first_element(json, array_path) else {
         return Vec::new();
     };
-    let mut scalars = Vec::new();
-    collect_scalar_leaves(&element, "$", &mut scalars);
-    scalars.sort();
-    scalars
+    element_scalar_paths(&element)
 }
 
 pub fn find_element_array_paths(json: &str, array_path: &str) -> Vec<(String, usize)> {
     let Some(element) = first_element(json, array_path) else {
         return Vec::new();
     };
+    element_array_paths(&element)
+}
+
+pub fn element_scalar_paths(element: &Value) -> Vec<(String, String)> {
+    let mut scalars = Vec::new();
+    collect_scalar_leaves(element, "$", &mut scalars);
+    scalars.sort();
+    scalars
+}
+
+pub fn element_array_paths(element: &Value) -> Vec<(String, usize)> {
     let mut arrays = Vec::new();
-    collect_element_arrays(&element, "$", &mut arrays, 0);
+    collect_element_arrays(element, "$", &mut arrays, 0);
     arrays.sort();
     arrays
 }
@@ -191,6 +199,24 @@ impl OpendataService {
             || self.service_descriptor.roadwork_array.contains('[')
     }
 
+    pub fn roadwork_count(&self, json: &str) -> usize {
+        self.roadwork_elements(json).len()
+    }
+
+    pub fn element_at(&self, json: &str, index: usize) -> Option<Value> {
+        self.roadwork_elements(json).get(index).cloned()
+    }
+
+    fn roadwork_elements(&self, json: &str) -> Vec<Value> {
+        let Ok(value) = serde_json::from_str::<Value>(json) else {
+            return Vec::new();
+        };
+        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+            return Vec::new();
+        };
+        results.into_iter().cloned().collect()
+    }
+
     pub fn path_points_to_scalar(&self, json: &str, path: &str) -> bool {
         self.path_matches(json, path, is_scalar)
     }
@@ -199,24 +225,29 @@ impl OpendataService {
         if path.trim().is_empty() {
             return None;
         }
-        let Ok(value) = serde_json::from_str::<Value>(json) else {
+        self.roadwork_elements(json)
+            .iter()
+            .find_map(|element| self.path_fetched_value_in(element, path))
+    }
+
+    pub fn path_fetched_value_in(&self, element: &Value, path: &str) -> Option<String> {
+        if path.trim().is_empty() {
             return None;
-        };
-        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
-            return None;
-        };
-        for node in results.iter() {
-            if let Ok(found) = node.query(path)
-                && let Some(first) = found.first()
-            {
-                return Some(format_fetched_value(first));
-            }
         }
-        None
+        let found = element.query(path).ok()?;
+        found.first().map(|value| format_fetched_value(value))
     }
 
     pub fn path_points_to_scalar_or_array(&self, json: &str, path: &str) -> bool {
         self.path_matches(json, path, |value| is_scalar(value) || value.is_array())
+    }
+
+    pub fn path_points_to_scalar_in(&self, element: &Value, path: &str) -> bool {
+        self.path_matches_in(element, path, is_scalar)
+    }
+
+    pub fn path_points_to_scalar_or_array_in(&self, element: &Value, path: &str) -> bool {
+        self.path_matches_in(element, path, |value| is_scalar(value) || value.is_array())
     }
 
     fn path_matches<F>(&self, json: &str, path: &str, matches: F) -> bool
@@ -226,20 +257,26 @@ impl OpendataService {
         if path.trim().is_empty() {
             return true;
         }
-        let Ok(value) = serde_json::from_str::<Value>(json) else {
-            return false;
-        };
-        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
-            return false;
-        };
-        if results.is_empty() {
+        let elements = self.roadwork_elements(json);
+        if elements.is_empty() {
             return true;
         }
-        results.iter().any(|node| {
-            node.query(path)
-                .map(|found| found.iter().any(|v| matches(v)))
-                .unwrap_or(false)
-        })
+        elements
+            .iter()
+            .any(|element| self.path_matches_in(element, path, &matches))
+    }
+
+    fn path_matches_in<F>(&self, element: &Value, path: &str, matches: F) -> bool
+    where
+        F: Fn(&Value) -> bool,
+    {
+        if path.trim().is_empty() {
+            return true;
+        }
+        element
+            .query(path)
+            .map(|found| found.iter().any(|v| matches(v)))
+            .unwrap_or(false)
     }
 
     pub fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
@@ -274,6 +311,12 @@ impl OpendataService {
             roadworks.push(roadwork);
         }
         Ok(RoadworkData::new(&self.service_name, roadworks))
+    }
+
+    pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, MyError> {
+        let value: Value = serde_json::from_str(json)?;
+        let results = value.query(&self.service_descriptor.roadwork_array)?;
+        Ok(Value::Array(results.into_iter().cloned().collect()))
     }
 
     pub fn build_url(&self) -> String {
