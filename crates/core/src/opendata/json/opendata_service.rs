@@ -1,6 +1,6 @@
 use crate::MyError;
 use crate::http_service::HttpService;
-use crate::json_tools::JsonTools;
+use crate::json_tools::{JsonTools, is_plain_key};
 use crate::model::date_range::DateRange;
 use crate::model::opendata::Opendata;
 use crate::model::roadwork::Roadwork;
@@ -62,44 +62,9 @@ pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
     let Ok(value) = serde_json::from_str::<Value>(json) else {
         return Vec::new();
     };
-    let mut arrays = Vec::new();
-    collect_arrays(&value, "$", &mut arrays);
+    let mut arrays = (&value).collect_arrays("$");
     arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
     arrays
-}
-
-fn collect_arrays(value: &Value, path: &str, arrays: &mut Vec<(String, usize)>) {
-    match value {
-        Value::Array(elements) => {
-            if !elements.is_empty() && elements.iter().all(Value::is_object) {
-                arrays.push((path.to_string(), elements.len()));
-            }
-            for (i, element) in elements.iter().enumerate() {
-                if element.is_array() || element.is_object() {
-                    collect_arrays(element, &format!("{path}[{i}]"), arrays);
-                }
-            }
-        }
-        Value::Object(map) => {
-            for (key, child) in map {
-                if child.is_array() || child.is_object() {
-                    let child_path = if is_plain_key(key) {
-                        format!("{path}.{key}")
-                    } else {
-                        format!("{path}[\"{key}\"]")
-                    };
-                    collect_arrays(child, &child_path, arrays);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-fn is_plain_key(key: &str) -> bool {
-    !key.is_empty()
-        && !key.chars().next().is_some_and(|c| c.is_ascii_digit())
-        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 const MAX_ARRAY_INDEX: usize = 8;

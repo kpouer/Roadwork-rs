@@ -9,6 +9,7 @@ pub trait JsonTools {
     fn get_path(&self, path: &str) -> Result<String, MyError>;
     fn get_path_as_double(&self, path: &str) -> Result<f64, MyError>;
     fn get_path_as_polygons(&self, path: &str) -> Option<Vec<Polygon>>;
+    fn collect_arrays(&self, path: &str) -> Vec<(String, usize)>;
 }
 
 impl JsonTools for &Value {
@@ -64,6 +65,36 @@ impl JsonTools for &Value {
             }
         }
     }
+
+    fn collect_arrays(&self, path: &str) -> Vec<(String, usize)> {
+        let mut arrays = Vec::new();
+        match self {
+            Value::Array(elements) => {
+                if !elements.is_empty() && elements.iter().all(Value::is_object) {
+                    arrays.push((path.to_string(), elements.len()));
+                }
+                for (i, element) in elements.iter().enumerate() {
+                    if element.is_array() || element.is_object() {
+                        arrays.extend(element.collect_arrays(&format!("{path}[{i}]")));
+                    }
+                }
+            }
+            Value::Object(map) => {
+                for (key, child) in map {
+                    if child.is_array() || child.is_object() {
+                        let child_path = if is_plain_key(key) {
+                            format!("{path}.{key}")
+                        } else {
+                            format!("{path}[\"{key}\"]")
+                        };
+                        arrays.extend(child.collect_arrays(&child_path));
+                    }
+                }
+            }
+            _ => {}
+        }
+        arrays
+    }
 }
 
 fn get_multipolygon(value: &Vec<&Value>) -> Result<Vec<Polygon>, MyError> {
@@ -110,4 +141,10 @@ fn get_polygon(polygon: &Value) -> Result<Polygon, MyError> {
         ))?);
     }
     Ok(Polygon { xpoints, ypoints })
+}
+
+pub fn is_plain_key(key: &str) -> bool {
+    !key.is_empty()
+        && !key.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
