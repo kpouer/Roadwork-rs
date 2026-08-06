@@ -25,7 +25,7 @@
     "parsers": [
       {
         "matcher": "Du (.*) au.*",
-        "format": "dd/MM/yyyy",
+        "format": "%d/%m/%Y",
         "addYear": false,
         "resetHour": false
       }
@@ -36,7 +36,7 @@
     "parsers": [
       {
         "matcher": ".* au (.*)",
-        "format": "dd/MM/yyyy",
+        "format": "%d/%m/%Y",
         "addYear": false,
         "resetHour": false
       }
