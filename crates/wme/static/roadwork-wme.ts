@@ -27,7 +27,7 @@ window.addEventListener("message", (e) => {
     }
 });
 
-function rpcCall(method, args = []) {
+function rpcCall(method: string, args = []) {
     console.info("[Roadwork] rpcCall", method);
     return new Promise<any>((resolve, reject) => {
         const id = ++rpcId;
@@ -137,7 +137,7 @@ bootstrap();
 
 const ALL_STATUSES = Object.keys(STATUS_COLORS);
 
-function getLayerName(status) {
+function getLayerName(status: string) {
     return "Roadwork - " + status;
 }
 
