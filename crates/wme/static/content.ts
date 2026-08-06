@@ -42,6 +42,7 @@
 
         helperIframe = document.createElement('iframe');
         helperIframe.className = 'rw-helper-iframe';
+        helperIframe.setAttribute('allow', 'clipboard-read; clipboard-write');
 
         helperOverlay.appendChild(header);
         helperOverlay.appendChild(helperIframe);

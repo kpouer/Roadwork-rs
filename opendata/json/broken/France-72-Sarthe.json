@@ -6,7 +6,7 @@
     "licenceName": "Licence Ouverte v2.0 (Etalab)",
     "licenceUrl": "https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf",
     "sourceUrl": "https://data.sarthe.fr/explore/dataset/227200029_etat-des-chantiers-routiers/information/",
-    "url": "https://data.sarthe.fr/api/records/1.0/search/?dataset=227200029_etat-des-chantiers-routiers&q=&rows=1000&facet=commune&facet=mode_d_exploitation",
+    "url": "https://data.sarthe.fr/api/records/1.0/search/?dataset=227200029_chantiers_routiers&q=&rows=1000&facet=commune&facet=mode_d_exploitation",
     "center": {
       "lat": 48.0262668,
       "lon": -0.3274509
@@ -23,7 +23,7 @@
   "description": "$.fields.nature_des_travaux",
   "url": "$.fields.url",
   "from": {
-    "path": "$.fields.debut",
+    "path": "$.fields.date_debut",
     "parsers": [
       {
         "matcher": ".*",
@@ -32,7 +32,7 @@
     ]
   },
   "to": {
-    "path": "$.fields.fin",
+    "path": "$.fields.date_fin",
     "parsers": [
       {
         "matcher": ".*",

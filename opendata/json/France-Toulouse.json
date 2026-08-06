@@ -25,7 +25,7 @@
     "path": "$.fields.datedebut",
     "parsers": [
       {
-        "matcher": ".*",
+        "matcher": "(.*)T.*",
         "format": "%Y-%m-%d"
       }
     ]
@@ -34,7 +34,7 @@
     "path": "$.fields.datefin",
     "parsers": [
       {
-        "matcher": ".*",
+        "matcher": "(.*)T.*",
         "format": "%Y-%m-%d"
       }
     ]
