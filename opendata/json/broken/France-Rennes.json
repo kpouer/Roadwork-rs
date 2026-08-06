@@ -11,7 +11,7 @@
     },
     "locale": "fr_FR"
   },
-  "roadworkArray": "$.features[*]",
+  "dataArray": "$.features[*]",
   "id": "$.properties.id",
   "latitude": "$.geometry.coordinates[0][1]",
   "longitude": "$.geometry.coordinates[0][0]",

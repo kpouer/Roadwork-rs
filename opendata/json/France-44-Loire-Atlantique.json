@@ -42,5 +42,5 @@
       }
     ]
   },
-  "roadworkArray": "$.records[*]"
+  "dataArray": "$.records[*]"
 }

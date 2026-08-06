@@ -39,6 +39,6 @@
       "resetHour" : true
     } ]
   },
-  "roadworkArray" : "$.results",
+  "dataArray" : "$.results",
   "url" : "$.documents"
 }

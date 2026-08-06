@@ -10,7 +10,7 @@ const LABEL_WIDTH: f32 = 150.0;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FieldsValidation {
-    pub roadwork_array: bool,
+    pub data_array: bool,
     pub id: bool,
     pub latitude: bool,
     pub longitude: bool,
@@ -25,7 +25,7 @@ pub(crate) struct FieldsValidation {
 
 #[derive(Default, Clone)]
 pub(crate) struct FieldsValues {
-    pub roadwork_array: Option<String>,
+    pub data_array: Option<String>,
     pub id: Option<String>,
     pub latitude: Option<String>,
     pub longitude: Option<String>,
@@ -54,7 +54,7 @@ struct Wand<'a> {
 impl FieldsValidation {
     pub fn valid() -> Self {
         Self {
-            roadwork_array: true,
+            data_array: true,
             id: true,
             latitude: true,
             longitude: true,
@@ -85,7 +85,7 @@ pub(crate) fn show(
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: None,
-        hint: "Fetch the JSON first and make sure roadworkArray points to the array of roadworks.",
+        hint: "Fetch the JSON first and make sure dataArray points to the array of roadworks.",
     };
     let polygon_wand = Wand {
         scalars: &path_candidates.scalars,
@@ -151,9 +151,9 @@ pub(crate) fn show(
     ui.heading("Fields");
     changed |= roadwork_array_row(
         ui,
-        &mut descriptor.roadwork_array,
-        validation.roadwork_array,
-        values.roadwork_array.as_deref(),
+        &mut descriptor.data_array,
+        validation.data_array,
+        values.data_array.as_deref(),
         array_paths,
     );
     changed |= validated(
@@ -304,13 +304,13 @@ fn roadwork_array_row(
     validated(
         ui,
         valid,
-        "roadworkArray must point to an array in the fetched JSON",
+        "dataArray must point to an array in the fetched JSON",
         |ui, tooltip| {
             let mut changed = false;
             ui.horizontal(|ui| {
                 let label = ui.add_sized(
                     [LABEL_WIDTH, 20.0],
-                    egui::Label::new(RichText::new("roadworkArray").strong()),
+                    egui::Label::new(RichText::new("dataArray").strong()),
                 );
                 let width = ui.available_width() - 30.0;
                 let mut text = value.strip_suffix("[*]").unwrap_or(value).to_string();

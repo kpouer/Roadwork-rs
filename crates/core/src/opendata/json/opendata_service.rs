@@ -34,7 +34,7 @@ impl OpendataService {
         let Ok(value) = serde_json::from_str::<Value>(json) else {
             return false;
         };
-        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+        let Ok(results) = value.query(&self.service_descriptor.data_array) else {
             return false;
         };
         if results.is_empty() {
@@ -42,7 +42,7 @@ impl OpendataService {
         }
         results.iter().any(|v| v.is_array())
             || results.len() > 1
-            || self.service_descriptor.roadwork_array.contains('[')
+            || self.service_descriptor.data_array.contains('[')
     }
 
     pub fn roadwork_count(&self, json: &str) -> usize {
@@ -61,8 +61,8 @@ impl OpendataService {
 
         let array_valid = self.roadwork_array_targets_array(json) && !elements.is_empty();
         report.push(PathValidation {
-            label: "roadworkArray",
-            path: descriptor.roadwork_array.to_owned(),
+            label: "dataArray",
+            path: descriptor.data_array.to_owned(),
             required: true,
             expected: "array of roadworks",
             failures: if array_valid { Vec::new() } else { vec![0] },
@@ -242,7 +242,7 @@ impl OpendataService {
         let Ok(value) = serde_json::from_str::<Value>(json) else {
             return Vec::new();
         };
-        let Ok(results) = value.query(&self.service_descriptor.roadwork_array) else {
+        let Ok(results) = value.query(&self.service_descriptor.data_array) else {
             return Vec::new();
         };
         results.into_iter().cloned().collect()
@@ -318,10 +318,10 @@ impl OpendataService {
 
     pub fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
-        let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;
-        info!("Found {} roadworks", roadwork_array.len());
-        let mut roadworks = Vec::with_capacity(roadwork_array.len());
-        for value in roadwork_array {
+        let data_array = json.query(&self.service_descriptor.data_array)?;
+        info!("Found {} items", data_array.len());
+        let mut roadworks = Vec::with_capacity(data_array.len());
+        for value in data_array {
             match self.build_roadwork(value) {
                 Ok(roadwork) => {
                     if Self::is_valid(&roadwork) {
@@ -338,21 +338,21 @@ impl OpendataService {
 
     pub fn parse_json_preview(&self, json: &str) -> Result<RoadworkData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
-        let roadwork_array = json.query(&self.service_descriptor.roadwork_array)?;
-        let mut roadworks = Vec::with_capacity(roadwork_array.len());
-        for (index, value) in roadwork_array.into_iter().enumerate() {
-            let mut roadwork = self.build_roadwork_preview(value);
-            if roadwork.opendata.id.is_empty() {
-                roadwork.opendata.id = format!("element#{index}");
+        let data_array = json.query(&self.service_descriptor.data_array)?;
+        let mut items = Vec::with_capacity(data_array.len());
+        for (index, value) in data_array.into_iter().enumerate() {
+            let mut item = self.build_roadwork_preview(value);
+            if item.opendata.id.is_empty() {
+                item.opendata.id = format!("element#{index}");
             }
-            roadworks.push(roadwork);
+            items.push(item);
         }
-        Ok(RoadworkData::new(&self.service_name, roadworks))
+        Ok(RoadworkData::new(&self.service_name, items))
     }
 
     pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, MyError> {
         let value: Value = serde_json::from_str(json)?;
-        let results = value.query(&self.service_descriptor.roadwork_array)?;
+        let results = value.query(&self.service_descriptor.data_array)?;
         Ok(Value::Array(results.into_iter().cloned().collect()))
     }
 
@@ -558,7 +558,7 @@ mod validate_tests {
                     "country": "France", "name": "Paris", "sourceUrl": "s", "url": "u",
                     "center": {"lat": 48.0, "lon": 2.0}, "locale": "fr_FR"
                 },
-                "roadworkArray": "$.records[*]",
+                "dataArray": "$.records[*]",
                 "id": "$.recordid",
                 "latitude": "$.geometry.coordinates[1]",
                 "longitude": "$.geometry.coordinates[0]",
@@ -607,7 +607,7 @@ mod validate_tests {
         };
         let report = ods.validate(json());
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
-        assert!(get("roadworkArray").is_valid());
+        assert!(get("dataArray").is_valid());
         assert!(get("id").is_valid());
         assert_eq!(get("id unique").failures, vec![0, 1]);
         assert!(get("latitude").is_valid());
@@ -663,14 +663,14 @@ mod validate_tests {
     #[test]
     fn reports_bad_array_path() {
         let mut service_descriptor = descriptor();
-        service_descriptor.roadwork_array = "$.nope".to_string();
+        service_descriptor.data_array = "$.nope".to_string();
         let ods = OpendataService {
             service_name: "test".to_string(),
             service_descriptor,
         };
         let report = ods.validate(json());
         assert!(!report[0].is_valid());
-        assert_eq!(report[0].label, "roadworkArray");
+        assert_eq!(report[0].label, "dataArray");
         assert_eq!(report.len(), 1);
     }
 }

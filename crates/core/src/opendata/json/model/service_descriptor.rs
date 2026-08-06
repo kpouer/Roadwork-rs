@@ -26,8 +26,8 @@ pub struct ServiceDescriptor {
     pub from: Option<DateParser>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<DateParser>,
-    #[serde(rename = "roadworkArray")]
-    pub roadwork_array: String,
+    #[serde(rename = "dataArray")]
+    pub data_array: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 }
@@ -49,7 +49,7 @@ mod tests {
         let file = File::open(path)?;
         let service_descriptor = serde_json::from_reader::<File, ServiceDescriptor>(file)?;
 
-        assert_eq!(service_descriptor.roadwork_array, "$.records[*]");
+        assert_eq!(service_descriptor.data_array, "$.records[*]");
         assert_eq!(service_descriptor.id, "$.recordid");
         assert_eq!(
             service_descriptor.latitude,

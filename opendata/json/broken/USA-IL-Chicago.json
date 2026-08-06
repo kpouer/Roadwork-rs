@@ -13,7 +13,7 @@
     "tileServer": "WazeNA",
     "editorPattern": "https://waze.com/editor?env=usa&lat=${lat}&&lon=${lon}&zoomLevel=19"
   },
-  "roadworkArray": "$",
+  "dataArray": "$",
   "id": "$.objectid",
   "latitude": "$.shape.coordinates[0][1]",
   "longitude": "$.shape.coordinates[0][0]",

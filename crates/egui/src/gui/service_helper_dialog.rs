@@ -542,7 +542,7 @@ impl ServiceHelperDialog {
                 .and_then(path)
         };
         FieldsValues {
-            roadwork_array: path(&descriptor.roadwork_array),
+            data_array: path(&descriptor.data_array),
             id: path(&descriptor.id),
             latitude: optional_path(&descriptor.latitude),
             longitude: optional_path(&descriptor.longitude),
@@ -592,7 +592,7 @@ impl ServiceHelperDialog {
             return FieldsValidation::valid();
         };
         FieldsValidation {
-            roadwork_array: self.roadwork_array_is_valid(),
+            data_array: self.roadwork_array_is_valid(),
             id: ods.path_points_to_scalar_in(&element, &descriptor.id),
             latitude: descriptor
                 .latitude
