@@ -148,3 +148,12 @@ pub fn is_plain_key(key: &str) -> bool {
         && !key.chars().next().is_some_and(|c| c.is_ascii_digit())
         && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
+
+pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
+    let Ok(value) = serde_json::from_str::<Value>(json) else {
+        return Vec::new();
+    };
+    let mut arrays = (&value).collect_arrays("$");
+    arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
+    arrays
+}

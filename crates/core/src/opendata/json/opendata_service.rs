@@ -58,32 +58,9 @@ impl PathValidation {
     }
 }
 
-pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
-    let Ok(value) = serde_json::from_str::<Value>(json) else {
-        return Vec::new();
-    };
-    let mut arrays = (&value).collect_arrays("$");
-    arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
-    arrays
-}
-
 const MAX_ARRAY_INDEX: usize = 8;
 const MAX_ARRAY_DEPTH: usize = 4;
 const MAX_SCALAR_PATHS: usize = 200;
-
-pub fn find_element_scalar_paths(json: &str, array_path: &str) -> Vec<(String, String)> {
-    let Some(element) = first_element(json, array_path) else {
-        return Vec::new();
-    };
-    element_scalar_paths(&element)
-}
-
-pub fn find_element_array_paths(json: &str, array_path: &str) -> Vec<(String, usize)> {
-    let Some(element) = first_element(json, array_path) else {
-        return Vec::new();
-    };
-    element_array_paths(&element)
-}
 
 pub fn element_scalar_paths(element: &Value) -> Vec<(String, String)> {
     let mut scalars = Vec::new();
@@ -97,15 +74,6 @@ pub fn element_array_paths(element: &Value) -> Vec<(String, usize)> {
     collect_element_arrays(element, "$", &mut arrays, 0);
     arrays.sort();
     arrays
-}
-
-fn first_element(json: &str, array_path: &str) -> Option<Value> {
-    if array_path.trim().is_empty() {
-        return None;
-    }
-    let value = serde_json::from_str::<Value>(json).ok()?;
-    let results = value.query(array_path).ok()?;
-    results.into_iter().next().cloned()
 }
 
 fn collect_scalar_leaves(value: &Value, path: &str, out: &mut Vec<(String, String)>) {

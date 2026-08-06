@@ -74,10 +74,7 @@ impl ServiceHelperDialog {
             match result {
                 Ok(text) => {
                     self.raw_json = text;
-                    self.array_paths =
-                        roadwork_core::opendata::json::opendata_service::find_json_arrays(
-                            &self.raw_json,
-                        );
+                    self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
                     self.error = None;
                     self.dirty = true;
                     self.validation_report = None;
