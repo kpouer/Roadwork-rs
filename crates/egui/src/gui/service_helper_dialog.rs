@@ -1,13 +1,13 @@
+use super::center_picker_dialog::CenterPickerDialog;
+use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
-use roadwork_core::opendata::json::opendata_service::{OpendataService, PathValidation};
+use roadwork_core::opendata::json::opendata_service::OpendataService;
+use roadwork_core::opendata::json::path_validation::PathValidation;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-use super::center_picker_dialog::CenterPickerDialog;
-use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 
 #[derive(Clone)]
 enum FetchState {

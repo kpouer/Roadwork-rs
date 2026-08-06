@@ -8,6 +8,7 @@ use crate::model::roadwork_data::RoadworkData;
 use crate::opendata::json::model::date_parser::DateParser;
 use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
+use crate::opendata::json::path_validation::PathValidation;
 use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
@@ -19,43 +20,6 @@ use std::collections::HashMap;
 pub struct OpendataService {
     pub service_name: String,
     pub service_descriptor: ServiceDescriptor,
-}
-
-#[derive(Debug, Clone)]
-pub struct PathValidation {
-    pub label: &'static str,
-    pub path: String,
-    pub required: bool,
-    pub expected: &'static str,
-    pub failures: Vec<usize>,
-    pub element_count: usize,
-    pub message: Option<&'static str>,
-}
-
-impl PathValidation {
-    pub fn new(
-        label: &'static str,
-        path: &str,
-        required: bool,
-        expected: &'static str,
-        failures: Vec<usize>,
-        element_count: usize,
-        message: Option<&'static str>,
-    ) -> Self {
-        Self {
-            label,
-            path: path.to_string(),
-            required,
-            expected,
-            failures,
-            element_count,
-            message,
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.failures.is_empty()
-    }
 }
 
 const MAX_ARRAY_INDEX: usize = 8;
