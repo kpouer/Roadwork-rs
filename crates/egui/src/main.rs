@@ -78,6 +78,9 @@ fn read_startup_params() -> StartupParams {
             "create" if value == "1" => {
                 params.create_opendata_service = true;
             }
+            "descriptor" if !value.is_empty() => {
+                params.opendata_descriptor = Some(decode_url(value));
+            }
             _ => {}
         }
     }
@@ -86,5 +89,8 @@ fn read_startup_params() -> StartupParams {
 
 #[cfg(target_arch = "wasm32")]
 fn decode_url(value: &str) -> String {
-    value.replace('+', " ")
+    let value = value.replace('+', "%20");
+    js_sys::decode_uri_component(&value)
+        .map(|v| v.as_string().unwrap_or_default())
+        .unwrap_or_default()
 }

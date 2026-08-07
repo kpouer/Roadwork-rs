@@ -18,7 +18,6 @@ enum FetchState {
 
 #[derive(Default)]
 pub(crate) struct OpendataServiceHelperDialog {
-    service: String,
     descriptor: Option<OpendataServiceDescriptor>,
     descriptor_json: String,
     form_mode: bool,
@@ -39,32 +38,32 @@ pub(crate) struct OpendataServiceHelperDialog {
     current_index: usize,
     element_count: usize,
     validation_report: Option<Vec<PathValidation>>,
+    pending_descriptor: Option<String>,
+    #[allow(dead_code)]
+    original_name: String,
 }
 
 impl OpendataServiceHelperDialog {
-    pub(crate) fn new(service: &str, creating: bool) -> Self {
+    pub(crate) fn new(
+        pending_descriptor: Option<String>,
+        original_name: String,
+        creating: bool,
+    ) -> Self {
         let mut dialog = Self {
-            service: service.to_string(),
             form_mode: true,
             wizard_mode: true,
             creating,
+            pending_descriptor,
+            original_name,
             ..Default::default()
         };
-        dialog.reload();
+        dialog.apply_initial_descriptor();
         dialog
     }
 
-    pub(crate) fn show(
-        &mut self,
-        ctx: &Context,
-        open: &mut bool,
-        service: &str,
-        toasts: &mut Toasts,
-    ) {
-        self.service = service.to_string();
+    pub(crate) fn show(&mut self, ctx: &Context, open: &mut bool, toasts: &mut Toasts) {
         let is_open = *open;
         if is_open && !self.was_open {
-            self.reload();
             if self.is_new {
                 self.wizard_mode = true;
                 self.reset();
@@ -160,9 +159,6 @@ impl OpendataServiceHelperDialog {
                 .clicked()
             {
                 self.fetch(ui.ctx().clone());
-            }
-            if ui.button("Reload").clicked() {
-                self.reload();
             }
             ui.separator();
             let can_validate = !fetching && !self.raw_json.trim().is_empty();
@@ -518,9 +514,9 @@ impl OpendataServiceHelperDialog {
         }
     }
 
-    fn apply_descriptor_json(&mut self) {
+    fn apply_descriptor_json(&mut self) -> bool {
         if self.descriptor_json.trim().is_empty() {
-            return;
+            return false;
         }
         match serde_json::from_str::<OpendataServiceDescriptor>(&self.descriptor_json) {
             Ok(descriptor) => {
@@ -533,30 +529,33 @@ impl OpendataServiceHelperDialog {
                 self.error = None;
                 self.dirty = true;
                 self.validation_report = None;
+                true
             }
-            Err(e) => self.error = Some(format!("Invalid descriptor JSON: {e}")),
+            Err(e) => {
+                self.error = Some(format!("Invalid descriptor JSON: {e}"));
+                false
+            }
         }
     }
 
-    fn reload(&mut self) {
-        let existing = roadwork_service::get_descriptor(&self.service);
-        self.is_new = self.creating || existing.is_none();
-        self.descriptor = Some(
-            existing
-                .map(|descriptor| OpendataServiceDescriptor::from(&descriptor))
-                .unwrap_or_default(),
-        );
-        let descriptor = self.descriptor.as_ref().expect("descriptor is set");
-        self.url = descriptor.metadata.url.clone();
-        self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
-        self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
-        self.dirty = true;
-        self.array_paths = Vec::new();
-        self.validation_report = None;
+    fn apply_initial_descriptor(&mut self) {
+        self.is_new = self.creating;
+        if self.is_new {
+            self.reset();
+            return;
+        }
+        match &self.pending_descriptor {
+            Some(json) if !json.trim().is_empty() => {
+                self.descriptor_json = json.clone();
+                self.apply_descriptor_json();
+            }
+            _ => self.reset(),
+        }
     }
 
     fn reset(&mut self) {
-        self.descriptor = Some(OpendataServiceDescriptor::default());
+        let descriptor = OpendataServiceDescriptor::default();
+        self.descriptor = Some(descriptor);
         self.url.clear();
         self.url_params.clear();
         self.descriptor_json = self
@@ -666,6 +665,14 @@ impl OpendataServiceHelperDialog {
             &wasm_bindgen::JsValue::from_str(&name),
         )
         .map_err(|e| format!("{e:?}"))?;
+        if !self.original_name.is_empty() && self.original_name != name {
+            js_sys::Reflect::set(
+                &object,
+                &wasm_bindgen::JsValue::from_str("oldName"),
+                &wasm_bindgen::JsValue::from_str(&self.original_name),
+            )
+            .map_err(|e| format!("{e:?}"))?;
+        }
         js_sys::Reflect::set(
             &object,
             &wasm_bindgen::JsValue::from_str("descriptor"),

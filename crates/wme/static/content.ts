@@ -90,6 +90,9 @@
         if (e.data.create) {
             params.set('create', '1');
         }
+        if (e.data.descriptor) {
+            params.set('descriptor', e.data.descriptor);
+        }
         helperIframe.src = chrome.runtime.getURL('app/index.html') + '?' + params.toString();
         helperOverlay.classList.remove('rw-helper-hidden');
         window.postMessage({ type: 'ROADWORK_OPEN_HELPER_ACK', service: e.data?.service }, '*');

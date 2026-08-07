@@ -29,7 +29,7 @@ window.addEventListener("message", (e) => {
         const method = e.data.level === "error" ? console.error : e.data.level === "warn" ? console.warn : console.log;
         method("[Roadwork WASM]", ...e.data.args);
     } else if (e.data?.type === "ROADWORK_SAVE_OPENDATA_DESCRIPTOR") {
-        saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor);
+        saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor, e.data.oldName);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
         if (wasmIframe?.contentWindow && e.source === wasmIframe.contentWindow) {
             wasmIframe.contentWindow.postMessage({ type: "ROADWORK_WASM_ACK" }, "*");
@@ -491,18 +491,30 @@ function openOpendataHelper() {
     openHelper("opendata", true);
 }
 
-function openHelper(helper: string, create: boolean = false) {
-    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, settings.service, ", create =", create);
+function editOpendataService(name: string) {
+    const services = getOpendataServices();
+    const svc = services[name];
+    if (!svc || !svc.descriptor) {
+        setStatus(`No descriptor for ${name}`, "error");
+        return;
+    }
+    openHelper("opendata", false, name, svc.descriptor);
+}
+
+function openHelper(helper: string, create: boolean = false, service?: string, descriptor?: string) {
+    const target = service || settings.service;
+    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, target, ", create =", create);
     if (!wasmIframe) {
         setStatus("WASM iframe not available", "error");
         return;
     }
     setStatus("Opening descriptor helper...", "info");
     helperAcked = false;
-    window.postMessage(
-        { type: "ROADWORK_OPEN_HELPER", helper, service: settings.service, create },
-        "*"
-    );
+    const msg: any = { type: "ROADWORK_OPEN_HELPER", helper, service: target, create };
+    if (descriptor) {
+        msg.descriptor = descriptor;
+    }
+    window.postMessage(msg, "*");
     setTimeout(() => {
         if (!helperAcked) {
             setStatus("Content script did not respond - reload the extension (chrome://extensions)", "error");
@@ -1659,7 +1671,7 @@ function removeOpendataService(name: string) {
     syncOpendataDescriptorsToWasm().catch(() => {});
 }
 
-function saveOpendataDescriptorFromHelper(name, descriptor) {
+function saveOpendataDescriptorFromHelper(name, descriptor, oldName) {
     if (!name || !descriptor) return;
     try {
         const parsed = JSON.parse(descriptor);
@@ -1667,7 +1679,15 @@ function saveOpendataDescriptorFromHelper(name, descriptor) {
         if (svcName) name = svcName;
     } catch (_) {}
     const services = getOpendataServices();
-    services[name] = { descriptor: descriptor, enabled: true, visible: true };
+    if (oldName && oldName !== name) {
+        delete services[oldName];
+    }
+    const existing = services[name] || {};
+    services[name] = {
+        descriptor: descriptor,
+        enabled: existing.enabled ?? true,
+        visible: existing.visible ?? true,
+    };
     settings.opendataServices = services;
     saveSettings();
     setStatus(`Opendata service "${name}" saved`, "success");
@@ -1723,6 +1743,13 @@ function renderOpendataList() {
         exportBtn.title = "Export descriptor";
         exportBtn.addEventListener("click", () => showOpendataExport(name));
         row.appendChild(exportBtn);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "roadwork-btn roadwork-btn-icon";
+        editBtn.textContent = "\u270e";
+        editBtn.title = "Edit descriptor";
+        editBtn.addEventListener("click", () => editOpendataService(name));
+        row.appendChild(editBtn);
 
         const delBtn = document.createElement("button");
         delBtn.className = "roadwork-btn roadwork-btn-icon";
@@ -2565,7 +2592,12 @@ async function buildPanel(tabPane: Element) {
             return;
         }
         const services = getOpendataServices();
-        services[name] = { descriptor: JSON.stringify(descriptor, null, 2), enabled: true, visible: true };
+        const existing = services[name] || {};
+        services[name] = {
+            descriptor: JSON.stringify(descriptor, null, 2),
+            enabled: existing.enabled ?? true,
+            visible: existing.visible ?? true,
+        };
         settings.opendataServices = services;
         saveSettings();
         setStatus(`Opendata service "${name}" imported`, "success");

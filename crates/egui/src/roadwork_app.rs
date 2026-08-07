@@ -28,6 +28,7 @@ pub struct StartupParams {
     pub open_service_helper: bool,
     pub open_opendata_service_helper: bool,
     pub create_opendata_service: bool,
+    pub opendata_descriptor: Option<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -72,6 +73,12 @@ impl RoadworkApp {
     pub fn new(egui_ctx: Context, params: StartupParams) -> Self {
         let settings = crate::app_settings::load_settings();
         let services = roadwork_service::get_services();
+        let creating = params.create_opendata_service || params.opendata_descriptor.is_none();
+        let original_name = if creating {
+            String::new()
+        } else {
+            params.service.clone().unwrap_or_default()
+        };
         let selected_service = if let Some(service) = params
             .service
             .filter(|s| services.iter().any(|srv| srv.name == *s))
@@ -88,8 +95,11 @@ impl RoadworkApp {
             .map(|s| s.center)
             .unwrap_or_default();
         let service_helper = ServiceHelperDialog::new(&selected_service);
-        let opendata_service_helper =
-            OpendataServiceHelperDialog::new(&selected_service, params.create_opendata_service);
+        let opendata_service_helper = OpendataServiceHelperDialog::new(
+            params.opendata_descriptor.clone(),
+            original_name,
+            creating,
+        );
 
         let app = Self {
             ctx: egui_ctx.clone(),
@@ -353,7 +363,6 @@ impl RoadworkApp {
         self.opendata_service_helper.show(
             ui.ctx(),
             &mut self.show_opendata_service_helper_dialog,
-            &self.selected_service,
             &mut self.toasts,
         );
     }
