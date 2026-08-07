@@ -22,9 +22,6 @@ use roadwork_core::settings::Settings;
 use std::sync::{Arc, Mutex};
 use walkers::{HttpTiles, Map, MapMemory, Projector};
 
-const DEFAULT_WME_URL: &str =
-    "https://waze.com/fr/editor?env=row&lat=${lat}&&lon=${lon}&zoomLevel=19";
-
 #[derive(Default)]
 pub struct StartupParams {
     pub service: Option<String>,
@@ -169,7 +166,6 @@ impl RoadworkApp {
     }
 
     fn show_left_panel(&mut self, ui: &mut Ui) {
-        let url = self.get_wme_url_pattern();
         let selected_id = self.selected_roadwork.clone();
         let sync_config = crate::app_settings::sync_config(&self.settings);
 
@@ -201,12 +197,6 @@ impl RoadworkApp {
                                     );
                                     ui.end_row();
                                 });
-                            if ui.button("WME").clicked() {
-                                let url = url
-                                    .replace("${lat}", &format!("{}", roadwork.opendata.latitude))
-                                    .replace("${lon}", &format!("{}", roadwork.opendata.longitude));
-                                Self::open_url(&url);
-                            }
                         });
 
                         egui::Grid::new("time_grid")
@@ -274,15 +264,6 @@ impl RoadworkApp {
                 }
             }
         }
-    }
-
-    fn get_wme_url_pattern(&self) -> String {
-        if let Some(metadata) = self.current_metadata.lock().unwrap().as_ref()
-            && let Some(editor_pattern) = &metadata.editor_pattern
-        {
-            return editor_pattern.to_string();
-        }
-        DEFAULT_WME_URL.to_string()
     }
 
     fn show_top_panel(&mut self, ui: &mut Ui) {

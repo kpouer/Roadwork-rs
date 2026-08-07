@@ -133,13 +133,6 @@ pub(crate) fn show(
         None,
         None,
     );
-    changed |= optional_text_row(
-        ui,
-        "Editor pattern",
-        &mut descriptor.metadata.editor_pattern,
-        None,
-        None,
-    );
     changed |= center_row(
         ui,
         &mut descriptor.metadata.center,

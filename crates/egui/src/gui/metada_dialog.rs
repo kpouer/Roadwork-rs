@@ -58,10 +58,6 @@ impl<'a> MetadataDialog<'a> {
                             Self::add_row(ui, "Tile server:", ts);
                         }
 
-                        if let Some(pattern) = &self.metadata.editor_pattern {
-                            Self::add_row(ui, "Editor pattern:", pattern);
-                        }
-
                         Self::add_row(
                             ui,
                             "Center:",

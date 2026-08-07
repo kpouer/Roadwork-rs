@@ -27,9 +27,6 @@ pub struct Metadata {
     #[serde(rename = "tileServer")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_server: Option<String>,
-    #[serde(rename = "editorPattern")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub editor_pattern: Option<String>,
 }
 
 impl Metadata {
