@@ -54,10 +54,6 @@ impl<'a> MetadataDialog<'a> {
                             Self::add_row(ui, "Locale:", locale);
                         }
 
-                        if let Some(ts) = self.metadata.tile_server() {
-                            Self::add_row(ui, "Tile server:", ts);
-                        }
-
                         Self::add_row(
                             ui,
                             "Center:",

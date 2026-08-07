@@ -198,13 +198,6 @@ pub(crate) fn show_metadata_section(
     );
     changed |= text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
     changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
-    changed |= optional_text_row(
-        ui,
-        "Tile server",
-        &mut descriptor.metadata.tile_server,
-        None,
-        None,
-    );
     changed |= center_row(
         ui,
         &mut descriptor.metadata.center,

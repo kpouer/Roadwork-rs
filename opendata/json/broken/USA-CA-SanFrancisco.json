@@ -11,9 +11,7 @@
       "lat": 37.7421536,
       "lon": -122.4664395
     },
-    "locale": "en_US",
-    "tileServer": "WazeNA",
-    "editorPattern": "https://waze.com/editor?env=usa&lat=${lat}&&lon=${lon}&zoomLevel=19"
+    "locale": "en_US"
   },
   "dataArray": "$",
   "id": "$.objectid",

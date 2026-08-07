@@ -11,9 +11,7 @@
     "producer" : "Métropole Rouen Normandie",
     "licenceName" : "Licence Ouverte v2.0",
     "licenceUrl" : "https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf",
-    "locale" : "fr_FR",
-    "tileServer" : "WazeINTL",
-    "editorPattern" : "https://waze.com/fr/editor?env=row&lat=${lat}&lon=${lon}&zoomLevel=19"
+    "locale" : "fr_FR"
   },
   "id" : "$.nid",
   "latitude" : "$.field_coordonnees.lat",
