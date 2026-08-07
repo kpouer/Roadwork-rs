@@ -82,7 +82,11 @@
         if (e.data.service) {
             params.set('service', e.data.service);
         }
-        params.set('serviceHelper', '1');
+        if (e.data.helper === 'opendata') {
+            params.set('opendata', '1');
+        } else {
+            params.set('serviceHelper', '1');
+        }
         helperIframe.src = chrome.runtime.getURL('app/index.html') + '?' + params.toString();
         helperOverlay.classList.remove('rw-helper-hidden');
         window.postMessage({ type: 'ROADWORK_OPEN_HELPER_ACK', service: e.data?.service }, '*');

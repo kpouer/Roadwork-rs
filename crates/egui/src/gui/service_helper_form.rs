@@ -45,10 +45,10 @@ pub(crate) struct PathCandidates {
     pub arrays: Vec<(String, usize)>,
 }
 
-struct Wand<'a> {
-    scalars: &'a [(String, String)],
-    arrays: Option<&'a [(String, usize)]>,
-    hint: &'static str,
+pub(crate) struct Wand<'a> {
+    pub(crate) scalars: &'a [(String, String)],
+    pub(crate) arrays: Option<&'a [(String, usize)]>,
+    pub(crate) hint: &'static str,
 }
 
 impl FieldsValidation {
@@ -294,7 +294,7 @@ pub(crate) fn show(
     changed
 }
 
-fn roadwork_array_row(
+pub(crate) fn roadwork_array_row(
     ui: &mut Ui,
     value: &mut String,
     valid: bool,
@@ -353,7 +353,7 @@ fn roadwork_array_row(
     )
 }
 
-fn validated<F>(
+pub(crate) fn validated<F>(
     ui: &mut Ui,
     valid: bool,
     error_tooltip: &str,
@@ -382,7 +382,12 @@ where
     changed
 }
 
-fn wand_button(ui: &mut Ui, field_label: &str, wand: &Wand, picked: &mut Option<String>) {
+pub(crate) fn wand_button(
+    ui: &mut Ui,
+    field_label: &str,
+    wand: &Wand,
+    picked: &mut Option<String>,
+) {
     let button = ui
         .add(egui::Button::new("✨"))
         .on_hover_text(format!("Magic wand: pick a path for {field_label}"));
@@ -413,7 +418,7 @@ fn wand_button(ui: &mut Ui, field_label: &str, wand: &Wand, picked: &mut Option<
     });
 }
 
-fn text_row(
+pub(crate) fn text_row(
     ui: &mut Ui,
     label: &str,
     value: &mut String,
@@ -449,7 +454,7 @@ fn text_row(
     .inner
 }
 
-fn optional_text_row(
+pub(crate) fn optional_text_row(
     ui: &mut Ui,
     label: &str,
     value: &mut Option<String>,
@@ -497,7 +502,7 @@ fn optional_text_row(
     changed
 }
 
-fn center_row(
+pub(crate) fn center_row(
     ui: &mut Ui,
     center: &mut LatLng,
     center_picker: &mut CenterPickerDialog,
@@ -633,7 +638,7 @@ fn parsers_grid(ui: &mut Ui, parsers: &mut Vec<Parser>) -> bool {
     changed
 }
 
-fn url_params_grid(ui: &mut Ui, params: &mut Vec<(String, String)>) -> bool {
+pub(crate) fn url_params_grid(ui: &mut Ui, params: &mut Vec<(String, String)>) -> bool {
     let mut changed = false;
     let mut remove: Option<usize> = None;
     let col_width = ((ui.available_width() - 130.0) / 2.0).max(100.0);

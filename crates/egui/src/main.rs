@@ -72,6 +72,9 @@ fn read_startup_params() -> StartupParams {
             "serviceHelper" if value == "1" => {
                 params.open_service_helper = true;
             }
+            "opendata" if value == "1" => {
+                params.open_opendata_service_helper = true;
+            }
             _ => {}
         }
     }

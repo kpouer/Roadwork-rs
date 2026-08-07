@@ -3797,6 +3797,7 @@ dependencies = [
  "egui",
  "egui-notify",
  "egui_extras",
+ "js-sys",
  "log",
  "pollster 1.0.1",
  "reqwest",
@@ -3806,6 +3807,7 @@ dependencies = [
  "serde",
  "serde_json",
  "walkers",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
 ]

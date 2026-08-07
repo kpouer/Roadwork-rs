@@ -1,5 +1,6 @@
 pub mod date_range;
 pub mod opendata;
+pub mod opendata_data;
 pub mod roadwork;
 pub mod roadwork_data;
 pub mod service_info;

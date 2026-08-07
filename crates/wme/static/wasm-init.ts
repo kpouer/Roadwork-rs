@@ -27,6 +27,11 @@
             } else if (method === 'set_custom_descriptors') {
                 wasm_bindgen.set_custom_descriptors(args[0]);
                 result = true;
+            } else if (method === 'set_opendata_custom_descriptors') {
+                wasm_bindgen.set_opendata_custom_descriptors(args[0]);
+                result = true;
+            } else if (method === 'get_opendata') {
+                result = await wasm_bindgen.get_opendata(args[0]);
             } else {
                 throw new Error('Unknown method: ' + method);
             }

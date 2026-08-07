@@ -14,6 +14,8 @@ declare global {
         get_roadworks(descriptor: unknown): Promise<unknown>;
         set_log_level(level: unknown): void;
         set_custom_descriptors(descriptors: unknown): void;
+        set_opendata_custom_descriptors(descriptors: unknown): void;
+        get_opendata(service: unknown): Promise<unknown>;
     };
 
     namespace chrome {

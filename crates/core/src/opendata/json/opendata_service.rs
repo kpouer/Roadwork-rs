@@ -1,29 +1,23 @@
 use crate::http_service::HttpService;
 use crate::json_tools::JsonTools;
-use crate::model::date_range::DateRange;
 use crate::model::opendata::Opendata;
-use crate::model::roadwork::Roadwork;
-use crate::model::roadwork_data::RoadworkData;
-use crate::opendata::json::model::date_parser::DateParser;
-use crate::opendata::json::model::date_result::DateResult;
-use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
+use crate::model::opendata_data::OpendataData;
+use crate::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use crate::opendata::json::path_validation::PathValidation;
 use crate::{MyError, json_tools};
-use chrono::{DateTime, Datelike, Timelike};
-use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
-use log::{error, info, warn};
+use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct OpendataService {
     pub service_name: String,
-    pub service_descriptor: ServiceDescriptor,
+    pub service_descriptor: OpendataServiceDescriptor,
 }
 
 impl OpendataService {
-    pub async fn get_data(&self) -> Result<RoadworkData, MyError> {
+    pub async fn get_data(&self) -> Result<OpendataData, MyError> {
         let url = self.build_url();
         info!("getData {url}");
         let json = HttpService.get_url(&url).await?;
@@ -45,7 +39,7 @@ impl OpendataService {
             || self.service_descriptor.data_array.contains('[')
     }
 
-    pub fn roadwork_count(&self, json: &str) -> usize {
+    pub fn element_count(&self, json: &str) -> usize {
         self.roadwork_elements(json).len()
     }
 
@@ -53,24 +47,24 @@ impl OpendataService {
         self.roadwork_elements(json).get(index).cloned()
     }
 
-    /// Validates every descriptor path against every element of the roadwork array.
+    /// Validates every descriptor path against every element of the data array.
     pub fn validate(&self, json: &str) -> Vec<PathValidation> {
         let elements = self.roadwork_elements(json);
         let descriptor = &self.service_descriptor;
-        let mut report = Vec::with_capacity(12);
+        let mut report = Vec::with_capacity(8);
 
         let array_valid = self.roadwork_array_targets_array(json) && !elements.is_empty();
         report.push(PathValidation {
             label: "dataArray",
             path: descriptor.data_array.to_owned(),
             required: true,
-            expected: "array of roadworks",
+            expected: "array of opendata",
             failures: if array_valid { Vec::new() } else { vec![0] },
             element_count: elements.len(),
             message: if array_valid {
                 None
             } else {
-                Some("must target a non-empty array of roadworks")
+                Some("must target a non-empty array of opendata")
             },
         });
 
@@ -108,23 +102,11 @@ impl OpendataService {
             [
                 self.optional_scalar_report(&elements, "latitude", descriptor.latitude.as_ref()),
                 self.optional_scalar_report(&elements, "longitude", descriptor.longitude.as_ref()),
-                self.optional_scalar_report(&elements, "road", descriptor.road.as_ref()),
                 self.optional_scalar_report(
                     &elements,
                     "description",
                     descriptor.description.as_ref(),
                 ),
-                self.optional_scalar_report(
-                    &elements,
-                    "locationDetails",
-                    descriptor.location_details.as_ref(),
-                ),
-                self.optional_scalar_report(
-                    &elements,
-                    "impactCirculationDetail",
-                    descriptor.impact_circulation_detail.as_ref(),
-                ),
-                self.optional_scalar_report(&elements, "url", descriptor.url.as_ref()),
             ]
             .into_iter()
             .flatten(),
@@ -147,36 +129,10 @@ impl OpendataService {
             ));
         }
 
-        let locale = descriptor.metadata.get_locale();
-        for (label, date) in [
-            ("from", descriptor.from.as_ref()),
-            ("to", descriptor.to.as_ref()),
-        ] {
-            let Some(date) = date else { continue };
-            if date.path.trim().is_empty() {
-                continue;
-            }
-            let failures = self.optional_path_failures(&elements, |element| {
-                element
-                    .get_path(&date.path)
-                    .map(|value| date.parse(&value, locale).is_ok())
-                    .unwrap_or(false)
-            });
-            report.push(PathValidation::new(
-                label,
-                &date.path,
-                false,
-                "parseable date",
-                failures,
-                count,
-                None,
-            ));
-        }
-
         report
     }
 
-    fn optional_scalar_report(
+    pub(crate) fn optional_scalar_report(
         &self,
         elements: &[Value],
         label: &'static str,
@@ -210,7 +166,7 @@ impl OpendataService {
         failures
     }
 
-    fn optional_path_failures<F>(&self, elements: &[Value], element_ok: F) -> Vec<usize>
+    pub(crate) fn optional_path_failures<F>(&self, elements: &[Value], element_ok: F) -> Vec<usize>
     where
         F: Fn(&Value) -> bool,
     {
@@ -238,7 +194,7 @@ impl OpendataService {
         failures
     }
 
-    fn roadwork_elements(&self, json: &str) -> Vec<Value> {
+    pub(crate) fn roadwork_elements(&self, json: &str) -> Vec<Value> {
         let Ok(value) = serde_json::from_str::<Value>(json) else {
             return Vec::new();
         };
@@ -303,7 +259,7 @@ impl OpendataService {
             .any(|element| self.path_matches_in(element, path, &matches))
     }
 
-    fn path_matches_in<F>(&self, element: &Value, path: &str, matches: F) -> bool
+    pub(crate) fn path_matches_in<F>(&self, element: &Value, path: &str, matches: F) -> bool
     where
         F: Fn(&Value) -> bool,
     {
@@ -316,38 +272,38 @@ impl OpendataService {
             .unwrap_or(false)
     }
 
-    pub fn parse_json(&self, json: &str) -> Result<RoadworkData, MyError> {
+    pub fn parse_json(&self, json: &str) -> Result<OpendataData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let data_array = json.query(&self.service_descriptor.data_array)?;
         info!("Found {} items", data_array.len());
-        let mut roadworks = Vec::with_capacity(data_array.len());
+        let mut opendata = Vec::with_capacity(data_array.len());
         for value in data_array {
-            match self.build_roadwork(value) {
-                Ok(roadwork) => {
-                    if Self::is_valid(&roadwork) {
-                        roadworks.push(roadwork);
+            match self.build_opendata(value) {
+                Ok(item) => {
+                    if Self::is_valid(&item) {
+                        opendata.push(item);
                     } else {
-                        warn!("{roadwork:?} is invalid");
+                        warn!("{item:?} is invalid");
                     }
                 }
-                Err(e) => warn!("Unable to build roadwork {}", e),
+                Err(e) => warn!("Unable to build opendata {}", e),
             }
         }
-        Ok(RoadworkData::new(&self.service_name, roadworks))
+        Ok(OpendataData::new(&self.service_name, opendata))
     }
 
-    pub fn parse_json_preview(&self, json: &str) -> Result<RoadworkData, MyError> {
+    pub fn parse_json_preview(&self, json: &str) -> Result<OpendataData, MyError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let data_array = json.query(&self.service_descriptor.data_array)?;
         let mut items = Vec::with_capacity(data_array.len());
         for (index, value) in data_array.into_iter().enumerate() {
-            let mut item = self.build_roadwork_preview(value);
-            if item.opendata.id.is_empty() {
-                item.opendata.id = format!("element#{index}");
+            let mut item = self.build_opendata_preview(value);
+            if item.id.is_empty() {
+                item.id = format!("element#{index}");
             }
             items.push(item);
         }
-        Ok(RoadworkData::new(&self.service_name, items))
+        Ok(OpendataData::new(&self.service_name, items))
     }
 
     pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, MyError> {
@@ -376,183 +332,76 @@ impl OpendataService {
         }
     }
 
-    fn is_valid(roadwork: &Roadwork) -> bool {
-        if roadwork.opendata.longitude == 0.0 && roadwork.opendata.latitude == 0.0 {
-            warn!("{roadwork:?} is invalid because it has no location");
-            return false;
-        }
-        true
-    }
-
-    fn build_roadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
-        let mut roadwork_builder = Roadwork {
-            opendata: Opendata {
-                id: node.get_path(&self.service_descriptor.id)?,
-                ..Opendata::default()
-            },
-            ..Roadwork::default()
+    pub fn build_opendata(&self, node: &Value) -> Result<Opendata, MyError> {
+        let mut opendata = Opendata {
+            id: node.get_path(&self.service_descriptor.id)?,
+            ..Opendata::default()
         };
-        self.fill_roadwork_fields(node, &mut roadwork_builder);
-        let date_range = self.get_date_range(node)?;
-        roadwork_builder.start = date_range.from.timestamp_millis();
-        roadwork_builder.end = date_range
-            .to
-            .map(|date| date.timestamp_millis())
-            .unwrap_or(0);
-        if let Some(url) = &self.service_descriptor.url {
-            roadwork_builder.url = node.get_path(url)?;
-        }
-        Ok(roadwork_builder)
-    }
-
-    fn build_roadwork_preview(&self, node: &Value) -> Roadwork {
-        let mut roadwork_builder = Roadwork {
-            opendata: Opendata {
-                id: node
-                    .get_path(&self.service_descriptor.id)
-                    .unwrap_or_default(),
-                ..Opendata::default()
-            },
-            ..Roadwork::default()
-        };
-        self.fill_roadwork_fields(node, &mut roadwork_builder);
-        if self.service_descriptor.from.is_some()
-            && let Ok(date_range) = self.get_date_range(node)
-        {
-            roadwork_builder.start = date_range.from.timestamp_millis();
-            roadwork_builder.end = date_range
-                .to
-                .map(|date| date.timestamp_millis())
-                .unwrap_or(0);
-        }
-        if let Some(url) = &self.service_descriptor.url {
-            roadwork_builder.url = node.get_path(url).unwrap_or_default();
-        }
-        roadwork_builder
-    }
-
-    fn fill_roadwork_fields(&self, node: &Value, roadwork_builder: &mut Roadwork) {
         if let Some(latitude_path) = &self.service_descriptor.latitude
             && !latitude_path.is_empty()
         {
-            roadwork_builder.opendata.latitude =
-                node.get_path_as_double(latitude_path).unwrap_or(0.0);
+            opendata.latitude = node.get_path_as_double(latitude_path).unwrap_or(0.0);
         }
         if let Some(longitude_path) = &self.service_descriptor.longitude
             && !longitude_path.is_empty()
         {
-            roadwork_builder.opendata.longitude =
-                node.get_path_as_double(longitude_path).unwrap_or(0.0);
+            opendata.longitude = node.get_path_as_double(longitude_path).unwrap_or(0.0);
         }
         if let Some(polygon_path) = &self.service_descriptor.polygon
             && !polygon_path.is_empty()
         {
-            roadwork_builder.opendata.polygons = node.get_path_as_polygons(polygon_path);
-        }
-        if let Some(road) = &self.service_descriptor.road {
-            roadwork_builder.road = node.get_path(road).ok();
+            opendata.polygons = node.get_path_as_polygons(polygon_path);
         }
         if let Some(description) = &self.service_descriptor.description {
-            roadwork_builder.opendata.description = node.get_path(description).ok();
+            opendata.description = node.get_path(description).ok();
         }
-        if let Some(location_details) = &self.service_descriptor.location_details {
-            roadwork_builder.location_details = node.get_path(location_details).ok();
-        }
-        if let Some(impact_circulation_detail) = &self.service_descriptor.impact_circulation_detail
+        Ok(opendata)
+    }
+
+    pub fn build_opendata_preview(&self, node: &Value) -> Opendata {
+        let mut opendata = Opendata {
+            id: node
+                .get_path(&self.service_descriptor.id)
+                .unwrap_or_default(),
+            ..Opendata::default()
+        };
+        if let Some(latitude_path) = &self.service_descriptor.latitude
+            && !latitude_path.is_empty()
         {
-            roadwork_builder.impact_circulation_detail =
-                node.get_path(impact_circulation_detail).ok();
+            opendata.latitude = node.get_path_as_double(latitude_path).unwrap_or(0.0);
         }
+        if let Some(longitude_path) = &self.service_descriptor.longitude
+            && !longitude_path.is_empty()
+        {
+            opendata.longitude = node.get_path_as_double(longitude_path).unwrap_or(0.0);
+        }
+        if let Some(polygon_path) = &self.service_descriptor.polygon
+            && !polygon_path.is_empty()
+        {
+            opendata.polygons = node.get_path_as_polygons(polygon_path);
+        }
+        if let Some(description) = &self.service_descriptor.description {
+            opendata.description = node.get_path(description).ok();
+        }
+        opendata
     }
 
-    fn parse_date(
-        &self,
-        node: &Value,
-        date_parser: &Option<DateParser>,
-    ) -> Result<DateResult, MyError> {
-        if date_parser.is_none() {
-            return Err(MyError::ParsingError(
-                "Cannot parse date as dateParse is null".to_string(),
-            ));
+    fn is_valid(opendata: &Opendata) -> bool {
+        if opendata.longitude == 0.0 && opendata.latitude == 0.0 {
+            warn!("{opendata:?} is invalid because it has no location");
+            return false;
         }
-        let current_year = chrono::Utc::now().year();
-        let date_parser = date_parser.as_ref().unwrap();
-        let value = node.get_path(&date_parser.path)?;
-        let mut result =
-            date_parser.parse(&value, self.service_descriptor.metadata.get_locale())?;
-        if result.reset_hour {
-            match Self::drop_time(&result.date) {
-                None => warn!("Unable to add year to date {}", result.date),
-                Some(date) => result.date = date,
-            }
-        }
-        if result.add_year {
-            match Self::add_year(current_year, &result.date) {
-                None => warn!("Unable to add year to date {}", result.date),
-                Some(date) => result.date = date,
-            }
-        }
-        Ok(result)
-    }
-
-    fn add_year(year: i32, date: &DateTime<Tz>) -> Option<DateTime<Tz>> {
-        date.with_year(year)
-    }
-
-    fn drop_time(date: &DateTime<Tz>) -> Option<DateTime<Tz>> {
-        date.with_hour(0)
-            .unwrap()
-            .with_minute(0)
-            .unwrap()
-            .with_second(0)
-            .unwrap()
-            .with_nanosecond(0)
-    }
-
-    fn get_date_range(&self, node: &Value) -> Result<DateRange, MyError> {
-        let current_year = chrono::Utc::now().year();
-        let start_time = self
-            .parse_date(node, &self.service_descriptor.from)
-            .map(|date_result| date_result.date)
-            .inspect_err(|e| error!("Error parsing start date {}", e))?;
-        match self.parse_date(node, &self.service_descriptor.to) {
-            Ok(end) => {
-                let mut end_date = end.date;
-                if end.add_year {
-                    match Self::add_year(current_year, &end_date) {
-                        None => {}
-                        Some(date_time) => end_date = date_time,
-                    }
-                    if start_time > end_date {
-                        match Self::add_year(current_year, &end_date) {
-                            None => {}
-                            Some(date_time) => end_date = date_time,
-                        }
-                    }
-                }
-                Ok(DateRange {
-                    from: start_time,
-                    to: Some(end_date),
-                })
-            }
-            Err(e) => {
-                error!("Error parsing end date {}", e);
-                Ok(DateRange {
-                    from: start_time,
-                    to: None,
-                })
-            }
-        }
+        true
     }
 }
 
 #[cfg(test)]
 mod validate_tests {
     use super::*;
-    use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
+    use crate::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 
-    fn descriptor() -> ServiceDescriptor {
-        serde_json::from_str::<ServiceDescriptor>(
+    fn descriptor() -> OpendataServiceDescriptor {
+        serde_json::from_str::<OpendataServiceDescriptor>(
             r#"{
                 "metadata": {
                     "country": "France", "name": "Paris", "sourceUrl": "s", "url": "u",
@@ -563,11 +412,7 @@ mod validate_tests {
                 "latitude": "$.geometry.coordinates[1]",
                 "longitude": "$.geometry.coordinates[0]",
                 "polygon": "$.fields.geo_shape.coordinates[0]",
-                "road": "$.fields.voie",
-                "locationDetails": "$.fields.precision_localisation",
-                "impactCirculationDetail": "$.fields.impact_circulation_detail",
-                "from": {"path": "$.fields.date_debut", "parsers": [{"matcher": ".*", "format": "%Y-%m-%d"}]},
-                "to": {"path": "$.fields.date_fin", "parsers": [{"matcher": ".*", "format": "%Y-%m-%d"}]}
+                "description": "$.fields.description"
             }"#,
         )
         .unwrap()
@@ -580,53 +425,47 @@ mod validate_tests {
                     "recordid": "abc",
                     "geometry": {"coordinates": [2.35, 48.85]},
                     "fields": {
-                        "voie": "Rue X",
-                        "precision_localisation": "Precise",
-                        "impact_circulation_detail": "Some",
-                        "geo_shape": {"coordinates": [[[2.34,48.84],[2.36,48.86]]]},
-                        "date_debut": "2023-01-01",
-                        "date_fin": "2023-01-31"
+                        "description": "Work",
+                        "geo_shape": {"coordinates": [[[2.34,48.84],[2.36,48.86]]]}
                     }
                 },
                 {
                     "recordid": "abc",
                     "fields": {
-                        "geo_shape": {"coordinates": null},
-                        "date_debut": "not-a-date"
+                        "geo_shape": {"coordinates": null}
                     }
                 }
             ]
         }"#
     }
 
-    #[test]
-    fn validates_all_elements() {
-        let ods = OpendataService {
+    fn service() -> OpendataService {
+        OpendataService {
             service_name: "test".to_string(),
             service_descriptor: descriptor(),
-        };
-        let report = ods.validate(json());
+        }
+    }
+
+    #[test]
+    fn validates_all_elements() {
+        let report = service().validate(json());
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
         assert!(get("dataArray").is_valid());
         assert!(get("id").is_valid());
         assert_eq!(get("id unique").failures, vec![0, 1]);
         assert!(get("latitude").is_valid());
         assert!(get("longitude").is_valid());
-        assert!(get("road").is_valid());
-        assert!(get("locationDetails").is_valid());
-        assert!(get("impactCirculationDetail").is_valid());
         assert!(get("polygon").is_valid());
-        assert!(get("from").is_valid());
-        assert!(get("to").is_valid());
+        assert!(get("description").is_valid());
     }
 
     #[test]
     fn optional_path_valid_when_matches_at_least_one() {
         let mut service_descriptor = descriptor();
-        service_descriptor.road = Some("$.fields.voie".to_string());
+        service_descriptor.description = Some("$.fields.description".to_string());
         let json = r#"{
             "records": [
-                {"recordid": "1", "fields": {"voie": "Rue X"}},
+                {"recordid": "1", "fields": {"description": "Work"}},
                 {"recordid": "2", "fields": {}}
             ]
         }"#;
@@ -636,18 +475,18 @@ mod validate_tests {
         };
         let report = ods.validate(json);
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
-        assert!(get("road").is_valid());
-        assert_eq!(get("road").failures, Vec::<usize>::new());
+        assert!(get("description").is_valid());
+        assert_eq!(get("description").failures, Vec::<usize>::new());
     }
 
     #[test]
     fn optional_path_invalid_when_matches_none() {
         let mut service_descriptor = descriptor();
-        service_descriptor.road = Some("$.fields.nonexistent".to_string());
+        service_descriptor.description = Some("$.fields.nonexistent".to_string());
         let json = r#"{
             "records": [
-                {"recordid": "1", "fields": {"voie": "Rue X"}},
-                {"recordid": "2", "fields": {"voie": "Rue Y"}}
+                {"recordid": "1", "fields": {"description": "Work"}},
+                {"recordid": "2", "fields": {"description": "Other"}}
             ]
         }"#;
         let ods = OpendataService {
@@ -656,8 +495,8 @@ mod validate_tests {
         };
         let report = ods.validate(json);
         let get = |label: &str| report.iter().find(|p| p.label == label).unwrap();
-        assert!(!get("road").is_valid());
-        assert_eq!(get("road").failures, vec![0, 1]);
+        assert!(!get("description").is_valid());
+        assert_eq!(get("description").failures, vec![0, 1]);
     }
 
     #[test]

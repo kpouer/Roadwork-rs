@@ -1,6 +1,7 @@
 use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::metada_dialog::MetadataDialog;
+use crate::gui::opendata_service_helper_dialog::OpendataServiceHelperDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::service_helper_dialog::ServiceHelperDialog;
 use crate::gui::settings_dialog::SettingsDialog;
@@ -28,6 +29,7 @@ const DEFAULT_WME_URL: &str =
 pub struct StartupParams {
     pub service: Option<String>,
     pub open_service_helper: bool,
+    pub open_opendata_service_helper: bool,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -64,6 +66,8 @@ pub struct RoadworkApp {
     show_info_dialog: bool,
     show_service_helper_dialog: bool,
     service_helper: ServiceHelperDialog,
+    show_opendata_service_helper_dialog: bool,
+    opendata_service_helper: OpendataServiceHelperDialog,
 }
 
 impl RoadworkApp {
@@ -86,6 +90,7 @@ impl RoadworkApp {
             .map(|s| s.center)
             .unwrap_or_default();
         let service_helper = ServiceHelperDialog::new(&selected_service);
+        let opendata_service_helper = OpendataServiceHelperDialog::new(&selected_service);
 
         let app = Self {
             ctx: egui_ctx.clone(),
@@ -105,6 +110,8 @@ impl RoadworkApp {
             show_info_dialog: false,
             show_service_helper_dialog: params.open_service_helper,
             service_helper,
+            show_opendata_service_helper_dialog: params.open_opendata_service_helper,
+            opendata_service_helper,
         };
 
         app.load_data();
@@ -317,6 +324,9 @@ impl RoadworkApp {
                 if ui.button("Service helper").clicked() {
                     self.show_service_helper_dialog = true;
                 }
+                if ui.button("Opendata service helper").clicked() {
+                    self.show_opendata_service_helper_dialog = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let size = egui::vec2(18.0, 18.0);
                     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -354,6 +364,12 @@ impl RoadworkApp {
         self.service_helper.show(
             ui.ctx(),
             &mut self.show_service_helper_dialog,
+            &self.selected_service,
+            &mut self.toasts,
+        );
+        self.opendata_service_helper.show(
+            ui.ctx(),
+            &mut self.show_opendata_service_helper_dialog,
             &self.selected_service,
             &mut self.toasts,
         );

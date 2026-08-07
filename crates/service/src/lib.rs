@@ -12,7 +12,7 @@ use roadwork_core::http_service::HttpService;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
-use roadwork_core::opendata::json::opendata_service::OpendataService;
+use roadwork_core::opendata::json::roadwork_service::RoadworkService;
 use roadwork_sync::SyncData;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -65,11 +65,11 @@ pub async fn fetch_roadworks(
     service_name: &str,
     descriptor: &ServiceDescriptor,
 ) -> Result<RoadworkData, MyError> {
-    let ods = OpendataService {
+    let rws = RoadworkService {
         service_name: service_name.to_string(),
         service_descriptor: descriptor.clone(),
     };
-    let mut data = ods.get_data().await?;
+    let mut data = rws.get_data().await?;
     data.apply_finished_status();
     Ok(data)
 }

@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use roadwork_core::model::service_info::ServiceInfo;
+use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
+use roadwork_core::opendata::json::opendata_service::OpendataService;
 
 #[wasm_bindgen(start)]
 pub fn init_logger() {
@@ -37,6 +39,8 @@ pub fn set_log_level(level: &str) {
 
 thread_local! {
     static CUSTOM_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
+        RefCell::new(HashMap::new());
+    static OPENDATA_DESCRIPTORS: RefCell<HashMap<String, OpendataServiceDescriptor>> =
         RefCell::new(HashMap::new());
 }
 
@@ -102,6 +106,55 @@ pub async fn get_roadworks(service_name: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
     info!("[wasm] get_roadworks: data loaded {}", data.roadworks.len());
+    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    data.serialize(&serializer)
+        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn set_opendata_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
+    let pairs: Vec<(String, String)> = serde_wasm_bindgen::from_value(pairs)
+        .map_err(|e| JsValue::from_str(&format!("Invalid descriptor pairs: {e}")))?;
+    info!(
+        "[wasm] set_opendata_custom_descriptors: {} pairs",
+        pairs.len()
+    );
+    let mut map = HashMap::new();
+    for (name, json) in pairs {
+        match serde_json::from_str::<OpendataServiceDescriptor>(&json) {
+            Ok(descriptor) => {
+                map.insert(name, descriptor);
+            }
+            Err(e) => {
+                log::error!("Failed to parse opendata descriptor {name}: {e}");
+                return Err(JsValue::from_str(&format!(
+                    "Failed to parse opendata descriptor {name}: {e}"
+                )));
+            }
+        }
+    }
+    OPENDATA_DESCRIPTORS.with(|cell| {
+        *cell.borrow_mut() = map;
+    });
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub async fn get_opendata(service_name: &str) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata");
+    let descriptor = OPENDATA_DESCRIPTORS
+        .with(|cell| cell.borrow().get(service_name).cloned())
+        .ok_or_else(|| JsValue::from_str(&format!("Unknown opendata service: {service_name}")))?;
+
+    let service = OpendataService {
+        service_name: service_name.to_string(),
+        service_descriptor: descriptor,
+    };
+    let data = service
+        .get_data()
+        .await
+        .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
+    info!("[wasm] get_opendata: data loaded {}", data.opendata.len());
     let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
     data.serialize(&serializer)
         .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))

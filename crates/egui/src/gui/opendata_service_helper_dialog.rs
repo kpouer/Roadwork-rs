@@ -1,11 +1,10 @@
 use super::center_picker_dialog::CenterPickerDialog;
-use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
+use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
-use roadwork_core::opendata::json::model::date_parser::DateParser;
-use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
+use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
+use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
-use roadwork_core::opendata::json::roadwork_service::RoadworkService;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -17,11 +16,12 @@ enum FetchState {
 }
 
 #[derive(Default)]
-pub(crate) struct ServiceHelperDialog {
+pub(crate) struct OpendataServiceHelperDialog {
     service: String,
-    descriptor: Option<ServiceDescriptor>,
+    descriptor: Option<OpendataServiceDescriptor>,
     descriptor_json: String,
     form_mode: bool,
+    wizard_mode: bool,
     url_params: Vec<(String, String)>,
     url: String,
     raw_json: String,
@@ -34,15 +34,16 @@ pub(crate) struct ServiceHelperDialog {
     was_open: bool,
     array_paths: Vec<(String, usize)>,
     current_index: usize,
-    roadwork_count: usize,
+    element_count: usize,
     validation_report: Option<Vec<PathValidation>>,
 }
 
-impl ServiceHelperDialog {
+impl OpendataServiceHelperDialog {
     pub(crate) fn new(service: &str) -> Self {
         let mut dialog = Self {
             service: service.to_string(),
             form_mode: true,
+            wizard_mode: true,
             ..Default::default()
         };
         dialog.reload();
@@ -95,7 +96,7 @@ impl ServiceHelperDialog {
             (screen.y * 0.8).clamp(320.0, 650.0),
         );
         let max = egui::vec2(screen.x * 0.96, screen.y * 0.96);
-        egui::Window::new("Service helper")
+        egui::Window::new("Opendata service helper")
             .open(open)
             .resizable(true)
             .default_size(default_size)
@@ -106,11 +107,56 @@ impl ServiceHelperDialog {
     }
 
     fn show_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
+        if self.wizard_mode {
+            self.show_wizard_content(ui);
+        } else {
+            self.show_helper_content(ui, toasts);
+        }
+    }
+
+    fn show_wizard_content(&mut self, ui: &mut Ui) {
         let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
             Some(FetchState::Connecting) => (true, "Connecting…"),
             Some(FetchState::Downloading) => (true, "Getting data…"),
             _ => (false, ""),
         };
+        ui.horizontal(|ui| {
+            ui.heading("Step 1 of 2: Service metadata");
+            if fetching {
+                ui.spinner();
+                ui.label(step);
+            }
+        });
+        ui.separator();
+        let available_height = ui.available_height();
+        let screen = ui.ctx().content_rect().size();
+        egui::Panel::left("opendata_wizard_left")
+            .resizable(true)
+            .default_size(380.0)
+            .size_range(240.0..=(screen.x * 0.45))
+            .show_inside(ui, |ui| {
+                ui.label(RichText::new("Service descriptor (form)").strong());
+                self.show_metadata_form(ui, available_height);
+            });
+        egui::Panel::bottom("opendata_wizard_footer").show_inside(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Next")
+                    .on_hover_text("Proceed to the opendata service helper")
+                    .clicked()
+                {
+                    self.wizard_mode = false;
+                }
+            });
+        });
+        self.show_url_fetch_panel(ui);
+    }
+
+    fn show_helper_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
+        let fetching = matches!(
+            &*self.fetch_state.lock().unwrap(),
+            Some(FetchState::Connecting) | Some(FetchState::Downloading)
+        );
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.form_mode, "Form mode");
             ui.separator();
@@ -128,11 +174,32 @@ impl ServiceHelperDialog {
             if ui
                 .add_enabled(can_validate, egui::Button::new("Validate"))
                 .on_hover_text(
-                    "Validate every JSON path against all elements of the roadwork array",
+                    "Validate every JSON path against all elements of the opendata array",
                 )
                 .clicked()
             {
                 self.validate_all(toasts);
+            }
+            ui.separator();
+            #[cfg(target_arch = "wasm32")]
+            if ui
+                .add_enabled(
+                    !self.descriptor_json.trim().is_empty(),
+                    egui::Button::new("Save to extension"),
+                )
+                .on_hover_text(
+                    "Save the descriptor into the Roadwork WME extension and enable the service",
+                )
+                .clicked()
+            {
+                match self.save_to_extension() {
+                    Ok(name) => {
+                        toasts.success(format!("Service \"{name}\" saved to extension"));
+                    }
+                    Err(e) => {
+                        toasts.error(format!("Save failed: {e}"));
+                    }
+                }
             }
         });
         ui.separator();
@@ -150,7 +217,7 @@ impl ServiceHelperDialog {
             ui.fonts_mut(|f| f.layout_job(job))
         };
         let screen = ui.ctx().content_rect().size();
-        egui::Panel::left("helper_left")
+        egui::Panel::left("opendata_helper_left")
             .resizable(true)
             .default_size(380.0)
             .size_range(240.0..=(screen.x * 0.45))
@@ -161,7 +228,7 @@ impl ServiceHelperDialog {
                 } else {
                     ui.label(RichText::new("Service descriptor (JSON)").strong());
                     egui::ScrollArea::vertical()
-                        .id_salt("descriptor_scroll")
+                        .id_salt("opendata_descriptor_scroll")
                         .max_height(available_height - 24.0)
                         .show(ui, |ui| {
                             let response = ui.add(
@@ -178,29 +245,25 @@ impl ServiceHelperDialog {
                         });
                 }
             });
-        egui::Panel::bottom("helper_result_json")
+        egui::Panel::bottom("opendata_helper_result_json")
             .resizable(true)
             .default_size(((available_height - 100.0) * 0.4).max(60.0))
             .min_size(60.0)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Result JSON").strong());
-                    if self.roadwork_count > 0 {
+                    if self.element_count > 0 {
                         ui.separator();
                         let up = ui
                             .add_enabled(self.current_index > 0, egui::Button::new("⬆"))
-                            .on_hover_text("Previous roadwork");
+                            .on_hover_text("Previous element");
                         let down = ui
                             .add_enabled(
-                                self.current_index + 1 < self.roadwork_count,
+                                self.current_index + 1 < self.element_count,
                                 egui::Button::new("⬇"),
                             )
-                            .on_hover_text("Next roadwork");
-                        ui.label(format!(
-                            "{}/{}",
-                            self.current_index + 1,
-                            self.roadwork_count
-                        ));
+                            .on_hover_text("Next element");
+                        ui.label(format!("{}/{}", self.current_index + 1, self.element_count));
                         if up.clicked() {
                             self.current_index -= 1;
                             self.update_result_json();
@@ -216,7 +279,7 @@ impl ServiceHelperDialog {
                     self.show_validation_report(ui, report);
                 }
                 egui::ScrollArea::vertical()
-                    .id_salt("result_json_scroll")
+                    .id_salt("opendata_result_json_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.add(
@@ -229,6 +292,27 @@ impl ServiceHelperDialog {
                         );
                     });
             });
+        self.show_url_fetch_panel(ui);
+    }
+
+    fn show_url_fetch_panel(&mut self, ui: &mut Ui) {
+        let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
+            Some(FetchState::Connecting) => (true, "Connecting…"),
+            Some(FetchState::Downloading) => (true, "Getting data…"),
+            _ => (false, ""),
+        };
+        let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+            let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+            let mut job = egui_extras::syntax_highlighting::highlight(
+                ui.ctx(),
+                ui.style(),
+                &theme,
+                text.as_str(),
+                "json",
+            );
+            job.wrap.max_width = wrap_width;
+            ui.fonts_mut(|f| f.layout_job(job))
+        };
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.label(RichText::new("URL").strong());
             ui.horizontal(|ui| {
@@ -257,7 +341,7 @@ impl ServiceHelperDialog {
 
             ui.label(RichText::new("Fetched JSON").strong());
             egui::ScrollArea::vertical()
-                .id_salt("raw_json_scroll")
+                .id_salt("opendata_raw_json_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let response = ui.add(
@@ -275,6 +359,60 @@ impl ServiceHelperDialog {
         });
     }
 
+    fn show_metadata_form(&mut self, ui: &mut Ui, available_height: f32) {
+        let Self {
+            descriptor,
+            descriptor_json,
+            dirty,
+            url_params,
+            center_picker,
+            center_picker_open,
+            url,
+            ..
+        } = self;
+        egui::ScrollArea::vertical()
+            .id_salt("opendata_metadata_form_scroll")
+            .max_height(available_height - 24.0)
+            .show(ui, |ui| match descriptor {
+                Some(descriptor) => {
+                    let changed = crate::gui::opendata_service_helper_form::show_metadata_section(
+                        ui,
+                        descriptor,
+                        url_params,
+                        center_picker,
+                        center_picker_open,
+                    );
+                    if changed {
+                        let params: HashMap<String, String> = url_params
+                            .iter()
+                            .filter(|(key, _)| !key.trim().is_empty())
+                            .map(|(key, value)| (key.trim().to_string(), value.clone()))
+                            .collect();
+                        descriptor.metadata.url_params = if params.is_empty() {
+                            None
+                        } else {
+                            Some(params)
+                        };
+                        *dirty = true;
+                        *descriptor_json =
+                            serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                        *url = descriptor.metadata.url.clone();
+                    }
+                }
+                None => {
+                    ui.colored_label(ui.visuals().error_fg_color, "No descriptor available");
+                }
+            });
+        if *center_picker_open
+            && let Some(center) = center_picker.show(ui.ctx(), center_picker_open)
+            && let Some(descriptor) = descriptor
+        {
+            descriptor.metadata.center = center;
+            *dirty = true;
+            *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+        }
+    }
+
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
         let field_validation = self.field_validation();
         let field_values = self.field_values();
@@ -290,11 +428,11 @@ impl ServiceHelperDialog {
             ..
         } = self;
         egui::ScrollArea::vertical()
-            .id_salt("descriptor_form_scroll")
+            .id_salt("opendata_descriptor_form_scroll")
             .max_height(available_height - 24.0)
             .show(ui, |ui| match descriptor {
                 Some(descriptor) => {
-                    let changed = crate::gui::service_helper_form::show(
+                    let changed = crate::gui::opendata_service_helper_form::show(
                         ui,
                         descriptor,
                         url_params,
@@ -359,7 +497,7 @@ impl ServiceHelperDialog {
         if self.descriptor_json.trim().is_empty() {
             return;
         }
-        match serde_json::from_str::<ServiceDescriptor>(&self.descriptor_json) {
+        match serde_json::from_str::<OpendataServiceDescriptor>(&self.descriptor_json) {
             Ok(descriptor) => {
                 self.url = descriptor.metadata.url.clone();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
@@ -376,15 +514,15 @@ impl ServiceHelperDialog {
     }
 
     fn reload(&mut self) {
-        self.descriptor = roadwork_service::get_descriptor(&self.service);
-        self.descriptor_json = match &self.descriptor {
-            Some(descriptor) => {
-                self.url = descriptor.metadata.url.clone();
-                self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
-                serde_json::to_string_pretty(descriptor).unwrap_or_default()
-            }
-            None => String::new(),
-        };
+        self.descriptor = Some(
+            roadwork_service::get_descriptor(&self.service)
+                .map(|descriptor| OpendataServiceDescriptor::from(&descriptor))
+                .unwrap_or_default(),
+        );
+        let descriptor = self.descriptor.as_ref().expect("descriptor is set");
+        self.url = descriptor.metadata.url.clone();
+        self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
+        self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
         self.dirty = true;
         self.array_paths = Vec::new();
         self.validation_report = None;
@@ -418,14 +556,14 @@ impl ServiceHelperDialog {
         });
     }
 
-    fn roadwork_array_is_valid(&self) -> bool {
+    fn opendata_array_is_valid(&self) -> bool {
         if self.raw_json.trim().is_empty() {
             return true;
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = RoadworkService {
-                    service_name: "Service helper".to_string(),
+                let ods = OpendataService {
+                    service_name: "Opendata service helper".to_string(),
                     service_descriptor: descriptor.clone(),
                 };
                 ods.roadwork_array_targets_array(&self.raw_json)
@@ -443,8 +581,8 @@ impl ServiceHelperDialog {
             self.error = Some("Fetch the JSON first".to_string());
             return;
         }
-        let ods = RoadworkService {
-            service_name: "Service helper".to_string(),
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
         let report = ods.validate(&self.raw_json);
@@ -464,6 +602,39 @@ impl ServiceHelperDialog {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn save_to_extension(&self) -> Result<String, String> {
+        let descriptor: OpendataServiceDescriptor =
+            serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
+        let name = descriptor.metadata.name.clone();
+        let object = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &object,
+            &wasm_bindgen::JsValue::from_str("type"),
+            &wasm_bindgen::JsValue::from_str("ROADWORK_SAVE_OPENDATA_DESCRIPTOR"),
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        js_sys::Reflect::set(
+            &object,
+            &wasm_bindgen::JsValue::from_str("name"),
+            &wasm_bindgen::JsValue::from_str(&name),
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        js_sys::Reflect::set(
+            &object,
+            &wasm_bindgen::JsValue::from_str("descriptor"),
+            &wasm_bindgen::JsValue::from_str(&self.descriptor_json),
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        let window = web_sys::window().ok_or("No window available")?;
+        let parent = window.parent().map_err(|e| format!("{e:?}"))?;
+        let parent = parent.ok_or("No parent window")?;
+        parent
+            .post_message(&object, "*")
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(name)
+    }
+
     fn show_validation_report(&self, ui: &mut Ui, report: &[PathValidation]) {
         let valid = report
             .iter()
@@ -481,7 +652,7 @@ impl ServiceHelperDialog {
                 .strong(),
         );
         egui::ScrollArea::vertical()
-            .id_salt("validation_scroll")
+            .id_salt("opendata_validation_scroll")
             .max_height(120.0)
             .show(ui, |ui| {
                 for validation in report {
@@ -526,8 +697,8 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValues::default();
         }
-        let ods = RoadworkService {
-            service_name: "Service helper".to_string(),
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
@@ -535,25 +706,13 @@ impl ServiceHelperDialog {
         };
         let path = |path: &str| ods.path_fetched_value_in(&element, path);
         let optional_path = |optional: &Option<String>| optional.as_deref().and_then(path);
-        let date_path = |date: &Option<DateParser>| {
-            date.as_ref()
-                .map(|date| date.path.clone())
-                .as_deref()
-                .and_then(path)
-        };
         FieldsValues {
             data_array: path(&descriptor.data_array),
             id: path(&descriptor.id),
             latitude: optional_path(&descriptor.latitude),
             longitude: optional_path(&descriptor.longitude),
             polygon: optional_path(&descriptor.polygon),
-            road: optional_path(&descriptor.road),
             description: optional_path(&descriptor.description),
-            location_details: optional_path(&descriptor.location_details),
-            impact_circulation_detail: optional_path(&descriptor.impact_circulation_detail),
-            url: optional_path(&descriptor.url),
-            from_path: date_path(&descriptor.from),
-            to_path: date_path(&descriptor.to),
         }
     }
 
@@ -564,8 +723,8 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return PathCandidates::default();
         }
-        let ods = RoadworkService {
-            service_name: "Service helper".to_string(),
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
@@ -584,15 +743,15 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValidation::valid();
         }
-        let ods = RoadworkService {
-            service_name: "Service helper".to_string(),
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return FieldsValidation::valid();
         };
         FieldsValidation {
-            data_array: self.roadwork_array_is_valid(),
+            data_array: self.opendata_array_is_valid(),
             id: ods.path_points_to_scalar_in(&element, &descriptor.id),
             latitude: descriptor
                 .latitude
@@ -609,35 +768,10 @@ impl ServiceHelperDialog {
                 .as_deref()
                 .map(|path| ods.path_points_to_scalar_or_array_in(&element, path))
                 .unwrap_or(true),
-            road: descriptor
-                .road
-                .as_deref()
-                .map(|path| ods.path_points_to_scalar_in(&element, path))
-                .unwrap_or(true),
             description: descriptor
                 .description
                 .as_deref()
                 .map(|path| ods.path_points_to_scalar_in(&element, path))
-                .unwrap_or(true),
-            location_details: descriptor
-                .location_details
-                .as_deref()
-                .map(|path| ods.path_points_to_scalar_in(&element, path))
-                .unwrap_or(true),
-            impact_circulation_detail: descriptor
-                .impact_circulation_detail
-                .as_deref()
-                .map(|path| ods.path_points_to_scalar_in(&element, path))
-                .unwrap_or(true),
-            from_path: descriptor
-                .from
-                .as_ref()
-                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
-                .unwrap_or(true),
-            to_path: descriptor
-                .to
-                .as_ref()
-                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
                 .unwrap_or(true),
         }
     }
@@ -649,26 +783,26 @@ impl ServiceHelperDialog {
         self.dirty = false;
         if self.raw_json.is_empty() {
             self.result_json.clear();
-            self.roadwork_count = 0;
+            self.element_count = 0;
             self.current_index = 0;
             return;
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = RoadworkService {
-                    service_name: "Service helper".to_string(),
+                let ods = OpendataService {
+                    service_name: "Opendata service helper".to_string(),
                     service_descriptor: descriptor.clone(),
                 };
-                self.roadwork_count = ods.roadwork_count(&self.raw_json);
-                if self.roadwork_count == 0 {
+                self.element_count = ods.element_count(&self.raw_json);
+                if self.element_count == 0 {
                     self.current_index = 0;
                 } else {
-                    self.current_index = self.current_index.min(self.roadwork_count - 1);
+                    self.current_index = self.current_index.min(self.element_count - 1);
                 }
                 self.update_result_json();
             }
             None => {
-                self.roadwork_count = 0;
+                self.element_count = 0;
                 self.current_index = 0;
                 self.result_json = "No descriptor".to_string();
             }
@@ -684,8 +818,8 @@ impl ServiceHelperDialog {
             self.result_json.clear();
             return;
         }
-        let ods = RoadworkService {
-            service_name: "Service helper".to_string(),
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
         match ods.extract_roadwork_array(&self.raw_json) {
