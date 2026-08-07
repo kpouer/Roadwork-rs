@@ -87,6 +87,9 @@
         } else {
             params.set('serviceHelper', '1');
         }
+        if (e.data.create) {
+            params.set('create', '1');
+        }
         helperIframe.src = chrome.runtime.getURL('app/index.html') + '?' + params.toString();
         helperOverlay.classList.remove('rw-helper-hidden');
         window.postMessage({ type: 'ROADWORK_OPEN_HELPER_ACK', service: e.data?.service }, '*');

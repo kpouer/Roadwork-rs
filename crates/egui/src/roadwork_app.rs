@@ -27,6 +27,7 @@ pub struct StartupParams {
     pub service: Option<String>,
     pub open_service_helper: bool,
     pub open_opendata_service_helper: bool,
+    pub create_opendata_service: bool,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -87,7 +88,8 @@ impl RoadworkApp {
             .map(|s| s.center)
             .unwrap_or_default();
         let service_helper = ServiceHelperDialog::new(&selected_service);
-        let opendata_service_helper = OpendataServiceHelperDialog::new(&selected_service);
+        let opendata_service_helper =
+            OpendataServiceHelperDialog::new(&selected_service, params.create_opendata_service);
 
         let app = Self {
             ctx: egui_ctx.clone(),

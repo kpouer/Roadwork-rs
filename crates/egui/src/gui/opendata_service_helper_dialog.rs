@@ -1,5 +1,6 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
+use super::service_helper_form::{LABEL_WIDTH, validated};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
@@ -22,6 +23,8 @@ pub(crate) struct OpendataServiceHelperDialog {
     descriptor_json: String,
     form_mode: bool,
     wizard_mode: bool,
+    is_new: bool,
+    creating: bool,
     url_params: Vec<(String, String)>,
     url: String,
     raw_json: String,
@@ -39,11 +42,12 @@ pub(crate) struct OpendataServiceHelperDialog {
 }
 
 impl OpendataServiceHelperDialog {
-    pub(crate) fn new(service: &str) -> Self {
+    pub(crate) fn new(service: &str, creating: bool) -> Self {
         let mut dialog = Self {
             service: service.to_string(),
             form_mode: true,
             wizard_mode: true,
+            creating,
             ..Default::default()
         };
         dialog.reload();
@@ -61,6 +65,12 @@ impl OpendataServiceHelperDialog {
         let is_open = *open;
         if is_open && !self.was_open {
             self.reload();
+            if self.is_new {
+                self.wizard_mode = true;
+                self.reset();
+            } else {
+                self.wizard_mode = false;
+            }
             if !self.url.is_empty() {
                 self.fetch(ctx.clone());
             }
@@ -115,33 +125,15 @@ impl OpendataServiceHelperDialog {
     }
 
     fn show_wizard_content(&mut self, ui: &mut Ui) {
-        let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
-            Some(FetchState::Connecting) => (true, "Connecting…"),
-            Some(FetchState::Downloading) => (true, "Getting data…"),
-            _ => (false, ""),
-        };
         ui.horizontal(|ui| {
-            ui.heading("Step 1 of 2: Service metadata");
-            if fetching {
-                ui.spinner();
-                ui.label(step);
-            }
+            ui.heading("Step 1 of 2: Service name and URL");
         });
         ui.separator();
-        let available_height = ui.available_height();
-        let screen = ui.ctx().content_rect().size();
-        egui::Panel::left("opendata_wizard_left")
-            .resizable(true)
-            .default_size(380.0)
-            .size_range(240.0..=(screen.x * 0.45))
-            .show_inside(ui, |ui| {
-                ui.label(RichText::new("Service descriptor (form)").strong());
-                self.show_metadata_form(ui, available_height);
-            });
         egui::Panel::bottom("opendata_wizard_footer").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
+                let can_proceed = self.name_is_valid() && self.url_is_valid();
                 if ui
-                    .button("Next")
+                    .add_enabled(can_proceed, egui::Button::new("Next"))
                     .on_hover_text("Proceed to the opendata service helper")
                     .clicked()
                 {
@@ -149,7 +141,10 @@ impl OpendataServiceHelperDialog {
                 }
             });
         });
-        self.show_url_fetch_panel(ui);
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.set_max_width(600.0);
+            self.show_wizard_form(ui);
+        });
     }
 
     fn show_helper_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
@@ -324,11 +319,19 @@ impl OpendataServiceHelperDialog {
                 if response.changed() {
                     self.propagate_url();
                 }
+                let can_fetch = !fetching && self.url_is_valid();
                 if ui
-                    .add_enabled(!fetching, egui::Button::new("Fetch"))
+                    .add_enabled(can_fetch, egui::Button::new("Fetch"))
+                    .on_hover_text("URL must start with http:// or https://")
                     .clicked()
                 {
                     self.fetch(ui.ctx().clone());
+                }
+                if !self.url.is_empty() && !self.url_is_valid() {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        "URL must start with http:// or https://",
+                    );
                 }
                 if fetching {
                     ui.spinner();
@@ -359,58 +362,80 @@ impl OpendataServiceHelperDialog {
         });
     }
 
-    fn show_metadata_form(&mut self, ui: &mut Ui, available_height: f32) {
+    fn show_wizard_form(&mut self, ui: &mut Ui) {
         let Self {
             descriptor,
             descriptor_json,
             dirty,
-            url_params,
-            center_picker,
-            center_picker_open,
             url,
+            raw_json,
+            result_json,
+            array_paths,
+            error,
+            validation_report,
             ..
         } = self;
-        egui::ScrollArea::vertical()
-            .id_salt("opendata_metadata_form_scroll")
-            .max_height(available_height - 24.0)
-            .show(ui, |ui| match descriptor {
-                Some(descriptor) => {
-                    let changed = crate::gui::opendata_service_helper_form::show_metadata_section(
-                        ui,
-                        descriptor,
-                        url_params,
-                        center_picker,
-                        center_picker_open,
+        let Some(descriptor) = descriptor else {
+            ui.colored_label(ui.visuals().error_fg_color, "No descriptor available");
+            return;
+        };
+        let mut name_changed = false;
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [LABEL_WIDTH, 20.0],
+                egui::Label::new(RichText::new("Name").strong()),
+            );
+            name_changed = ui
+                .add(
+                    egui::TextEdit::singleline(&mut descriptor.metadata.name)
+                        .desired_width(f32::INFINITY),
+                )
+                .changed();
+        });
+        let url_changed = validated(
+            ui,
+            url.trim().is_empty() || Self::is_valid_http_url(url),
+            "URL must start with http:// or https://",
+            |ui, _| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [LABEL_WIDTH, 20.0],
+                        egui::Label::new(RichText::new("URL").strong()),
                     );
-                    if changed {
-                        let params: HashMap<String, String> = url_params
-                            .iter()
-                            .filter(|(key, _)| !key.trim().is_empty())
-                            .map(|(key, value)| (key.trim().to_string(), value.clone()))
-                            .collect();
-                        descriptor.metadata.url_params = if params.is_empty() {
-                            None
-                        } else {
-                            Some(params)
-                        };
-                        *dirty = true;
-                        *descriptor_json =
-                            serde_json::to_string_pretty(descriptor).unwrap_or_default();
-                        *url = descriptor.metadata.url.clone();
-                    }
-                }
-                None => {
-                    ui.colored_label(ui.visuals().error_fg_color, "No descriptor available");
-                }
-            });
-        if *center_picker_open
-            && let Some(center) = center_picker.show(ui.ctx(), center_picker_open)
-            && let Some(descriptor) = descriptor
-        {
-            descriptor.metadata.center = center;
+                    let response =
+                        ui.add(egui::TextEdit::singleline(url).desired_width(f32::INFINITY));
+                    response.changed()
+                })
+                .inner
+            },
+            None,
+        );
+        if url_changed {
+            descriptor.metadata.url = url.clone();
+            raw_json.clear();
+            result_json.clear();
+            array_paths.clear();
+            *error = None;
+            *validation_report = None;
+        }
+        if name_changed || url_changed {
             *dirty = true;
             *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
         }
+    }
+
+    fn name_is_valid(&self) -> bool {
+        self.descriptor
+            .as_ref()
+            .is_some_and(|descriptor| !descriptor.metadata.name.trim().is_empty())
+    }
+
+    fn url_is_valid(&self) -> bool {
+        Self::is_valid_http_url(&self.url)
+    }
+
+    fn is_valid_http_url(url: &str) -> bool {
+        url.starts_with("http://") || url.starts_with("https://")
     }
 
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
@@ -514,8 +539,10 @@ impl OpendataServiceHelperDialog {
     }
 
     fn reload(&mut self) {
+        let existing = roadwork_service::get_descriptor(&self.service);
+        self.is_new = self.creating || existing.is_none();
         self.descriptor = Some(
-            roadwork_service::get_descriptor(&self.service)
+            existing
                 .map(|descriptor| OpendataServiceDescriptor::from(&descriptor))
                 .unwrap_or_default(),
         );
@@ -525,6 +552,25 @@ impl OpendataServiceHelperDialog {
         self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
         self.dirty = true;
         self.array_paths = Vec::new();
+        self.validation_report = None;
+    }
+
+    fn reset(&mut self) {
+        self.descriptor = Some(OpendataServiceDescriptor::default());
+        self.url.clear();
+        self.url_params.clear();
+        self.descriptor_json = self
+            .descriptor
+            .as_ref()
+            .map(|descriptor| serde_json::to_string_pretty(descriptor).unwrap_or_default())
+            .unwrap_or_default();
+        self.raw_json.clear();
+        self.result_json.clear();
+        self.error = None;
+        self.dirty = true;
+        self.array_paths = Vec::new();
+        self.current_index = 0;
+        self.element_count = 0;
         self.validation_report = None;
     }
 

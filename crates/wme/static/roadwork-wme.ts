@@ -485,11 +485,11 @@ function openDescriptorHelper() {
 }
 
 function openOpendataHelper() {
-    openHelper("opendata");
+    openHelper("opendata", true);
 }
 
-function openHelper(helper: string) {
-    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, settings.service);
+function openHelper(helper: string, create: boolean = false) {
+    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, settings.service, ", create =", create);
     if (!wasmIframe) {
         setStatus("WASM iframe not available", "error");
         return;
@@ -497,7 +497,7 @@ function openHelper(helper: string) {
     setStatus("Opening descriptor helper...", "info");
     helperAcked = false;
     window.postMessage(
-        { type: "ROADWORK_OPEN_HELPER", helper, service: settings.service },
+        { type: "ROADWORK_OPEN_HELPER", helper, service: settings.service, create },
         "*"
     );
     setTimeout(() => {

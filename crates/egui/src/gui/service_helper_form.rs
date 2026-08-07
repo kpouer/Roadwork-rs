@@ -6,7 +6,7 @@ use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 
 use super::center_picker_dialog::CenterPickerDialog;
 
-const LABEL_WIDTH: f32 = 150.0;
+pub(crate) const LABEL_WIDTH: f32 = 150.0;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FieldsValidation {
