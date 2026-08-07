@@ -323,10 +323,10 @@
 
 .rw-helper-overlay {
     position: fixed;
-    top: 8%;
-    left: 10%;
-    width: 80%;
-    height: 84%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: #fff;
     border: 1px solid #ccc;
     border-radius: 8px;
