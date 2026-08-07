@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 enum FetchState {
     Connecting,
     Downloading,
-    FetchingAll { page: usize, fetched: usize },
     Done(Result<String, String>),
 }
 
@@ -117,9 +116,7 @@ impl OpendataServiceHelperDialog {
     fn show_helper_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
         let fetching = matches!(
             &*self.fetch_state.lock().unwrap(),
-            Some(FetchState::Connecting)
-                | Some(FetchState::Downloading)
-                | Some(FetchState::FetchingAll { .. })
+            Some(FetchState::Connecting) | Some(FetchState::Downloading)
         );
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.form_mode, "Form mode");
@@ -129,23 +126,6 @@ impl OpendataServiceHelperDialog {
                 .clicked()
             {
                 self.fetch(ui.ctx().clone());
-            }
-            let has_pagination = self
-                .descriptor
-                .as_ref()
-                .is_some_and(|descriptor| descriptor.metadata.pagination.is_some());
-            if ui
-                .add_enabled(
-                    !fetching && has_pagination && self.url_is_valid(),
-                    egui::Button::new("Fetch all pages"),
-                )
-                .on_hover_text(
-                    "Fetch every page of the service by incrementing the offset \
-                     until a page returns fewer than the limit",
-                )
-                .clicked()
-            {
-                self.fetch_all(ui.ctx().clone());
             }
             ui.separator();
             let can_validate = !fetching && !self.raw_json.trim().is_empty();
@@ -342,10 +322,6 @@ impl OpendataServiceHelperDialog {
         let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
             Some(FetchState::Connecting) => (true, "Connecting…".to_string()),
             Some(FetchState::Downloading) => (true, "Getting data…".to_string()),
-            Some(FetchState::FetchingAll { page, fetched }) => (
-                true,
-                format!("Fetching all pages (page {page}, {fetched} elements)…"),
-            ),
             _ => (false, String::new()),
         };
         let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
@@ -388,16 +364,6 @@ impl OpendataServiceHelperDialog {
                 if fetching {
                     ui.spinner();
                     ui.label(step);
-                    if matches!(
-                        &*self.fetch_state.lock().unwrap(),
-                        Some(FetchState::FetchingAll { .. })
-                    ) {
-                        ui.add(
-                            egui::ProgressBar::new(f32::NAN)
-                                .animate(true)
-                                .desired_width(160.0),
-                        );
-                    }
                 }
             });
             if let Some(error) = &self.error {
@@ -594,31 +560,6 @@ impl OpendataServiceHelperDialog {
                     })
             }
             .await;
-            *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
-            ctx.request_repaint();
-        });
-    }
-
-    fn fetch_all(&mut self, ctx: Context) {
-        let Some(descriptor) = &self.descriptor else {
-            return;
-        };
-        let ods = OpendataService::from(descriptor);
-        let fetch_state = Arc::clone(&self.fetch_state);
-        crate::roadwork_app::spawn_task(async move {
-            *fetch_state.lock().unwrap() = Some(FetchState::Connecting);
-            ctx.request_repaint();
-            let progress_state = Arc::clone(&fetch_state);
-            let progress_ctx = ctx.clone();
-            let result = ods
-                .fetch_all_pages(move |page, fetched| {
-                    *progress_state.lock().unwrap() =
-                        Some(FetchState::FetchingAll { page, fetched });
-                    progress_ctx.request_repaint();
-                })
-                .await
-                .map(|value| serde_json::to_string_pretty(&value).unwrap_or_default())
-                .map_err(|e| e.to_string());
             *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
             ctx.request_repaint();
         });
