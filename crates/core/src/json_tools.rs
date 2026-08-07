@@ -158,6 +158,124 @@ pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
     arrays
 }
 
+/// Replaces the array targeted by a `dataArray`-style path (e.g. `$.records[*]`,
+/// `$.features[*]`, `$.results`, `$`) with `array`.
+pub fn replace_array_at_path(
+    document: &mut Value,
+    path: &str,
+    array: Value,
+) -> Result<(), MyError> {
+    let path = path.trim();
+    if path == "$" {
+        *document = array;
+        return Ok(());
+    }
+    let container = path.strip_suffix("[*]").unwrap_or(path);
+    let segments = parse_path_segments(container)?;
+    if segments.is_empty() {
+        *document = array;
+        return Ok(());
+    }
+    let mut current = document;
+    let last = segments.len() - 1;
+    for (index, segment) in segments.into_iter().enumerate() {
+        let is_last = index == last;
+        match segment {
+            PathSegment::Key(key) => {
+                if is_last {
+                    let map = current.as_object_mut().ok_or_else(|| {
+                        JsonParsingError(format!(
+                            "Unable to set array at path {path}: intermediate value is not an object"
+                        ))
+                    })?;
+                    map.insert(key, array);
+                    return Ok(());
+                }
+                current = current.get_mut(&key).ok_or_else(|| {
+                    JsonParsingError(format!(
+                        "Unable to set array at path {path}: missing key {key}"
+                    ))
+                })?;
+            }
+            PathSegment::Index(index) => {
+                if is_last {
+                    let elements = current.as_array_mut().ok_or_else(|| {
+                        JsonParsingError(format!(
+                            "Unable to set array at path {path}: intermediate value is not an array"
+                        ))
+                    })?;
+                    let element = elements.get_mut(index).ok_or_else(|| {
+                        JsonParsingError(format!(
+                            "Unable to set array at path {path}: missing index {index}"
+                        ))
+                    })?;
+                    *element = array;
+                    return Ok(());
+                }
+                current = current.get_mut(index).ok_or_else(|| {
+                    JsonParsingError(format!(
+                        "Unable to set array at path {path}: missing index {index}"
+                    ))
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+enum PathSegment {
+    Key(String),
+    Index(usize),
+}
+
+fn parse_path_segments(path: &str) -> Result<Vec<PathSegment>, MyError> {
+    let body = path.strip_prefix('$').unwrap_or(path);
+    let bytes = body.as_bytes();
+    let mut segments = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'.' => {
+                i += 1;
+                let start = i;
+                while i < bytes.len() && bytes[i] != b'.' && bytes[i] != b'[' {
+                    i += 1;
+                }
+                segments.push(PathSegment::Key(body[start..i].to_string()));
+            }
+            b'[' => {
+                i += 1;
+                if i < bytes.len() && bytes[i] == b'"' {
+                    i += 1;
+                    let start = i;
+                    while i < bytes.len() && bytes[i] != b'"' {
+                        i += 1;
+                    }
+                    segments.push(PathSegment::Key(body[start..i].to_string()));
+                    i += 1;
+                    if i < bytes.len() && bytes[i] == b']' {
+                        i += 1;
+                    }
+                } else {
+                    let start = i;
+                    while i < bytes.len() && bytes[i] != b']' {
+                        i += 1;
+                    }
+                    let index = body[start..i]
+                        .parse::<usize>()
+                        .map_err(|_| JsonParsingError(format!("Unable to parse path {path}")))?;
+                    segments.push(PathSegment::Index(index));
+                    i += 1;
+                }
+            }
+            _ => {
+                return Err(JsonParsingError(format!("Unable to parse path {path}")));
+            }
+        }
+    }
+    Ok(segments)
+}
+
 pub fn element_scalar_paths(element: &Value) -> Vec<(String, String)> {
     let mut scalars = Vec::new();
     collect_scalar_leaves(element, "$", &mut scalars);
@@ -255,3 +373,56 @@ pub fn format_fetched_value(value: &Value) -> String {
 const MAX_ARRAY_INDEX: usize = 8;
 const MAX_ARRAY_DEPTH: usize = 4;
 const MAX_SCALAR_PATHS: usize = 200;
+
+#[cfg(test)]
+mod replace_array_tests {
+    use super::*;
+
+    #[test]
+    fn replaces_records_array() {
+        let mut document = serde_json::json!({"records": [{"a": 1}], "other": true});
+        replace_array_at_path(&mut document, "$.records[*]", serde_json::json!([{"a": 2}]))
+            .unwrap();
+        assert_eq!(
+            document,
+            serde_json::json!({"records": [{"a": 2}], "other": true})
+        );
+    }
+
+    #[test]
+    fn replaces_nested_array() {
+        let mut document = serde_json::json!({"data": {"items": [1], "x": 1}});
+        replace_array_at_path(&mut document, "$.data.items", serde_json::json!([1, 2])).unwrap();
+        assert_eq!(
+            document,
+            serde_json::json!({"data": {"items": [1, 2], "x": 1}})
+        );
+    }
+
+    #[test]
+    fn replaces_whole_document() {
+        let mut document = serde_json::json!({"a": 1});
+        replace_array_at_path(&mut document, "$", serde_json::json!([1, 2, 3])).unwrap();
+        assert_eq!(document, serde_json::json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn replaces_bracketed_key() {
+        let mut document = serde_json::json!({"features with space": [1]});
+        replace_array_at_path(
+            &mut document,
+            "$[\"features with space\"][*]",
+            serde_json::json!([1, 2]),
+        )
+        .unwrap();
+        assert_eq!(document, serde_json::json!({"features with space": [1, 2]}));
+    }
+
+    #[test]
+    fn missing_intermediate_key_is_an_error() {
+        let mut document = serde_json::json!({"records": []});
+        assert!(
+            replace_array_at_path(&mut document, "$.nope.items", serde_json::json!([])).is_err()
+        );
+    }
+}

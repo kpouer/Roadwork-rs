@@ -97,6 +97,36 @@ A descriptor contains a first object called **metadata** that contains all infor
 | sourceUrl   | no        | https://xxxx     | The homepage of the service                   |
 | url         | yes       | https://xxxx     | The url that will be called to retrieve data  |
 | locale      | yes       | fr_FR            | The locale that can be used to parse the date |
+| color       | no        | #0d9488          | Color used to display this source in WME      |
+| urlParams   | no        | {"app_token":"…"}| Query parameters appended to the service url  |
+| pagination  | no        | A pagination structure | Fetch every page of the service, see next chapter |
+
+### Pagination structure
+
+Some services limit the number of items returned per request. When `pagination` is set, the app
+automatically fetches every page by incrementing the offset parameter until a page returns fewer
+than `limitValue` elements, then aggregates all of them into the `dataArray` of the first response.
+
+| field      | mandatory | example  | description                                                    |
+|------------|-----------|----------|----------------------------------------------------------------|
+| offsetParam| yes       | offset   | The name of the offset query parameter of the service          |
+| limitParam | yes       | limit    | The name of the limit query parameter of the service           |
+| limitValue | yes       | 100      | How many items each request returns at most                    |
+
+Example:
+
+```json
+{
+  "metadata": {
+    "url": "https://example.com/api/opendata",
+    "pagination": { "offsetParam": "start", "limitParam": "rows", "limitValue": 100 }
+  },
+  "dataArray": "$.records[*]"
+}
+```
+
+The opendata service helper ("Fetch all pages") uses the same mechanism and saves the aggregated
+data into the WME extension alongside the descriptor.
 
 ### Date parser structure
 

@@ -32,6 +32,8 @@
                 result = true;
             } else if (method === 'get_opendata') {
                 result = await wasm_bindgen.get_opendata(args[0]);
+            } else if (method === 'parse_opendata') {
+                result = wasm_bindgen.parse_opendata(args[0], args[1]);
             } else {
                 throw new Error('Unknown method: ' + method);
             }

@@ -1,5 +1,6 @@
 use egui::{Color32, RichText, Ui};
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
+use roadwork_core::opendata::json::model::pagination::Pagination;
 
 use super::center_picker_dialog::CenterPickerDialog;
 use super::service_helper_form::{
@@ -211,6 +212,52 @@ pub(crate) fn show_metadata_section(
     ui.heading("URL params");
     changed |= url_params_grid(ui, url_params);
 
+    ui.add_space(8.0);
+    ui.heading("Pagination");
+    changed |= pagination_section(ui, &mut descriptor.metadata.pagination);
+
+    changed
+}
+
+fn pagination_section(ui: &mut Ui, pagination: &mut Option<Pagination>) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let mut enabled = pagination.is_some();
+        if ui
+            .checkbox(&mut enabled, "Fetch all pages")
+            .on_hover_text(
+                "Fetch every page of the service by incrementing the offset until a page \
+                 returns fewer than the limit.",
+            )
+            .changed()
+        {
+            *pagination = if enabled {
+                Some(Pagination::default())
+            } else {
+                None
+            };
+            changed = true;
+        }
+        if enabled {
+            ui.label(
+                "The offset and limit parameter names vary by provider (e.g. offset/limit, \
+                 start/rows).",
+            );
+        }
+    });
+    if let Some(pagination) = pagination {
+        changed |= text_row(ui, "Offset param", &mut pagination.offset_param, None, None);
+        changed |= text_row(ui, "Limit param", &mut pagination.limit_param, None, None);
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [LABEL_WIDTH, 20.0],
+                egui::Label::new(RichText::new("Limit value").strong()),
+            );
+            changed |= ui
+                .add(egui::DragValue::new(&mut pagination.limit_value).range(1..=10_000))
+                .changed();
+        });
+    }
     changed
 }
 

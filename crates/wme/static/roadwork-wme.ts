@@ -29,7 +29,7 @@ window.addEventListener("message", (e) => {
         const method = e.data.level === "error" ? console.error : e.data.level === "warn" ? console.warn : console.log;
         method("[Roadwork WASM]", ...e.data.args);
     } else if (e.data?.type === "ROADWORK_SAVE_OPENDATA_DESCRIPTOR") {
-        saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor, e.data.oldName);
+        saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor, e.data.oldName, e.data.data);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
         if (wasmIframe?.contentWindow && e.source === wasmIframe.contentWindow) {
             wasmIframe.contentWindow.postMessage({ type: "ROADWORK_WASM_ACK" }, "*");
@@ -1671,7 +1671,7 @@ function removeOpendataService(name: string) {
     syncOpendataDescriptorsToWasm().catch(() => {});
 }
 
-function saveOpendataDescriptorFromHelper(name, descriptor, oldName) {
+async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data) {
     if (!name || !descriptor) return;
     try {
         const parsed = JSON.parse(descriptor);
@@ -1691,13 +1691,30 @@ function saveOpendataDescriptorFromHelper(name, descriptor, oldName) {
     settings.opendataServices = services;
     saveSettings();
     setStatus(`Opendata service "${name}" saved`, "success");
-    syncOpendataDescriptorsToWasm().catch(() => {});
-    fetchOpendataData(name, true)
-        .then(() => renderOpendataToMap())
-        .catch((e) => {
-            setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
-        });
     renderOpendataList();
+    try {
+        await syncOpendataDescriptorsToWasm();
+        if (data) {
+            await parseOpendataAndCache(name, data);
+        } else {
+            await fetchOpendataData(name, true);
+        }
+        renderOpendataToMap();
+    } catch (e) {
+        setStatus(
+            data
+                ? `Failed to parse ${name}: ${e.message}`
+                : `Failed to fetch ${name}: ${e.message}`,
+            "error",
+        );
+    }
+}
+
+async function parseOpendataAndCache(name: string, json: string) {
+    const data = await rpcCall("parse_opendata", [json, name]);
+    currentOpendata[name] = data;
+    saveOpendataCache(name, data);
+    return data;
 }
 
 function renderOpendataList() {

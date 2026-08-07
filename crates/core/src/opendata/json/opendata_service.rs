@@ -2,9 +2,10 @@ use crate::http_service::HttpService;
 use crate::json_tools::JsonTools;
 use crate::model::opendata::Opendata;
 use crate::model::opendata_data::OpendataData;
+use crate::opendata::json::model::metadata::Metadata;
 use crate::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use crate::opendata::json::path_validation::PathValidation;
-use crate::{MyError, json_tools};
+use crate::{MyError, json_tools, json_tools::replace_array_at_path};
 use jsonpath_rust::JsonPath;
 use log::{info, warn};
 use serde_json::Value;
@@ -18,10 +19,100 @@ pub struct OpendataService {
 
 impl OpendataService {
     pub async fn get_data(&self) -> Result<OpendataData, MyError> {
-        let url = self.build_url();
-        info!("getData {url}");
-        let json = HttpService.get_url(&url).await?;
-        self.parse_json(&json)
+        if self.service_descriptor.metadata.pagination.is_some() {
+            let json = self.fetch_all_pages(|_, _| {}).await?;
+            let json = serde_json::to_string(&json)?;
+            self.parse_json(&json)
+        } else {
+            let url = self.build_url();
+            info!("getData {url}");
+            let json = HttpService.get_url(&url).await?;
+            self.parse_json(&json)
+        }
+    }
+
+    /// Fetches every page of the service by incrementing the offset parameter by
+    /// `limit_value` until a page returns fewer than `limit_value` elements, then
+    /// aggregates all elements back into the first document at `data_array`.
+    ///
+    /// `on_progress` is called after each page with the 1-based page number and
+    /// the cumulative number of fetched elements.
+    pub async fn fetch_all_pages<F>(&self, on_progress: F) -> Result<Value, MyError>
+    where
+        F: Fn(usize, usize) + Send + Sync,
+    {
+        let pagination = self
+            .service_descriptor
+            .metadata
+            .pagination
+            .as_ref()
+            .ok_or_else(|| MyError::ParsingError("No pagination configured".to_string()))?;
+        let limit = pagination.limit_value as usize;
+        if limit == 0 {
+            return Err(MyError::ParsingError(
+                "Pagination limitValue must be > 0".to_string(),
+            ));
+        }
+        let mut offset = 0;
+        let mut page = 0;
+        let mut all_elements: Vec<Value> = Vec::new();
+        let mut document: Option<Value> = None;
+        loop {
+            let url = self.build_paginated_url(offset)?;
+            info!("getData {url}");
+            let json = HttpService.get_url(&url).await?;
+            if document.is_none() {
+                document = Some(serde_json::from_str(&json)?);
+            }
+            let elements = self.roadwork_elements(&json);
+            let count = elements.len();
+            page += 1;
+            all_elements.extend(elements);
+            on_progress(page, all_elements.len());
+            if count < limit {
+                break;
+            }
+            offset += limit;
+        }
+        let mut document =
+            document.ok_or_else(|| MyError::ParsingError("No data fetched".to_string()))?;
+        replace_array_at_path(
+            &mut document,
+            &self.service_descriptor.data_array,
+            Value::Array(all_elements),
+        )?;
+        Ok(document)
+    }
+
+    /// Builds the URL for a given page by adding the configured offset and limit
+    /// parameters to the base URL.
+    pub fn build_paginated_url(&self, offset: usize) -> Result<String, MyError> {
+        let pagination = self
+            .service_descriptor
+            .metadata
+            .pagination
+            .as_ref()
+            .ok_or_else(|| MyError::ParsingError("No pagination configured".to_string()))?;
+        if pagination.offset_param.trim().is_empty() || pagination.limit_param.trim().is_empty() {
+            return Err(MyError::ParsingError(
+                "Pagination offsetParam and limitParam must not be empty".to_string(),
+            ));
+        }
+        if pagination.limit_value == 0 {
+            return Err(MyError::ParsingError(
+                "Pagination limitValue must be > 0".to_string(),
+            ));
+        }
+        Ok(Self::build_url_with_params(
+            &self.service_descriptor.metadata,
+            &[
+                (pagination.offset_param.as_str(), &offset.to_string()),
+                (
+                    pagination.limit_param.as_str(),
+                    &pagination.limit_value.to_string(),
+                ),
+            ],
+        ))
     }
 
     pub fn roadwork_array_targets_array(&self, json: &str) -> bool {
@@ -313,23 +404,50 @@ impl OpendataService {
     }
 
     pub fn build_url(&self) -> String {
-        let metadata = &self.service_descriptor.metadata;
+        Self::build_url_with_params(&self.service_descriptor.metadata, &[])
+    }
 
-        match &metadata.url_params {
-            None => metadata.url.clone(),
-            Some(url_params) => {
-                let query_string = url_params
-                    .iter()
-                    .map(|(key, value)| format!("{key}={}", urlencoding::encode(value)))
-                    .reduce(|acc, s| format!("{acc}&{s}"))
-                    .unwrap_or_default();
-                if metadata.url.contains("?") {
-                    format!("{}&{}", metadata.url, query_string)
-                } else {
-                    format!("{}?{}", metadata.url, query_string)
+    fn build_url_with_params(metadata: &Metadata, extra: &[(&str, &str)]) -> String {
+        let (base, existing_query) = match metadata.url.split_once('?') {
+            Some((base, query)) => (base, Some(query)),
+            None => (metadata.url.as_str(), None),
+        };
+        let is_extra_key = |key: &str| extra.iter().any(|(k, _)| *k == key);
+
+        let mut segments: Vec<String> = Vec::new();
+        if let Some(query) = existing_query {
+            for segment in query.split('&').filter(|segment| !segment.is_empty()) {
+                let key = segment.split('=').next().unwrap_or("");
+                if is_extra_key(key) {
+                    continue;
                 }
+                segments.push(segment.to_string());
             }
         }
+        let mut params: Vec<(&str, String)> = metadata
+            .url_params
+            .iter()
+            .flatten()
+            .filter(|(key, _)| !is_extra_key(key))
+            .map(|(key, value)| (key.as_str(), value.clone()))
+            .collect();
+        for (key, value) in extra {
+            params.push((*key, (*value).to_string()));
+        }
+        if params.is_empty() && segments.is_empty() {
+            return metadata.url.clone();
+        }
+        let query_string = params
+            .iter()
+            .map(|(key, value)| format!("{key}={}", urlencoding::encode(value)))
+            .reduce(|acc, s| format!("{acc}&{s}"));
+        if let Some(query_string) = query_string {
+            segments.push(query_string);
+        }
+        if segments.is_empty() {
+            return metadata.url.clone();
+        }
+        format!("{}?{}", base, segments.join("&"))
     }
 
     pub fn build_opendata(&self, node: &Value) -> Result<Opendata, MyError> {
@@ -511,5 +629,133 @@ mod validate_tests {
         assert!(!report[0].is_valid());
         assert_eq!(report[0].label, "dataArray");
         assert_eq!(report.len(), 1);
+    }
+
+    #[test]
+    fn build_url_appends_url_params() {
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.url_params = Some(HashMap::from([(
+            "app_token".to_string(),
+            "abc".to_string(),
+        )]));
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(ods.build_url(), "u?app_token=abc");
+    }
+
+    #[test]
+    fn build_paginated_url_errors_without_pagination() {
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor: descriptor(),
+        };
+        assert!(ods.build_paginated_url(0).is_err());
+    }
+
+    #[test]
+    fn build_paginated_url_appends_offset_and_limit() {
+        use crate::opendata::json::model::pagination::Pagination;
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.pagination = Some(Pagination {
+            offset_param: "start".to_string(),
+            limit_param: "count".to_string(),
+            limit_value: 50,
+        });
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(
+            ods.build_paginated_url(100).unwrap(),
+            "u?start=100&count=50"
+        );
+    }
+
+    #[test]
+    fn build_paginated_url_keeps_existing_url_params() {
+        use crate::opendata::json::model::pagination::Pagination;
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.url_params = Some(HashMap::from([(
+            "app_token".to_string(),
+            "abc".to_string(),
+        )]));
+        service_descriptor.metadata.pagination = Some(Pagination {
+            offset_param: "offset".to_string(),
+            limit_param: "limit".to_string(),
+            limit_value: 20,
+        });
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(
+            ods.build_paginated_url(20).unwrap(),
+            "u?app_token=abc&offset=20&limit=20"
+        );
+    }
+
+    #[test]
+    fn build_paginated_url_replaces_existing_query_params() {
+        use crate::opendata::json::model::pagination::Pagination;
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.url = "u?limit=10&format=json".to_string();
+        service_descriptor.metadata.pagination = Some(Pagination {
+            offset_param: "start".to_string(),
+            limit_param: "limit".to_string(),
+            limit_value: 50,
+        });
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(
+            ods.build_paginated_url(100).unwrap(),
+            "u?format=json&start=100&limit=50"
+        );
+    }
+
+    #[test]
+    fn build_paginated_url_replaces_url_param() {
+        use crate::opendata::json::model::pagination::Pagination;
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.url_params =
+            Some(HashMap::from([("offset".to_string(), "0".to_string())]));
+        service_descriptor.metadata.pagination = Some(Pagination {
+            offset_param: "offset".to_string(),
+            limit_param: "limit".to_string(),
+            limit_value: 50,
+        });
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(
+            ods.build_paginated_url(100).unwrap(),
+            "u?offset=100&limit=50"
+        );
+    }
+
+    #[test]
+    fn build_paginated_url_replaces_url_query_and_url_param() {
+        use crate::opendata::json::model::pagination::Pagination;
+        let mut service_descriptor = descriptor();
+        service_descriptor.metadata.url = "u?offset=0&format=json".to_string();
+        service_descriptor.metadata.url_params =
+            Some(HashMap::from([("limit".to_string(), "5".to_string())]));
+        service_descriptor.metadata.pagination = Some(Pagination {
+            offset_param: "offset".to_string(),
+            limit_param: "limit".to_string(),
+            limit_value: 50,
+        });
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        assert_eq!(
+            ods.build_paginated_url(100).unwrap(),
+            "u?format=json&offset=100&limit=50"
+        );
     }
 }

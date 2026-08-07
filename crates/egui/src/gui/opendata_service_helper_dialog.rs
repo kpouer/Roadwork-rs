@@ -1,6 +1,5 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
-use super::service_helper_form::{LABEL_WIDTH, validated};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
@@ -13,6 +12,7 @@ use std::sync::{Arc, Mutex};
 enum FetchState {
     Connecting,
     Downloading,
+    FetchingAll { page: usize, fetched: usize },
     Done(Result<String, String>),
 }
 
@@ -21,7 +21,6 @@ pub(crate) struct OpendataServiceHelperDialog {
     descriptor: Option<OpendataServiceDescriptor>,
     descriptor_json: String,
     form_mode: bool,
-    wizard_mode: bool,
     is_new: bool,
     creating: bool,
     url_params: Vec<(String, String)>,
@@ -51,7 +50,6 @@ impl OpendataServiceHelperDialog {
     ) -> Self {
         let mut dialog = Self {
             form_mode: true,
-            wizard_mode: true,
             creating,
             pending_descriptor,
             original_name,
@@ -65,10 +63,7 @@ impl OpendataServiceHelperDialog {
         let is_open = *open;
         if is_open && !self.was_open {
             if self.is_new {
-                self.wizard_mode = true;
                 self.reset();
-            } else {
-                self.wizard_mode = false;
             }
             if !self.url.is_empty() {
                 self.fetch(ctx.clone());
@@ -116,40 +111,15 @@ impl OpendataServiceHelperDialog {
     }
 
     fn show_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
-        if self.wizard_mode {
-            self.show_wizard_content(ui);
-        } else {
-            self.show_helper_content(ui, toasts);
-        }
-    }
-
-    fn show_wizard_content(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.heading("Step 1 of 2: Service name and URL");
-        });
-        ui.separator();
-        egui::Panel::bottom("opendata_wizard_footer").show_inside(ui, |ui| {
-            ui.horizontal(|ui| {
-                let can_proceed = self.name_is_valid() && self.url_is_valid();
-                if ui
-                    .add_enabled(can_proceed, egui::Button::new("Next"))
-                    .on_hover_text("Proceed to the opendata service helper")
-                    .clicked()
-                {
-                    self.wizard_mode = false;
-                }
-            });
-        });
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.set_max_width(600.0);
-            self.show_wizard_form(ui);
-        });
+        self.show_helper_content(ui, toasts);
     }
 
     fn show_helper_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
         let fetching = matches!(
             &*self.fetch_state.lock().unwrap(),
-            Some(FetchState::Connecting) | Some(FetchState::Downloading)
+            Some(FetchState::Connecting)
+                | Some(FetchState::Downloading)
+                | Some(FetchState::FetchingAll { .. })
         );
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.form_mode, "Form mode");
@@ -159,6 +129,23 @@ impl OpendataServiceHelperDialog {
                 .clicked()
             {
                 self.fetch(ui.ctx().clone());
+            }
+            let has_pagination = self
+                .descriptor
+                .as_ref()
+                .is_some_and(|descriptor| descriptor.metadata.pagination.is_some());
+            if ui
+                .add_enabled(
+                    !fetching && has_pagination && self.url_is_valid(),
+                    egui::Button::new("Fetch all pages"),
+                )
+                .on_hover_text(
+                    "Fetch every page of the service by incrementing the offset \
+                     until a page returns fewer than the limit",
+                )
+                .clicked()
+            {
+                self.fetch_all(ui.ctx().clone());
             }
             ui.separator();
             let can_validate = !fetching && !self.raw_json.trim().is_empty();
@@ -173,13 +160,14 @@ impl OpendataServiceHelperDialog {
             }
             ui.separator();
             #[cfg(target_arch = "wasm32")]
+            let can_save =
+                !self.descriptor_json.trim().is_empty() && !self.raw_json.trim().is_empty();
+            #[cfg(target_arch = "wasm32")]
             if ui
-                .add_enabled(
-                    !self.descriptor_json.trim().is_empty(),
-                    egui::Button::new("Save to extension"),
-                )
+                .add_enabled(can_save, egui::Button::new("Save to extension"))
                 .on_hover_text(
-                    "Save the descriptor into the Roadwork WME extension and enable the service",
+                    "Save the descriptor and the fetched data into the Roadwork WME extension \
+                     and enable the service",
                 )
                 .clicked()
             {
@@ -242,55 +230,126 @@ impl OpendataServiceHelperDialog {
             .min_size(60.0)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Result JSON").strong());
+                    ui.label(RichText::new("Fetched data").strong());
                     if self.element_count > 0 {
                         ui.separator();
-                        let up = ui
-                            .add_enabled(self.current_index > 0, egui::Button::new("⬆"))
-                            .on_hover_text("Previous element");
-                        let down = ui
-                            .add_enabled(
-                                self.current_index + 1 < self.element_count,
-                                egui::Button::new("⬇"),
-                            )
-                            .on_hover_text("Next element");
-                        ui.label(format!("{}/{}", self.current_index + 1, self.element_count));
-                        if up.clicked() {
-                            self.current_index -= 1;
-                            self.update_result_json();
-                        }
-                        if down.clicked() {
-                            self.current_index += 1;
-                            self.update_result_json();
-                        }
+                        ui.label(format!("{} elements", self.element_count));
                     }
                 });
                 if let Some(report) = &self.validation_report {
                     ui.separator();
                     self.show_validation_report(ui, report);
                 }
-                egui::ScrollArea::vertical()
-                    .id_salt("opendata_result_json_scroll")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.result_json)
-                                .code_editor()
-                                .interactive(false)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(15)
-                                .layouter(&mut json_layouter),
-                        );
-                    });
+                ui.separator();
+                if self.raw_json.trim().is_empty() {
+                    ui.label("Fetch the JSON first to display the opendata as a table.");
+                } else {
+                    self.show_data_table(ui);
+                }
             });
         self.show_url_fetch_panel(ui);
     }
 
+    fn show_data_table(&self, ui: &mut Ui) {
+        let Some(descriptor) = &self.descriptor else {
+            ui.label("No descriptor available.");
+            return;
+        };
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
+        let Ok(array) = ods.extract_roadwork_array(&self.raw_json) else {
+            ui.label("Unable to parse the fetched JSON as an array of opendata.");
+            return;
+        };
+        let elements = array.as_array().cloned().unwrap_or_default();
+        if elements.is_empty() {
+            ui.label("No opendata in the fetched JSON.");
+            return;
+        }
+        let columns = self.table_columns(&elements);
+        if columns.is_empty() {
+            ui.label("No data to display.");
+            return;
+        }
+        let mut table = egui_extras::TableBuilder::new(ui)
+            .striped(true)
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(egui_extras::Column::auto().at_least(36.0));
+        for _ in &columns {
+            table = table.column(egui_extras::Column::remainder().at_least(80.0));
+        }
+        table
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("#");
+                });
+                for (label, _) in &columns {
+                    header.col(|ui| {
+                        ui.strong(label);
+                    });
+                }
+            })
+            .body(|body| {
+                body.rows(18.0, elements.len(), |mut row| {
+                    let index = row.index();
+                    let element = &elements[index];
+                    row.col(|ui| {
+                        ui.label((index + 1).to_string());
+                    });
+                    for (_, path) in &columns {
+                        let value = ods
+                            .path_fetched_value_in(element, path)
+                            .unwrap_or_else(|| "—".to_string());
+                        row.col(|ui| {
+                            ui.label(value);
+                        });
+                    }
+                });
+            });
+    }
+
+    fn table_columns(&self, elements: &[serde_json::Value]) -> Vec<(String, String)> {
+        let Some(descriptor) = &self.descriptor else {
+            return Vec::new();
+        };
+        let mut columns: Vec<(String, String)> = Vec::new();
+        let id = descriptor.id.trim();
+        if !id.is_empty() {
+            columns.push(("id".to_string(), id.to_string()));
+        }
+        for (label, optional) in [
+            ("latitude", &descriptor.latitude),
+            ("longitude", &descriptor.longitude),
+            ("polygon", &descriptor.polygon),
+            ("description", &descriptor.description),
+        ] {
+            if let Some(path) = optional.as_deref().filter(|path| !path.trim().is_empty()) {
+                columns.push((label.to_string(), path.to_string()));
+            }
+        }
+        if !columns.is_empty() {
+            return columns;
+        }
+        let Some(first) = elements.first() else {
+            return Vec::new();
+        };
+        let mut scalars = roadwork_core::json_tools::element_scalar_paths(first);
+        scalars.truncate(MAX_TABLE_COLUMNS);
+        scalars
+    }
+
     fn show_url_fetch_panel(&mut self, ui: &mut Ui) {
         let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
-            Some(FetchState::Connecting) => (true, "Connecting…"),
-            Some(FetchState::Downloading) => (true, "Getting data…"),
-            _ => (false, ""),
+            Some(FetchState::Connecting) => (true, "Connecting…".to_string()),
+            Some(FetchState::Downloading) => (true, "Getting data…".to_string()),
+            Some(FetchState::FetchingAll { page, fetched }) => (
+                true,
+                format!("Fetching all pages (page {page}, {fetched} elements)…"),
+            ),
+            _ => (false, String::new()),
         };
         let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
             let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
@@ -332,6 +391,16 @@ impl OpendataServiceHelperDialog {
                 if fetching {
                     ui.spinner();
                     ui.label(step);
+                    if matches!(
+                        &*self.fetch_state.lock().unwrap(),
+                        Some(FetchState::FetchingAll { .. })
+                    ) {
+                        ui.add(
+                            egui::ProgressBar::new(f32::NAN)
+                                .animate(true)
+                                .desired_width(160.0),
+                        );
+                    }
                 }
             });
             if let Some(error) = &self.error {
@@ -356,74 +425,6 @@ impl OpendataServiceHelperDialog {
                     }
                 });
         });
-    }
-
-    fn show_wizard_form(&mut self, ui: &mut Ui) {
-        let Self {
-            descriptor,
-            descriptor_json,
-            dirty,
-            url,
-            raw_json,
-            result_json,
-            array_paths,
-            error,
-            validation_report,
-            ..
-        } = self;
-        let Some(descriptor) = descriptor else {
-            ui.colored_label(ui.visuals().error_fg_color, "No descriptor available");
-            return;
-        };
-        let mut name_changed = false;
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [LABEL_WIDTH, 20.0],
-                egui::Label::new(RichText::new("Name").strong()),
-            );
-            name_changed = ui
-                .add(
-                    egui::TextEdit::singleline(&mut descriptor.metadata.name)
-                        .desired_width(f32::INFINITY),
-                )
-                .changed();
-        });
-        let url_changed = validated(
-            ui,
-            url.trim().is_empty() || Self::is_valid_http_url(url),
-            "URL must start with http:// or https://",
-            |ui, _| {
-                ui.horizontal(|ui| {
-                    ui.add_sized(
-                        [LABEL_WIDTH, 20.0],
-                        egui::Label::new(RichText::new("URL").strong()),
-                    );
-                    let response =
-                        ui.add(egui::TextEdit::singleline(url).desired_width(f32::INFINITY));
-                    response.changed()
-                })
-                .inner
-            },
-            None,
-        );
-        if url_changed {
-            descriptor.metadata.url = url.clone();
-            raw_json.clear();
-            result_json.clear();
-            array_paths.clear();
-            *error = None;
-            *validation_report = None;
-        }
-        if name_changed || url_changed {
-            *dirty = true;
-            *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
-        }
-    }
-
-    fn name_is_valid(&self) -> bool {
-        self.descriptor
-            .as_ref()
-            .is_some_and(|descriptor| !descriptor.metadata.name.trim().is_empty())
     }
 
     fn url_is_valid(&self) -> bool {
@@ -601,6 +602,34 @@ impl OpendataServiceHelperDialog {
         });
     }
 
+    fn fetch_all(&mut self, ctx: Context) {
+        let Some(descriptor) = &self.descriptor else {
+            return;
+        };
+        let ods = OpendataService {
+            service_name: "Opendata service helper".to_string(),
+            service_descriptor: descriptor.clone(),
+        };
+        let fetch_state = Arc::clone(&self.fetch_state);
+        crate::roadwork_app::spawn_task(async move {
+            *fetch_state.lock().unwrap() = Some(FetchState::Connecting);
+            ctx.request_repaint();
+            let progress_state = Arc::clone(&fetch_state);
+            let progress_ctx = ctx.clone();
+            let result = ods
+                .fetch_all_pages(move |page, fetched| {
+                    *progress_state.lock().unwrap() =
+                        Some(FetchState::FetchingAll { page, fetched });
+                    progress_ctx.request_repaint();
+                })
+                .await
+                .map(|value| serde_json::to_string_pretty(&value).unwrap_or_default())
+                .map_err(|e| e.to_string());
+            *fetch_state.lock().unwrap() = Some(FetchState::Done(result));
+            ctx.request_repaint();
+        });
+    }
+
     fn opendata_array_is_valid(&self) -> bool {
         if self.raw_json.trim().is_empty() {
             return true;
@@ -679,6 +708,14 @@ impl OpendataServiceHelperDialog {
             &wasm_bindgen::JsValue::from_str(&self.descriptor_json),
         )
         .map_err(|e| format!("{e:?}"))?;
+        if !self.raw_json.trim().is_empty() {
+            js_sys::Reflect::set(
+                &object,
+                &wasm_bindgen::JsValue::from_str("data"),
+                &wasm_bindgen::JsValue::from_str(&self.raw_json),
+            )
+            .map_err(|e| format!("{e:?}"))?;
+        }
         let window = web_sys::window().ok_or("No window available")?;
         let parent = window.parent().map_err(|e| format!("{e:?}"))?;
         let parent = parent.ok_or("No parent window")?;
@@ -898,3 +935,5 @@ fn url_params_to_vec(params: &Option<HashMap<String, String>>) -> Vec<(String, S
     vec.sort_by(|a, b| a.0.cmp(&b.0));
     vec
 }
+
+const MAX_TABLE_COLUMNS: usize = 8;
