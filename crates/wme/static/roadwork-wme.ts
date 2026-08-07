@@ -100,9 +100,8 @@ let currentOpendata: Record<string, any> = {};
 let opendataFeatureIndex: Record<string, any> = {};
 let opendataListEl = null;
 let servicesData = [];
-let panelEl: HTMLDivElement | null = null;
+let panelEl = null;
 let statusEl = null;
-let countEl = null;
 let lastRefreshEl = null;
 let floatingPanelEl = null;
 let floatingTableBody = null;
@@ -433,13 +432,6 @@ function setStatus(text: string, type?) {
     }
     statusEl.textContent = text;
     statusEl.className = "roadwork-status" + (type ? " " + type : "");
-}
-
-function setCount(count: number) {
-    if (!countEl) {
-        return;
-    }
-    countEl.textContent = `${count} roadwork(s) loaded`;
 }
 
 function updateLastRefreshDisplay() {
@@ -1325,8 +1317,6 @@ function renderRoadworksToMap(roadworks) {
         featuresByStatus[status] = [];
     }
 
-    let totalFeatures = 0;
-
     for (const [id, rw] of Object.entries(roadworks as Record<string, any>)) {
         const status = rw.syncData?.status || "New";
         const features = featuresByStatus[status] || featuresByStatus["New"];
@@ -1395,10 +1385,7 @@ function renderRoadworksToMap(roadworks) {
         } catch (e) {
             console.warn("[Roadwork] Failed to add features to layer " + status + ":", e);
         }
-        totalFeatures += features.length;
     }
-
-    setCount(totalFeatures);
 }
 
 async function refreshData() {
@@ -2308,6 +2295,12 @@ async function buildPanel(tabPane: Element) {
     versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
     panelEl.appendChild(versionLine);
 
+    const roadworkSection = document.createElement("div");
+    roadworkSection.className = "roadwork-section";
+    const roadworkHeading = document.createElement("h3");
+    roadworkHeading.textContent = "Roadwork";
+    roadworkSection.appendChild(roadworkHeading);
+
     const field1 = document.createElement("div");
     field1.className = "roadwork-field";
     const lbl1 = document.createElement("label");
@@ -2326,7 +2319,7 @@ async function buildPanel(tabPane: Element) {
     flexDiv.appendChild(srvRefreshBtn);
     field1.appendChild(lbl1);
     field1.appendChild(flexDiv);
-    panelEl.appendChild(field1);
+    roadworkSection.appendChild(field1);
 
     const customField = document.createElement("div");
     customField.className = "roadwork-field";
@@ -2351,22 +2344,7 @@ async function buildPanel(tabPane: Element) {
     customList.className = "roadwork-custom-sources";
     customField.appendChild(customList);
 
-    panelEl.appendChild(customField);
-
-    const field2 = document.createElement("div");
-    field2.className = "roadwork-field";
-    const lbl2 = document.createElement("label");
-    lbl2.textContent = "Dernier rafraîchissement";
-    const lastRefreshSpan = document.createElement("span");
-    lastRefreshSpan.id = "rw-last-refresh";
-    lastRefreshSpan.style.color = "#666";
-    lastRefreshSpan.textContent = "—";
-    field2.appendChild(lbl2);
-    field2.appendChild(lastRefreshSpan);
-    panelEl.appendChild(field2);
-
-    const field3 = document.createElement("div");
-    field3.className = "roadwork-field";
+    roadworkSection.appendChild(customField);
 
     const btnDiv = document.createElement("div");
     const refBtn = document.createElement("button");
@@ -2380,33 +2358,32 @@ async function buildPanel(tabPane: Element) {
     debugBtn.textContent = "Debug";
     debugBtn.title = "Open the descriptor helper for the current service";
     btnDiv.appendChild(debugBtn);
-    panelEl.appendChild(btnDiv);
+    roadworkSection.appendChild(btnDiv);
 
-    const lbl3 = document.createElement("label");
-    lbl3.textContent = "Log level";
-    const logLevelSel = document.createElement("select");
-    logLevelSel.id = "rw-loglevel-select";
-    for (const opt of ["error", "warn", "info", "debug", "trace"]) {
-        const o = document.createElement("option");
-        o.value = opt;
-        o.textContent = opt;
-        if (opt === settings.logLevel) {
-            o.selected = true;
-        }
-        logLevelSel.appendChild(o);
-    }
-    logLevelSel.addEventListener("change", () => {
-        settings.logLevel = logLevelSel.value;
-        saveSettings();
-        applyLogLevel(settings.logLevel);
-    });
-    field3.appendChild(lbl3);
-    field3.appendChild(logLevelSel);
-    panelEl.appendChild(field3);
+    const refreshDiv = document.createElement("div");
+    refreshDiv.className = "roadwork-field";
+    const lbl2 = document.createElement("label");
+    lbl2.textContent = "Dernier rafraîchissement";
+    const lastRefreshSpan = document.createElement("span");
+    lastRefreshSpan.id = "rw-last-refresh";
+    lastRefreshSpan.style.color = "#666";
+    lastRefreshSpan.textContent = "—";
+    refreshDiv.appendChild(lbl2);
+    refreshDiv.appendChild(lastRefreshSpan);
+    roadworkSection.appendChild(refreshDiv);
+
+    const statDiv = document.createElement("div");
+    statDiv.id = "rw-status";
+    statDiv.className = "roadwork-status";
+    roadworkSection.appendChild(statDiv);
+    panelEl.appendChild(roadworkSection);
+
+    const opendataSection = document.createElement("div");
+    opendataSection.className = "roadwork-section";
 
     const opendataHeading = document.createElement("h3");
     opendataHeading.textContent = "Opendata";
-    panelEl.appendChild(opendataHeading);
+    opendataSection.appendChild(opendataHeading);
 
     const opendataBtns = document.createElement("div");
     opendataBtns.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;";
@@ -2439,40 +2416,55 @@ async function buildPanel(tabPane: Element) {
     opendataRefreshBtn.title = "Refresh all enabled opendata services";
     opendataBtns.appendChild(opendataRefreshBtn);
 
-    panelEl.appendChild(opendataBtns);
+    opendataSection.appendChild(opendataBtns);
 
     const importInput = document.createElement("input");
     importInput.type = "file";
     importInput.id = "rw-opendata-import-input";
     importInput.accept = ".json,application/json";
     importInput.style.display = "none";
-    panelEl.appendChild(importInput);
+    opendataSection.appendChild(importInput);
 
     const dropZone = document.createElement("div");
     dropZone.className = "roadwork-opendata-dropzone";
     dropZone.id = "rw-opendata-dropzone";
     dropZone.textContent = "Drop a JSON descriptor here to import";
-    panelEl.appendChild(dropZone);
+    opendataSection.appendChild(dropZone);
 
     opendataListEl = document.createElement("div");
     opendataListEl.id = "rw-opendata-list";
     opendataListEl.className = "roadwork-opendata-list";
-    panelEl.appendChild(opendataListEl);
+    opendataSection.appendChild(opendataListEl);
+    panelEl.appendChild(opendataSection);
 
-    const statDiv = document.createElement("div");
-    statDiv.id = "rw-status";
-    statDiv.className = "roadwork-status";
-    panelEl.appendChild(statDiv);
+    const logLevelDiv = document.createElement("div");
+    logLevelDiv.className = "roadwork-field";
 
-    const cntDiv = document.createElement("div");
-    cntDiv.id = "rw-count";
-    cntDiv.className = "roadwork-count";
-    panelEl.appendChild(cntDiv);
+    const lbl3 = document.createElement("label");
+    lbl3.textContent = "Log level";
+    const logLevelSel = document.createElement("select");
+    logLevelSel.id = "rw-loglevel-select";
+    for (const opt of ["error", "warn", "info", "debug", "trace"]) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt;
+        if (opt === settings.logLevel) {
+            o.selected = true;
+        }
+        logLevelSel.appendChild(o);
+    }
+    logLevelSel.addEventListener("change", () => {
+        settings.logLevel = logLevelSel.value;
+        saveSettings();
+        applyLogLevel(settings.logLevel);
+    });
+    logLevelDiv.appendChild(lbl3);
+    logLevelDiv.appendChild(logLevelSel);
+    panelEl.appendChild(logLevelDiv);
 
     tabPane.appendChild(panelEl);
 
     statusEl = panelEl.querySelector("#rw-status");
-    countEl = tabPane.querySelector("#rw-count") || panelEl.querySelector("#rw-count");
     lastRefreshEl = panelEl.querySelector("#rw-last-refresh");
 
     const serviceSelect = panelEl.querySelector("#rw-service-select");

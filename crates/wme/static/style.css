@@ -9,6 +9,19 @@
     font-weight: 600;
 }
 
+.roadwork-section {
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.roadwork-section h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
 .roadwork-field {
     margin-bottom: 8px;
 }
@@ -92,12 +105,6 @@
 .roadwork-status.success {
     background: #f0fdf4;
     color: #16a34a;
-}
-
-.roadwork-count {
-    margin-top: 6px;
-    font-size: 12px;
-    color: #888;
 }
 
 .roadwork-floating-panel {
