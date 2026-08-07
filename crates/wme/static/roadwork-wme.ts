@@ -3012,7 +3012,8 @@ async function init() {
         updateFloatingTable();
         const count = Object.keys(currentRoadworks).length;
         setStatus(`${count} roadwork(s) from cache`, "success");
+    } else {
+        refreshData();
     }
-    refreshData();
     console.log("Roadwork init done");
 }
