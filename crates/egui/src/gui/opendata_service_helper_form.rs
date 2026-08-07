@@ -190,14 +190,14 @@ pub(crate) fn show_metadata_section(
         None,
         None,
     );
-    changed |= text_row(
+    changed |= optional_text_row(
         ui,
         "Source URL",
         &mut descriptor.metadata.source_url,
         None,
         None,
     );
-    changed |= text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
+    changed |= optional_text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
     changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
     changed |= center_row(
         ui,

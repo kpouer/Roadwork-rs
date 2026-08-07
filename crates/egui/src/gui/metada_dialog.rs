@@ -47,8 +47,12 @@ impl<'a> MetadataDialog<'a> {
                             ui.end_row();
                         }
 
-                        Self::add_row_link(ui, "Source URL:", self.metadata.source_url());
-                        Self::add_row_link(ui, "API URL:", &self.metadata.url);
+                        if let Some(source_url) = self.metadata.source_url() {
+                            Self::add_row_link(ui, "Source URL:", source_url);
+                        }
+                        if let Some(url) = self.metadata.url() {
+                            Self::add_row_link(ui, "API URL:", url);
+                        }
 
                         if let Some(locale) = self.metadata.locale_str() {
                             Self::add_row(ui, "Locale:", locale);

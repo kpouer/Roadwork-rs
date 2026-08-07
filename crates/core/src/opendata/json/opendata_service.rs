@@ -327,9 +327,12 @@ impl OpendataService {
     }
 
     fn build_url_with_params(metadata: &Metadata) -> String {
-        let (base, existing_query) = match metadata.url.split_once('?') {
+        let Some(url) = metadata.url.as_deref() else {
+            return String::new();
+        };
+        let (base, existing_query) = match url.split_once('?') {
             Some((base, query)) => (base, Some(query)),
-            None => (metadata.url.as_str(), None),
+            None => (url, None),
         };
 
         let mut segments: Vec<String> = Vec::new();
@@ -345,7 +348,7 @@ impl OpendataService {
             .map(|(key, value)| (key.as_str(), value.clone()))
             .collect();
         if params.is_empty() && segments.is_empty() {
-            return metadata.url.clone();
+            return url.to_string();
         }
         let query_string = params
             .iter()
@@ -355,7 +358,7 @@ impl OpendataService {
             segments.push(query_string);
         }
         if segments.is_empty() {
-            return metadata.url.clone();
+            return url.to_string();
         }
         format!("{}?{}", base, segments.join("&"))
     }

@@ -122,7 +122,8 @@ impl OpendataServiceHelperDialog {
             ui.checkbox(&mut self.form_mode, "Form mode");
             ui.separator();
             if ui
-                .add_enabled(!fetching, egui::Button::new("Fetch"))
+                .add_enabled(!fetching && self.url_is_valid(), egui::Button::new("Fetch"))
+                .on_hover_text("Fetch the data from the service URL (requires an http(s) URL)")
                 .clicked()
             {
                 self.fetch(ui.ctx().clone());
@@ -442,7 +443,7 @@ impl OpendataServiceHelperDialog {
                         *dirty = true;
                         *descriptor_json =
                             serde_json::to_string_pretty(descriptor).unwrap_or_default();
-                        *url = descriptor.metadata.url.clone();
+                        *url = descriptor.metadata.url.clone().unwrap_or_default();
                     }
                 }
                 None => {
@@ -461,12 +462,17 @@ impl OpendataServiceHelperDialog {
 
     fn propagate_url(&mut self) {
         let mut changed = false;
-        if let Some(descriptor) = &mut self.descriptor
-            && descriptor.metadata.url != self.url
-        {
-            descriptor.metadata.url = self.url.clone();
-            self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
-            changed = true;
+        if let Some(descriptor) = &mut self.descriptor {
+            let new_url = if self.url.trim().is_empty() {
+                None
+            } else {
+                Some(self.url.clone())
+            };
+            if descriptor.metadata.url != new_url {
+                descriptor.metadata.url = new_url;
+                self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                changed = true;
+            }
         }
         if changed {
             self.raw_json.clear();
@@ -484,7 +490,7 @@ impl OpendataServiceHelperDialog {
         }
         match serde_json::from_str::<OpendataServiceDescriptor>(&self.descriptor_json) {
             Ok(descriptor) => {
-                self.url = descriptor.metadata.url.clone();
+                self.url = descriptor.metadata.url.clone().unwrap_or_default();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
                 self.descriptor = Some(descriptor);
                 self.raw_json.clear();
@@ -535,6 +541,31 @@ impl OpendataServiceHelperDialog {
         self.current_index = 0;
         self.element_count = 0;
         self.validation_report = None;
+    }
+
+    pub(crate) fn handle_dropped_file(
+        &mut self,
+        file: egui::DroppedFile,
+    ) -> Result<String, String> {
+        let name = file.name.clone();
+        let content = if let Some(path) = file.path {
+            std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read {}: {e}", path.display()))?
+        } else if let Some(bytes) = file.bytes {
+            String::from_utf8(bytes.to_vec()).map_err(|e| format!("File is not UTF-8: {e}"))?
+        } else {
+            return Err(format!("No readable content in dropped file \"{name}\""));
+        };
+        if content.trim().is_empty() {
+            return Err(format!("Dropped file \"{name}\" is empty"));
+        }
+        self.raw_json = content;
+        self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
+        self.result_json.clear();
+        self.error = None;
+        self.dirty = true;
+        self.validation_report = None;
+        Ok(name)
     }
 
     fn fetch(&mut self, ctx: Context) {

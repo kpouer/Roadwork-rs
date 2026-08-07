@@ -77,8 +77,10 @@ mod tests {
         assert!(service_descriptor.to.is_some());
 
         assert_eq!(
-            service_descriptor.metadata.url,
-            "https://opendata.paris.fr/api/records/1.0/search/?dataset=chantiers-perturbants&q=&rows=1000&facet=cp_arrondissement&facet=typologie&facet=maitre_ouvrage&facet=objet&facet=impact_circulation&facet=niveau_perturbation&facet=statut&exclude.statut=5"
+            service_descriptor.metadata.url.as_deref(),
+            Some(
+                "https://opendata.paris.fr/api/records/1.0/search/?dataset=chantiers-perturbants&q=&rows=1000&facet=cp_arrondissement&facet=typologie&facet=maitre_ouvrage&facet=objet&facet=impact_circulation&facet=niveau_perturbation&facet=statut&exclude.statut=5"
+            )
         );
 
         Ok(())

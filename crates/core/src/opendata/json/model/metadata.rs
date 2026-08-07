@@ -9,8 +9,10 @@ pub struct Metadata {
     pub country: String,
     pub center: LatLng,
     #[serde(rename = "sourceUrl")]
-    pub source_url: String,
-    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub producer: Option<String>,
@@ -51,8 +53,11 @@ impl Metadata {
     pub fn licence_url(&self) -> Option<&str> {
         self.licence_url.as_deref()
     }
-    pub fn source_url(&self) -> &str {
-        &self.source_url
+    pub fn source_url(&self) -> Option<&str> {
+        self.source_url.as_deref()
+    }
+    pub fn url(&self) -> Option<&str> {
+        self.url.as_deref()
     }
     pub fn locale_str(&self) -> Option<&str> {
         self.locale.as_deref()

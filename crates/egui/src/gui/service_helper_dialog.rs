@@ -319,7 +319,7 @@ impl ServiceHelperDialog {
                         *dirty = true;
                         *descriptor_json =
                             serde_json::to_string_pretty(descriptor).unwrap_or_default();
-                        *url = descriptor.metadata.url.clone();
+                        *url = descriptor.metadata.url.clone().unwrap_or_default();
                     }
                 }
                 None => {
@@ -338,12 +338,17 @@ impl ServiceHelperDialog {
 
     fn propagate_url(&mut self) {
         let mut changed = false;
-        if let Some(descriptor) = &mut self.descriptor
-            && descriptor.metadata.url != self.url
-        {
-            descriptor.metadata.url = self.url.clone();
-            self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
-            changed = true;
+        if let Some(descriptor) = &mut self.descriptor {
+            let new_url = if self.url.trim().is_empty() {
+                None
+            } else {
+                Some(self.url.clone())
+            };
+            if descriptor.metadata.url != new_url {
+                descriptor.metadata.url = new_url;
+                self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                changed = true;
+            }
         }
         if changed {
             self.raw_json.clear();
@@ -361,7 +366,7 @@ impl ServiceHelperDialog {
         }
         match serde_json::from_str::<ServiceDescriptor>(&self.descriptor_json) {
             Ok(descriptor) => {
-                self.url = descriptor.metadata.url.clone();
+                self.url = descriptor.metadata.url.clone().unwrap_or_default();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
                 self.descriptor = Some(descriptor);
                 self.raw_json.clear();
@@ -379,7 +384,7 @@ impl ServiceHelperDialog {
         self.descriptor = roadwork_service::get_descriptor(&self.service);
         self.descriptor_json = match &self.descriptor {
             Some(descriptor) => {
-                self.url = descriptor.metadata.url.clone();
+                self.url = descriptor.metadata.url.clone().unwrap_or_default();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
                 serde_json::to_string_pretty(descriptor).unwrap_or_default()
             }

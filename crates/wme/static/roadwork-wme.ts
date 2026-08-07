@@ -1435,6 +1435,16 @@ function getOpendataServices(): Record<string, any> {
     return {};
 }
 
+function getOpendataDescriptorUrl(svc: any): string | undefined {
+    if (!svc || typeof svc.descriptor !== "string") return undefined;
+    try {
+        const url = JSON.parse(svc.descriptor)?.metadata?.url;
+        return typeof url === "string" && url.trim() ? url : undefined;
+    } catch (_) {
+        return undefined;
+    }
+}
+
 function getOpendataCacheKey(name: string) {
     return OPENDATA_CACHE_KEY_PREFIX + name;
 }
@@ -1490,7 +1500,9 @@ async function fetchOpendataData(name: string, forceRefresh = false) {
 async function refreshOpendata() {
     setStatus("Loading opendata...");
     const services = getOpendataServices();
-    const enabled = Object.entries(services).filter(([, svc]) => svc.enabled);
+    const enabled = Object.entries(services).filter(
+        ([, svc]) => svc.enabled && getOpendataDescriptorUrl(svc),
+    );
     let count = 0;
     for (const [name] of enabled) {
         try {
@@ -1647,6 +1659,14 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
 }
 
 async function refreshOpendataService(name: string) {
+    const svc = getOpendataServices()[name];
+    if (!getOpendataDescriptorUrl(svc)) {
+        setStatus(
+            `Cannot refresh ${name}: the descriptor has no URL. Edit the source and drop a data file to import its data.`,
+            "error",
+        );
+        return;
+    }
     setStatus(`Loading opendata ${name}...`);
     try {
         const data = await fetchOpendataData(name, true);
@@ -1696,8 +1716,13 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
         await syncOpendataDescriptorsToWasm();
         if (data) {
             await parseOpendataAndCache(name, data);
-        } else {
+        } else if (getOpendataDescriptorUrl(services[name])) {
             await fetchOpendataData(name, true);
+        } else {
+            setStatus(
+                `Opendata service "${name}" has no URL - drop a data file when editing it to import its data`,
+                "info",
+            );
         }
         renderOpendataToMap();
     } catch (e) {
@@ -1744,7 +1769,11 @@ function renderOpendataList() {
         const loadBtn = document.createElement("button");
         loadBtn.className = "roadwork-btn roadwork-btn-icon";
         loadBtn.textContent = "\u21bb";
-        loadBtn.title = "Reload data";
+        const svcUrl = getOpendataDescriptorUrl(svc);
+        loadBtn.disabled = !svcUrl;
+        loadBtn.title = svcUrl
+            ? "Reload data"
+            : "No URL in descriptor - data must be imported by dropping a file when editing";
         loadBtn.addEventListener("click", () => refreshOpendataService(name));
         row.appendChild(loadBtn);
 
@@ -2619,11 +2648,21 @@ async function buildPanel(tabPane: Element) {
         saveSettings();
         setStatus(`Opendata service "${name}" imported`, "success");
         syncOpendataDescriptorsToWasm().catch(() => {});
-        fetchOpendataData(name, true)
-            .then(() => renderOpendataToMap())
-            .catch((e) => {
-                setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
-            });
+        const hasUrl =
+            typeof descriptor?.metadata?.url === "string" &&
+            descriptor.metadata.url.trim() !== "";
+        if (hasUrl) {
+            fetchOpendataData(name, true)
+                .then(() => renderOpendataToMap())
+                .catch((e) => {
+                    setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
+                });
+        } else {
+            setStatus(
+                `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
+                "info",
+            );
+        }
         renderOpendataList();
     }
 

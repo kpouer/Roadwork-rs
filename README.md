@@ -95,7 +95,7 @@ A descriptor contains a first object called **metadata** that contains all infor
 | licenceName | no        | Creative Commons | The name of the licence                       |
 | licenceUrl  | no        | https://xxxx     | The url of the licence                        |
 | sourceUrl   | no        | https://xxxx     | The homepage of the service                   |
-| url         | yes       | https://xxxx     | The url that will be called to retrieve data  |
+| url         | no        | https://xxxx     | The url that will be called to retrieve data. Mandatory for roadwork services. If absent, data must be imported by dropping a file |
 | locale      | yes       | fr_FR            | The locale that can be used to parse the date |
 | color       | no        | #0d9488          | Color used to display this source in WME      |
 | urlParams   | no        | {"app_token":"…"}| Query parameters appended to the service url  |

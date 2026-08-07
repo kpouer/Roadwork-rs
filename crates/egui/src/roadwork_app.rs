@@ -399,6 +399,24 @@ impl RoadworkApp {
 
 impl App for RoadworkApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        let dropped_files: Vec<egui::DroppedFile> = ui.ctx().input(|i| i.raw.dropped_files.clone());
+        for file in dropped_files {
+            if self.show_opendata_service_helper_dialog {
+                match self.opendata_service_helper.handle_dropped_file(file) {
+                    Ok(name) => {
+                        self.toasts.success(format!("Data imported from {name}"));
+                    }
+                    Err(e) => {
+                        self.toasts.error(format!("Import failed: {e}"));
+                    }
+                }
+            } else {
+                self.toasts.info(
+                    "Drop a data file to import it, after opening the opendata service helper",
+                );
+            }
+        }
+
         self.show_top_panel(ui);
         self.show_left_panel(ui);
 
