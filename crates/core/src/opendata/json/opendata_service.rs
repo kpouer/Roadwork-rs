@@ -17,6 +17,15 @@ pub struct OpendataService {
     pub service_descriptor: OpendataServiceDescriptor,
 }
 
+impl From<&OpendataServiceDescriptor> for OpendataService {
+    fn from(service_descriptor: &OpendataServiceDescriptor) -> Self {
+        Self {
+            service_name: service_descriptor.metadata.name.clone(),
+            service_descriptor: service_descriptor.clone(),
+        }
+    }
+}
+
 impl OpendataService {
     pub async fn get_data(&self) -> Result<OpendataData, MyError> {
         if self.service_descriptor.metadata.pagination.is_some() {

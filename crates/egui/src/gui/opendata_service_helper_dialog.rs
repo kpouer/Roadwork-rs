@@ -255,10 +255,7 @@ impl OpendataServiceHelperDialog {
             ui.label("No descriptor available.");
             return;
         };
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let Ok(array) = ods.extract_roadwork_array(&self.raw_json) else {
             ui.label("Unable to parse the fetched JSON as an array of opendata.");
             return;
@@ -606,10 +603,7 @@ impl OpendataServiceHelperDialog {
         let Some(descriptor) = &self.descriptor else {
             return;
         };
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let fetch_state = Arc::clone(&self.fetch_state);
         crate::roadwork_app::spawn_task(async move {
             *fetch_state.lock().unwrap() = Some(FetchState::Connecting);
@@ -636,10 +630,7 @@ impl OpendataServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = OpendataService {
-                    service_name: "Opendata service helper".to_string(),
-                    service_descriptor: descriptor.clone(),
-                };
+                let ods = OpendataService::from(descriptor);
                 ods.roadwork_array_targets_array(&self.raw_json)
             }
             None => false,
@@ -655,10 +646,7 @@ impl OpendataServiceHelperDialog {
             self.error = Some("Fetch the JSON first".to_string());
             return;
         }
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let report = ods.validate(&self.raw_json);
         let valid = report
             .iter()
@@ -787,10 +775,7 @@ impl OpendataServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValues::default();
         }
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return FieldsValues::default();
         };
@@ -813,10 +798,7 @@ impl OpendataServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return PathCandidates::default();
         }
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return PathCandidates::default();
         };
@@ -833,10 +815,7 @@ impl OpendataServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValidation::valid();
         }
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
             return FieldsValidation::valid();
         };
@@ -879,10 +858,7 @@ impl OpendataServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = OpendataService {
-                    service_name: "Opendata service helper".to_string(),
-                    service_descriptor: descriptor.clone(),
-                };
+                let ods = OpendataService::from(descriptor);
                 self.element_count = ods.element_count(&self.raw_json);
                 if self.element_count == 0 {
                     self.current_index = 0;
@@ -908,10 +884,7 @@ impl OpendataServiceHelperDialog {
             self.result_json.clear();
             return;
         }
-        let ods = OpendataService {
-            service_name: "Opendata service helper".to_string(),
-            service_descriptor: descriptor.clone(),
-        };
+        let ods = OpendataService::from(descriptor);
         match ods.extract_roadwork_array(&self.raw_json) {
             Ok(array) => {
                 let element = array
