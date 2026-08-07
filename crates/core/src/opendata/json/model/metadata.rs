@@ -24,6 +24,8 @@ pub struct Metadata {
     pub locale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_params: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 impl Metadata {

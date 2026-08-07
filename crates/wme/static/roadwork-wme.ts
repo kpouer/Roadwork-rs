@@ -116,6 +116,9 @@ let detailPanelEl = null;
 let hideFinished = false;
 let sortColumn = -1;
 let sortDirection = 'asc';
+let dataPanelEl = null;
+let dataToggleBtn = null;
+let dataTableBody = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -799,15 +802,15 @@ function updateFloatingTable() {
     }
 }
 
-function buildMarkerIcon(status) {
-    const color = STATUS_COLORS[status] || "#9ca3af";
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
-            <path d="M2 28 L22 28 L21 30 L3 30 Z" fill="#333" />
-            <path d="M12 2 L3 28 L21 28 Z" fill="${color}" stroke="${color}" stroke-width="1" />
-            <path d="M9.3 10 L14.7 10 L16.3 15 L7.7 15 Z" fill="white" opacity="0.9" />
-            <path d="M7 19 L17 19 L18.7 24 L5.3 24 Z" fill="white" opacity="0.9" />
+function buildCircleIcon(color, size = 20) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+            <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1}" fill="${color}" stroke="#ffffff" stroke-width="2" />
         </svg>`;
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
+function buildMarkerIcon(status, size = 20) {
+    return buildCircleIcon(STATUS_COLORS[status] || "#9ca3af", size);
 }
 
 function formatTimestamp(millis) {
@@ -1198,13 +1201,7 @@ async function clearExtensionStorage() {
 }
 
 function buildWktMarkerIcon() {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
-            <path d="M2 28 L22 28 L21 30 L3 30 Z" fill="#333" />
-            <path d="M12 2 L3 28 L21 28 Z" fill="#8b5cf6" stroke="#8b5cf6" stroke-width="1" />
-            <path d="M9.3 10 L14.7 10 L16.3 15 L7.7 15 Z" fill="white" opacity="0.9" />
-            <path d="M7 19 L17 19 L18.7 24 L5.3 24 Z" fill="white" opacity="0.9" />
-        </svg>`;
-    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    return buildCircleIcon("#8b5cf6");
 }
 
 function buildStyleRulesForWktLayer() {
@@ -1233,10 +1230,10 @@ function buildStyleRulesForWktLayer() {
             predicate: (props) => props.geomType === "Point",
             style: {
                 icon: buildWktMarkerIcon(),
-                iconWidth: 24,
-                iconHeight: 32,
-                iconOffsetX: -12,
-                iconOffsetY: -32,
+                iconWidth: 20,
+                iconHeight: 20,
+                iconOffsetX: -10,
+                iconOffsetY: -10,
             },
         },
     ];
@@ -1266,11 +1263,11 @@ function buildStyleRulesForLayer(status: string) {
                     return props.roadworkId === selectedRoadworkId && props.geomType === "Point";
                 },
                 style: {
-                    icon: buildMarkerIcon(status),
-                    iconWidth: 30,
-                    iconHeight: 40,
-                    iconOffsetX: -15,
-                    iconOffsetY: -40,
+                    icon: buildMarkerIcon(status, 26),
+                    iconWidth: 26,
+                    iconHeight: 26,
+                    iconOffsetX: -13,
+                    iconOffsetY: -13,
                 },
             });
         }
@@ -1290,10 +1287,10 @@ function buildStyleRulesForLayer(status: string) {
         predicate: (props) => props.geomType === "Point",
         style: {
             icon: buildMarkerIcon(status),
-            iconWidth: 24,
-            iconHeight: 32,
-            iconOffsetX: -12,
-            iconOffsetY: -32,
+            iconWidth: 20,
+            iconHeight: 20,
+            iconOffsetX: -10,
+            iconOffsetY: -10,
         },
     });
 
@@ -1507,39 +1504,44 @@ function loadAllOpendataCaches() {
     }
 }
 
-function buildOpendataMarkerIcon() {
-    const color = "#0d9488";
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
-            <path d="M2 28 L22 28 L21 30 L3 30 Z" fill="#333" />
-            <path d="M12 2 L3 28 L21 28 Z" fill="${color}" stroke="${color}" stroke-width="1" />
-            <path d="M9.3 10 L14.7 10 L16.3 15 L7.7 15 Z" fill="white" opacity="0.9" />
-            <path d="M7 19 L17 19 L18.7 24 L5.3 24 Z" fill="white" opacity="0.9" />
-        </svg>`;
-    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+const DEFAULT_OPENDATA_COLOR = "#0d9488";
+
+function getOpendataServiceColor(name: unknown): string {
+    if (typeof name !== "string" || !name) return DEFAULT_OPENDATA_COLOR;
+    const svc = getOpendataServices()[name];
+    if (!svc?.descriptor) return DEFAULT_OPENDATA_COLOR;
+    try {
+        const parsed = JSON.parse(svc.descriptor);
+        const color = parsed?.metadata?.color;
+        if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+            return color;
+        }
+    } catch (_) {}
+    return DEFAULT_OPENDATA_COLOR;
 }
 
 function buildStyleRulesForOpendataLayer() {
-    const color = "#0d9488";
-    const strokeColor = "#0f766e";
     return [
         {
             predicate: (props) => props.geomType === "Polygon",
             style: {
-                fillColor: color,
+                fillColor: "${getFillColor}",
                 fillOpacity: 0.3,
-                strokeColor: strokeColor,
+                strokeColor: "${getStrokeColor}",
                 strokeOpacity: 0.8,
                 strokeWidth: 2,
+                title: "${opendataTitle}",
             },
         },
         {
             predicate: (props) => props.geomType === "Point",
             style: {
-                icon: buildOpendataMarkerIcon(),
-                iconWidth: 24,
-                iconHeight: 32,
-                iconOffsetX: -12,
-                iconOffsetY: -32,
+                icon: "${getIcon}",
+                iconWidth: 20,
+                iconHeight: 20,
+                iconOffsetX: -10,
+                iconOffsetY: -10,
+                title: "${opendataTitle}",
             },
         },
     ];
@@ -1550,10 +1552,11 @@ function renderOpendataToMap() {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: OPENDATA_LAYER});
     } catch (_) {}
     opendataFeatureIndex = {};
+    updateDataPanel();
     const features = [];
     const services = getOpendataServices();
     for (const [name, svc] of Object.entries(services)) {
-        if (!svc.enabled) continue;
+        if (svc.visible === false) continue;
         const data = currentOpendata[name];
         if (!data || !data.opendata) continue;
         for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
@@ -1621,17 +1624,27 @@ function renderOpendataToMap() {
     }
 }
 
-function setOpendataServiceEnabled(name: string, enabled: boolean) {
+function setOpendataServiceVisible(name: string, visible: boolean) {
     const services = getOpendataServices();
     if (!services[name]) return;
-    services[name].enabled = enabled;
+    services[name].visible = visible;
     settings.opendataServices = services;
     saveSettings();
-    if (enabled && !currentOpendata[name]) {
-        fetchOpendataData(name).then(() => renderOpendataToMap()).catch(() => {});
-    }
     renderOpendataToMap();
     renderOpendataList();
+}
+
+async function refreshOpendataService(name: string) {
+    setStatus(`Loading opendata ${name}...`);
+    try {
+        const data = await fetchOpendataData(name, true);
+        const count = Object.keys(data.opendata || {}).length;
+        setStatus(`${count} opendata item(s) loaded for ${name}`, "success");
+        renderOpendataToMap();
+        renderOpendataList();
+    } catch (e) {
+        setStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
+    }
 }
 
 function removeOpendataService(name: string) {
@@ -1654,7 +1667,7 @@ function saveOpendataDescriptorFromHelper(name, descriptor) {
         if (svcName) name = svcName;
     } catch (_) {}
     const services = getOpendataServices();
-    services[name] = { descriptor: descriptor, enabled: true };
+    services[name] = { descriptor: descriptor, enabled: true, visible: true };
     settings.opendataServices = services;
     saveSettings();
     setStatus(`Opendata service "${name}" saved`, "success");
@@ -1684,12 +1697,19 @@ function renderOpendataList() {
         const row = document.createElement("div");
         row.className = "roadwork-opendata-row";
 
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.checked = !!svc.enabled;
-        check.title = "Enable / disable";
-        check.addEventListener("change", () => setOpendataServiceEnabled(name, check.checked));
-        row.appendChild(check);
+        const displayCheck = document.createElement("input");
+        displayCheck.type = "checkbox";
+        displayCheck.checked = svc.visible !== false;
+        displayCheck.title = "Display on map";
+        displayCheck.addEventListener("change", () => setOpendataServiceVisible(name, displayCheck.checked));
+        row.appendChild(displayCheck);
+
+        const loadBtn = document.createElement("button");
+        loadBtn.className = "roadwork-btn roadwork-btn-icon";
+        loadBtn.textContent = "\u21bb";
+        loadBtn.title = "Reload data";
+        loadBtn.addEventListener("click", () => refreshOpendataService(name));
+        row.appendChild(loadBtn);
 
         const nameSpan = document.createElement("span");
         nameSpan.textContent = name;
@@ -1779,6 +1799,174 @@ function populateServiceSelect(selectEl, services) {
         }
         selectEl.appendChild(opt);
     }
+}
+
+function centerOnOpendataItem(od) {
+    if (!wmeSDK?.Map) return;
+    if (od.latitude && od.longitude) {
+        wmeSDK.Map.setMapCenter({lonLat: {lon: od.longitude, lat: od.latitude}});
+    } else if (od.polygons && od.polygons.length > 0) {
+        const polygon = od.polygons[0];
+        const mid = Math.floor(polygon.xpoints.length / 2);
+        if (polygon.xpoints[mid] !== undefined) {
+            wmeSDK.Map.setMapCenter({lonLat: {lon: polygon.xpoints[mid], lat: polygon.ypoints[mid]}});
+        }
+    }
+}
+
+function updateDataPanel() {
+    if (!dataTableBody) return;
+    try {
+        dataTableBody.replaceChildren();
+        let count = 0;
+        const services = getOpendataServices();
+        for (const [name, svc] of Object.entries(services)) {
+            const data = currentOpendata[name];
+            if (!data || !data.opendata) continue;
+            for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
+                count++;
+                const tr = document.createElement("tr");
+                tr.title = id;
+
+                const tdSource = document.createElement("td");
+                tdSource.textContent = name;
+
+                const tdId = document.createElement("td");
+                tdId.textContent = id;
+
+                const tdDesc = document.createElement("td");
+                tdDesc.className = "rw-desc";
+                tdDesc.textContent = od.description || "";
+
+                const tdPos = document.createElement("td");
+                tdPos.style.fontFamily = "monospace";
+                tdPos.style.fontSize = "11px";
+                if (od.latitude && od.longitude) {
+                    tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
+                } else if (od.polygons && od.polygons.length > 0) {
+                    tdPos.textContent = "polygon";
+                } else {
+                    tdPos.textContent = "-";
+                }
+
+                tr.appendChild(tdSource);
+                tr.appendChild(tdId);
+                tr.appendChild(tdDesc);
+                tr.appendChild(tdPos);
+
+                tr.addEventListener("click", () => centerOnOpendataItem(od));
+
+                dataTableBody.appendChild(tr);
+            }
+        }
+        if (count === 0) {
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 4;
+            td.style.textAlign = "center";
+            td.style.color = "#999";
+            td.style.padding = "16px";
+            td.textContent = "Aucune donn\u00e9e opendata charg\u00e9e";
+            tr.appendChild(td);
+            dataTableBody.appendChild(tr);
+        }
+        const titleEl = document.getElementById("rw-data-title");
+        if (titleEl) titleEl.textContent = `Data (${count})`;
+        if (dataToggleBtn) dataToggleBtn.textContent = `Data (${count})`;
+    } catch (e) {
+        console.warn("[Roadwork] Failed to render data panel:", e);
+    }
+}
+
+function createDataPanel() {
+    dataToggleBtn = document.createElement("button");
+    dataToggleBtn.className = "rw-data-toggle-btn";
+    dataToggleBtn.textContent = "Data";
+    dataToggleBtn.addEventListener("click", () => {
+        console.info("[Roadwork] Opening data panel", { dataPanelEl: !!dataPanelEl });
+        if (!dataPanelEl) return;
+        dataPanelEl.classList.remove("rw-hidden");
+        dataToggleBtn.style.display = "none";
+        updateDataPanel();
+    });
+    if (toolbarEl) toolbarEl.appendChild(dataToggleBtn);
+
+    dataPanelEl = document.createElement("div");
+    dataPanelEl.className = "rw-data-panel rw-hidden";
+
+    const header = document.createElement("div");
+    header.className = "rw-data-header";
+
+    const title = document.createElement("h4");
+    title.id = "rw-data-title";
+    title.textContent = "Data";
+
+    const headerBtns = document.createElement("div");
+    headerBtns.style.cssText = "display:flex;gap:4px;";
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.textContent = "\u21bb";
+    refreshBtn.title = "Refresh";
+    refreshBtn.addEventListener("click", () => refreshOpendata());
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = "Fermer";
+    closeBtn.addEventListener("click", () => {
+        dataPanelEl.classList.add("rw-hidden");
+        dataToggleBtn.style.display = "block";
+    });
+
+    headerBtns.appendChild(refreshBtn);
+    headerBtns.appendChild(closeBtn);
+    header.appendChild(title);
+    header.appendChild(headerBtns);
+
+    const tableWrap = document.createElement("div");
+    tableWrap.className = "rw-data-table-wrap";
+
+    const table = document.createElement("table");
+    table.className = "roadwork-table";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    for (const col of ["Source", "ID", "Description", "Position"]) {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    dataTableBody = document.createElement("tbody");
+    table.appendChild(dataTableBody);
+    tableWrap.appendChild(table);
+
+    dataPanelEl.appendChild(header);
+    dataPanelEl.appendChild(tableWrap);
+    document.body.appendChild(dataPanelEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    header.addEventListener("mousedown", (e) => {
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
+        isDragging = true;
+        const rect = dataPanelEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        dataPanelEl.style.left = e.clientX - dragOffsetX + "px";
+        dataPanelEl.style.top = e.clientY - dragOffsetY + "px";
+        dataPanelEl.style.right = "auto";
+        dataPanelEl.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+
+    updateDataPanel();
 }
 
 let toolbarEl = null;
@@ -2377,7 +2565,7 @@ async function buildPanel(tabPane: Element) {
             return;
         }
         const services = getOpendataServices();
-        services[name] = { descriptor: JSON.stringify(descriptor, null, 2), enabled: true };
+        services[name] = { descriptor: JSON.stringify(descriptor, null, 2), enabled: true, visible: true };
         settings.opendataServices = services;
         saveSettings();
         setStatus(`Opendata service "${name}" imported`, "success");
@@ -2590,6 +2778,15 @@ async function init() {
         wmeSDK.Map.addLayer({
             layerName: OPENDATA_LAYER,
             styleRules: buildStyleRulesForOpendataLayer(),
+            styleContext: {
+                opendataTitle: ({ feature }) => {
+                    const props = feature?.properties || {};
+                    return `${props.serviceName} — ${props.opendataId}`;
+                },
+                getFillColor: ({ feature }) => getOpendataServiceColor(feature?.properties?.serviceName),
+                getStrokeColor: ({ feature }) => getOpendataServiceColor(feature?.properties?.serviceName),
+                getIcon: ({ feature }) => buildCircleIcon(getOpendataServiceColor(feature?.properties?.serviceName)),
+            },
         });
     } catch (e) {
         console.warn("[Roadwork] Failed to add Opendata layer:", e);
@@ -2631,6 +2828,7 @@ async function init() {
 
     createPolygonesUI();
     setupPolygonesDragDrop();
+    createDataPanel();
     if (hasRestored) {
         updatePolygonesPanel();
     }
