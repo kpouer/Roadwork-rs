@@ -58,14 +58,20 @@ impl OpendataServiceHelperDialog {
         dialog
     }
 
-    pub(crate) fn show(&mut self, ctx: &Context, open: &mut bool, toasts: &mut Toasts) {
+    pub(crate) fn show(
+        &mut self,
+        ui: &mut Ui,
+        open: &mut bool,
+        toasts: &mut Toasts,
+        standalone: bool,
+    ) {
         let is_open = *open;
         if is_open && !self.was_open {
             if self.is_new {
                 self.reset();
             }
             if !self.url.is_empty() {
-                self.fetch(ctx.clone());
+                self.fetch(ui.ctx().clone());
             }
         }
         self.was_open = is_open;
@@ -93,20 +99,24 @@ impl OpendataServiceHelperDialog {
         }
         self.recompute_if_dirty();
 
-        let screen = ctx.content_rect().size();
-        let default_size = egui::vec2(
-            (screen.x * 0.75).clamp(360.0, 900.0),
-            (screen.y * 0.8).clamp(320.0, 650.0),
-        );
-        let max = egui::vec2(screen.x * 0.96, screen.y * 0.96);
-        egui::Window::new("Opendata service helper")
-            .open(open)
-            .resizable(true)
-            .default_size(default_size)
-            .max_size(max)
-            .show(ctx, |ui| {
-                self.show_content(ui, toasts);
-            });
+        if standalone {
+            self.show_content(ui, toasts);
+        } else {
+            let screen = ui.ctx().content_rect().size();
+            let default_size = egui::vec2(
+                (screen.x * 0.75).clamp(360.0, 900.0),
+                (screen.y * 0.8).clamp(320.0, 650.0),
+            );
+            let max = egui::vec2(screen.x * 0.96, screen.y * 0.96);
+            egui::Window::new("Opendata service helper")
+                .open(open)
+                .resizable(true)
+                .default_size(default_size)
+                .max_size(max)
+                .show(ui.ctx(), |ui| {
+                    self.show_content(ui, toasts);
+                });
+        }
     }
 
     fn show_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {

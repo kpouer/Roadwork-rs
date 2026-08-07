@@ -67,6 +67,7 @@ pub struct RoadworkApp {
     service_helper: ServiceHelperDialog,
     show_opendata_service_helper_dialog: bool,
     opendata_service_helper: OpendataServiceHelperDialog,
+    helper_only: bool,
 }
 
 impl RoadworkApp {
@@ -100,6 +101,7 @@ impl RoadworkApp {
             original_name,
             creating,
         );
+        let helper_only = params.open_service_helper || params.open_opendata_service_helper;
 
         let app = Self {
             ctx: egui_ctx.clone(),
@@ -121,9 +123,12 @@ impl RoadworkApp {
             service_helper,
             show_opendata_service_helper_dialog: params.open_opendata_service_helper,
             opendata_service_helper,
+            helper_only,
         };
 
-        app.load_data();
+        if !helper_only {
+            app.load_data();
+        }
         app
     }
 
@@ -355,15 +360,17 @@ impl RoadworkApp {
             SettingsDialog::new(&mut self.show_settings_dialog, &mut self.settings).show(ui.ctx());
         }
         self.service_helper.show(
-            ui.ctx(),
+            ui,
             &mut self.show_service_helper_dialog,
             &self.selected_service,
             &mut self.toasts,
+            false,
         );
         self.opendata_service_helper.show(
-            ui.ctx(),
+            ui,
             &mut self.show_opendata_service_helper_dialog,
             &mut self.toasts,
+            false,
         );
     }
 
@@ -417,48 +424,69 @@ impl App for RoadworkApp {
             }
         }
 
-        self.show_top_panel(ui);
-        self.show_left_panel(ui);
+        if self.helper_only {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                if self.show_service_helper_dialog {
+                    self.service_helper.show(
+                        ui,
+                        &mut self.show_service_helper_dialog,
+                        &self.selected_service,
+                        &mut self.toasts,
+                        true,
+                    );
+                } else if self.show_opendata_service_helper_dialog {
+                    self.opendata_service_helper.show(
+                        ui,
+                        &mut self.show_opendata_service_helper_dialog,
+                        &mut self.toasts,
+                        true,
+                    );
+                }
+            });
+        } else {
+            self.show_top_panel(ui);
+            self.show_left_panel(ui);
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            let map = Map::new(
-                Some(&mut self.tiles),
-                &mut self.map_memory,
-                latlng_to_position(self.position),
-            )
-            .zoom_gesture(true)
-            .double_click_to_zoom(true)
-            .zoom_with_ctrl(false);
-            let response = ui.add(map);
-
-            if let Some(center) = self.map_memory.detached() {
-                self.position = position_to_latlng(center);
-            }
-
-            if let Some(roadwork_data) = self.roadwork_data.lock().unwrap().as_ref() {
-                let projector = Projector::new(
-                    response.rect,
-                    &self.map_memory,
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                let map = Map::new(
+                    Some(&mut self.tiles),
+                    &mut self.map_memory,
                     latlng_to_position(self.position),
-                );
-                if response.clicked() {
-                    self.selected_roadwork = None;
-                }
-                for (id, marker) in roadwork_data.roadworks.iter() {
-                    if self.hide_expired && marker.is_expired() {
-                        continue;
-                    }
-                    if ui
-                        .add(RoadworkMarker::new(marker, &projector, response.clicked()))
-                        .changed()
-                    {
-                        self.selected_roadwork = Some(id.to_owned());
-                    }
-                }
-            }
+                )
+                .zoom_gesture(true)
+                .double_click_to_zoom(true)
+                .zoom_with_ctrl(false);
+                let response = ui.add(map);
 
-            self.draw_zoom_level(ui, response);
-        });
+                if let Some(center) = self.map_memory.detached() {
+                    self.position = position_to_latlng(center);
+                }
+
+                if let Some(roadwork_data) = self.roadwork_data.lock().unwrap().as_ref() {
+                    let projector = Projector::new(
+                        response.rect,
+                        &self.map_memory,
+                        latlng_to_position(self.position),
+                    );
+                    if response.clicked() {
+                        self.selected_roadwork = None;
+                    }
+                    for (id, marker) in roadwork_data.roadworks.iter() {
+                        if self.hide_expired && marker.is_expired() {
+                            continue;
+                        }
+                        if ui
+                            .add(RoadworkMarker::new(marker, &projector, response.clicked()))
+                            .changed()
+                        {
+                            self.selected_roadwork = Some(id.to_owned());
+                        }
+                    }
+                }
+
+                self.draw_zoom_level(ui, response);
+            });
+        }
         self.toasts.show(ui.ctx());
     }
 
