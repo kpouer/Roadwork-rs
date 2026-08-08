@@ -756,23 +756,6 @@
     border-top-color: #8b5cf6;
 }
 
-.roadwork-opendata-dropzone {
-    margin-top: 6px;
-    padding: 10px;
-    text-align: center;
-    font-size: 12px;
-    color: #999;
-    border: 1px dashed #ccc;
-    border-radius: 4px;
-    background: #fafafa;
-}
-
-.roadwork-opendata-dropzone-active {
-    background: #f0f5ff;
-    border-color: #4a90d9;
-    color: #4a90d9;
-}
-
 .roadwork-opendata-list {
     margin-top: 8px;
 }

@@ -120,6 +120,7 @@ let sortDirection = 'asc';
 let dataPanelEl = null;
 let dataToggleBtn = null;
 let dataTableBody = null;
+let dataSourceSelectEl = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -1804,6 +1805,48 @@ async function parseOpendataAndCache(name: string, json: string) {
     return data;
 }
 
+function handleOpendataJson(text: string) {
+    let descriptor;
+    try {
+        descriptor = JSON.parse(text);
+    } catch (e) {
+        setStatus("Invalid JSON: " + e.message, "error");
+        return;
+    }
+    const name = descriptor?.metadata?.name;
+    if (!name) {
+        setStatus('Invalid descriptor: missing "metadata.name"', "error");
+        return;
+    }
+    const services = getOpendataServices();
+    const existing = services[name] || {};
+    services[name] = {
+        descriptor: JSON.stringify(descriptor, null, 2),
+        enabled: existing.enabled ?? true,
+        visible: existing.visible ?? true,
+    };
+    settings.opendataServices = services;
+    saveSettings();
+    setStatus(`Opendata service "${name}" imported`, "success");
+    syncOpendataDescriptorsToWasm().catch(() => {});
+    const hasUrl =
+        typeof descriptor?.metadata?.url === "string" &&
+        descriptor.metadata.url.trim() !== "";
+    if (hasUrl) {
+        fetchOpendataData(name, true)
+            .then(() => renderOpendataToMap())
+            .catch((e) => {
+                setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
+            });
+    } else {
+        setStatus(
+            `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
+            "info",
+        );
+    }
+    renderOpendataList();
+}
+
 function renderOpendataList() {
     if (!opendataListEl) return;
     opendataListEl.replaceChildren();
@@ -1955,7 +1998,25 @@ function updateDataPanel() {
         dataTableBody.replaceChildren();
         let count = 0;
         const services = getOpendataServices();
-        for (const [name, svc] of Object.entries(services)) {
+        const names = Object.keys(services).sort();
+        if (dataSourceSelectEl) {
+            const current = dataSourceSelectEl.value;
+            dataSourceSelectEl.replaceChildren();
+            const allOpt = document.createElement("option");
+            allOpt.value = "";
+            allOpt.textContent = "Toutes les sources";
+            dataSourceSelectEl.appendChild(allOpt);
+            for (const name of names) {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                dataSourceSelectEl.appendChild(opt);
+            }
+            dataSourceSelectEl.value = current;
+        }
+        const filter = dataSourceSelectEl ? dataSourceSelectEl.value : "";
+        for (const name of names) {
+            if (filter && name !== filter) continue;
             const data = currentOpendata[name];
             if (!data || !data.opendata) continue;
             for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
@@ -2076,6 +2137,47 @@ function createDataPanel() {
     tableWrap.appendChild(table);
 
     dataPanelEl.appendChild(header);
+
+    const controls = document.createElement("div");
+    controls.className = "rw-floating-controls";
+
+    dataSourceSelectEl = document.createElement("select");
+    dataSourceSelectEl.id = "rw-data-source-select";
+    dataSourceSelectEl.title = "Choisir la source de données à afficher";
+    dataSourceSelectEl.addEventListener("change", () => updateDataPanel());
+    controls.appendChild(dataSourceSelectEl);
+
+    const importBtn = document.createElement("button");
+    importBtn.textContent = "Import";
+    importBtn.title = "Importer un descripteur de service opendata (JSON)";
+    importBtn.addEventListener("click", () => importInputEl.click());
+    controls.appendChild(importBtn);
+
+    const createBtn = document.createElement("button");
+    createBtn.textContent = "Create";
+    createBtn.title = "Ouvrir l'assistant de création de service opendata";
+    createBtn.addEventListener("click", openOpendataHelper);
+    controls.appendChild(createBtn);
+
+    dataPanelEl.appendChild(controls);
+
+    const importInputEl = document.createElement("input");
+    importInputEl.type = "file";
+    importInputEl.id = "rw-opendata-import-input";
+    importInputEl.accept = ".json,application/json";
+    importInputEl.style.display = "none";
+    importInputEl.addEventListener("change", () => {
+        const file = importInputEl.files && importInputEl.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            handleOpendataJson(String(reader.result || ""));
+            importInputEl.value = "";
+        };
+        reader.readAsText(file);
+    });
+    dataPanelEl.appendChild(importInputEl);
+
     dataPanelEl.appendChild(tableWrap);
     document.body.appendChild(dataPanelEl);
 
@@ -2370,65 +2472,6 @@ async function buildPanel(tabPane: Element) {
     versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
     panelEl.appendChild(versionLine);
 
-    const opendataSection = document.createElement("div");
-    opendataSection.className = "roadwork-section";
-
-    const opendataHeading = document.createElement("h3");
-    opendataHeading.textContent = "Misc data";
-    opendataSection.appendChild(opendataHeading);
-
-    const opendataBtns = document.createElement("div");
-    opendataBtns.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;";
-
-    const importBtn = document.createElement("button");
-    importBtn.className = "roadwork-btn roadwork-btn-secondary";
-    importBtn.id = "rw-opendata-import-btn";
-    importBtn.textContent = "Import";
-    importBtn.title = "Import an opendata service descriptor (JSON)";
-    opendataBtns.appendChild(importBtn);
-
-    const createBtn = document.createElement("button");
-    createBtn.className = "roadwork-btn roadwork-btn-secondary";
-    createBtn.id = "rw-opendata-create-btn";
-    createBtn.textContent = "Create";
-    createBtn.title = "Open the opendata service helper";
-    opendataBtns.appendChild(createBtn);
-
-    const listBtn = document.createElement("button");
-    listBtn.className = "roadwork-btn roadwork-btn-secondary";
-    listBtn.id = "rw-opendata-list-btn";
-    listBtn.textContent = "List";
-    listBtn.title = "Show the list of opendata services";
-    opendataBtns.appendChild(listBtn);
-
-    const opendataRefreshBtn = document.createElement("button");
-    opendataRefreshBtn.className = "roadwork-btn roadwork-btn-secondary";
-    opendataRefreshBtn.id = "rw-opendata-refresh-btn";
-    opendataRefreshBtn.textContent = "Refresh";
-    opendataRefreshBtn.title = "Refresh all enabled opendata services";
-    opendataBtns.appendChild(opendataRefreshBtn);
-
-    opendataSection.appendChild(opendataBtns);
-
-    const importInput = document.createElement("input");
-    importInput.type = "file";
-    importInput.id = "rw-opendata-import-input";
-    importInput.accept = ".json,application/json";
-    importInput.style.display = "none";
-    opendataSection.appendChild(importInput);
-
-    const dropZone = document.createElement("div");
-    dropZone.className = "roadwork-opendata-dropzone";
-    dropZone.id = "rw-opendata-dropzone";
-    dropZone.textContent = "Drop a JSON descriptor here to import";
-    opendataSection.appendChild(dropZone);
-
-    opendataListEl = document.createElement("div");
-    opendataListEl.id = "rw-opendata-list";
-    opendataListEl.className = "roadwork-opendata-list";
-    opendataSection.appendChild(opendataListEl);
-    panelEl.appendChild(opendataSection);
-
     const logLevelDiv = document.createElement("div");
     logLevelDiv.className = "roadwork-field";
 
@@ -2455,102 +2498,6 @@ async function buildPanel(tabPane: Element) {
     panelEl.appendChild(logLevelDiv);
 
     tabPane.appendChild(panelEl);
-
-    const opendataImportBtn = panelEl.querySelector("#rw-opendata-import-btn");
-    const opendataCreateBtn = panelEl.querySelector("#rw-opendata-create-btn");
-    const opendataListBtn = panelEl.querySelector("#rw-opendata-list-btn");
-    const opendataRefreshBtnEl = panelEl.querySelector("#rw-opendata-refresh-btn");
-    const importInputEl = panelEl.querySelector("#rw-opendata-import-input");
-    const dropZoneEl = panelEl.querySelector("#rw-opendata-dropzone");
-
-    function handleOpendataJson(text: string) {
-        let descriptor;
-        try {
-            descriptor = JSON.parse(text);
-        } catch (e) {
-            setStatus("Invalid JSON: " + e.message, "error");
-            return;
-        }
-        const name = descriptor?.metadata?.name;
-        if (!name) {
-            setStatus('Invalid descriptor: missing "metadata.name"', "error");
-            return;
-        }
-        const services = getOpendataServices();
-        const existing = services[name] || {};
-        services[name] = {
-            descriptor: JSON.stringify(descriptor, null, 2),
-            enabled: existing.enabled ?? true,
-            visible: existing.visible ?? true,
-        };
-        settings.opendataServices = services;
-        saveSettings();
-        setStatus(`Opendata service "${name}" imported`, "success");
-        syncOpendataDescriptorsToWasm().catch(() => {});
-        const hasUrl =
-            typeof descriptor?.metadata?.url === "string" &&
-            descriptor.metadata.url.trim() !== "";
-        if (hasUrl) {
-            fetchOpendataData(name, true)
-                .then(() => renderOpendataToMap())
-                .catch((e) => {
-                    setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
-                });
-        } else {
-            setStatus(
-                `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
-                "info",
-            );
-        }
-        renderOpendataList();
-    }
-
-    opendataImportBtn.addEventListener("click", () => {
-        importInputEl.click();
-    });
-
-    importInputEl.addEventListener("change", () => {
-        const file = importInputEl.files && importInputEl.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            handleOpendataJson(String(reader.result || ""));
-            importInputEl.value = "";
-        };
-        reader.readAsText(file);
-    });
-
-    ["dragenter", "dragover"].forEach((evtName) => {
-        dropZoneEl.addEventListener(evtName, (e) => {
-            e.preventDefault();
-            dropZoneEl.classList.add("roadwork-opendata-dropzone-active");
-        });
-    });
-    ["dragleave", "drop"].forEach((evtName) => {
-        dropZoneEl.addEventListener(evtName, (e) => {
-            e.preventDefault();
-            dropZoneEl.classList.remove("roadwork-opendata-dropzone-active");
-        });
-    });
-    dropZoneEl.addEventListener("drop", (e) => {
-        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            handleOpendataJson(String(reader.result || ""));
-        };
-        reader.readAsText(file);
-    });
-
-    opendataCreateBtn.addEventListener("click", openOpendataHelper);
-    opendataRefreshBtnEl.addEventListener("click", () => refreshOpendata());
-    opendataListBtn.addEventListener("click", () => {
-        const hidden = opendataListEl.style.display === "none";
-        opendataListEl.style.display = hidden ? "" : "none";
-        if (hidden) renderOpendataList();
-    });
-
-    renderOpendataList();
 }
 
 async function init() {
