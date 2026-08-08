@@ -106,6 +106,8 @@ let lastRefreshEl = null;
 let floatingPanelEl = null;
 let floatingTableBody = null;
 let floatingToggleBtn = null;
+let floatingTitleEl = null;
+let serviceSelectEl = null;
 let selectedRoadworkId = null;
 let polygonGroups: any = {};
 let nextGroupId = 0;
@@ -475,10 +477,6 @@ function setFloatingPanelVisible(visible: boolean) {
     }
 }
 
-function openDescriptorHelper() {
-    openHelper("roadwork");
-}
-
 function openOpendataHelper() {
     openHelper("opendata", true);
 }
@@ -525,7 +523,8 @@ function createFloatingPanel() {
     header.className = "roadwork-floating-header";
 
     const title = document.createElement("h4");
-    title.textContent = "Roadwork List";
+    floatingTitleEl = title;
+    title.textContent = "Roadworks";
 
     const filterLabel = document.createElement("label");
     filterLabel.className = "rw-filter-label";
@@ -545,29 +544,25 @@ function createFloatingPanel() {
     filterLabel.appendChild(filterCheck);
     filterLabel.appendChild(filterText);
 
-    const btnGroup = document.createElement("div");
-
     const refreshBtn = document.createElement("button");
-    refreshBtn.textContent = "\u21bb";
+    refreshBtn.textContent = "Refresh";
     refreshBtn.title = "Refresh";
     refreshBtn.addEventListener("click", () => refreshData());
 
     const resetBtn = document.createElement("button");
-    resetBtn.textContent = "\u232b";
+    resetBtn.textContent = "Reset";
     resetBtn.title = "Reset all data (clear localStorage)";
     resetBtn.addEventListener("click", () => clearExtensionStorage());
 
     const closeBtn = document.createElement("button");
+    closeBtn.className = "rw-floating-close";
     closeBtn.textContent = "\u00d7";
     closeBtn.title = "Hide";
     closeBtn.addEventListener("click", () => setFloatingPanelVisible(false));
 
-    btnGroup.appendChild(refreshBtn);
-    btnGroup.appendChild(resetBtn);
-    btnGroup.appendChild(closeBtn);
     header.appendChild(title);
     header.appendChild(filterLabel);
-    header.appendChild(btnGroup);
+    header.appendChild(closeBtn);
 
     const tableWrap = document.createElement("div");
     tableWrap.className = "roadwork-table-wrap";
@@ -611,7 +606,23 @@ function createFloatingPanel() {
     table.appendChild(floatingTableBody);
     tableWrap.appendChild(table);
 
+    const controls = document.createElement("div");
+    controls.className = "rw-floating-controls";
+    serviceSelectEl = document.createElement("select");
+    serviceSelectEl.id = "rw-service-select";
+    serviceSelectEl.title = "Choisir le service";
+    controls.appendChild(serviceSelectEl);
+    controls.appendChild(refreshBtn);
+    controls.appendChild(resetBtn);
+
+    const statusDiv = document.createElement("div");
+    statusDiv.id = "rw-status";
+    statusDiv.className = "roadwork-status rw-floating-status";
+    statusEl = statusDiv;
+
     floatingPanelEl.appendChild(header);
+    floatingPanelEl.appendChild(controls);
+    floatingPanelEl.appendChild(statusDiv);
     floatingPanelEl.appendChild(tableWrap);
 
     const resizeHandle = document.createElement("div");
@@ -619,6 +630,64 @@ function createFloatingPanel() {
     floatingPanelEl.appendChild(resizeHandle);
 
     document.body.appendChild(floatingPanelEl);
+
+    async function populateServices() {
+        const services = await fetchServices();
+        servicesData = services;
+        if (services.length > 0) {
+            populateServiceSelect(serviceSelectEl, services);
+        } else {
+            const opt = document.createElement("option");
+            opt.value = settings.service;
+            opt.textContent = settings.service;
+            serviceSelectEl.appendChild(opt);
+        }
+    }
+    populateServices();
+
+    serviceSelectEl.addEventListener("change", async () => {
+        const newService = serviceSelectEl.value;
+        if (newService === settings.service) return;
+
+        clearCache(settings.service);
+
+        settings.service = newService;
+        saveSettings();
+
+        currentRoadworks = {};
+        selectedRoadworkId = null;
+        hideDetailPanel();
+        clearMapFeatures();
+        updateFloatingTable();
+
+        setStatus("Loading...");
+        try {
+            const data = await fetchRoadworks(true);
+            currentRoadworks = data.roadworks || {};
+            applyStatusOverrides();
+            renderRoadworksToMap(currentRoadworks);
+            updateFloatingTable();
+            const count = Object.keys(currentRoadworks).length;
+            setStatus(`${count} roadwork(s) loaded`, "success");
+            const now = Date.now();
+            try {
+                localStorage.setItem(LAST_REFRESH_KEY, String(now));
+            } catch (_) {}
+            if (lastRefreshEl) {
+                lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
+            }
+        } catch (e) {
+            setStatus(e.message, "error");
+        }
+
+        const svcInfo = servicesData.find((s) => s.name === newService);
+        if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
+            wmeSDK.Map.setMapCenter({
+                lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
+                zoomLevel: 12,
+            });
+        }
+    });
 
     try {
         const savedSize = JSON.parse(localStorage.getItem(PANEL_SIZE_KEY));
@@ -630,7 +699,7 @@ function createFloatingPanel() {
 
     floatingToggleBtn = document.createElement("button");
     floatingToggleBtn.className = "rw-toggle-btn";
-    floatingToggleBtn.textContent = "Roadwork List";
+    floatingToggleBtn.textContent = "Roadworks";
     floatingToggleBtn.addEventListener("click", () => setFloatingPanelVisible(true));
     if (isFloatingPanelVisible()) {
         floatingToggleBtn.style.display = "none";
@@ -690,8 +759,14 @@ function createFloatingPanel() {
     });
 }
 
+function updateFloatingCount() {
+    if (!floatingTitleEl) return;
+    floatingTitleEl.textContent = `Roadworks (${Object.keys(currentRoadworks).length})`;
+}
+
 function updateFloatingTable() {
     if (!floatingTableBody) return;
+    updateFloatingCount();
     floatingTableBody.replaceChildren();
     let entries = Object.entries(currentRoadworks as Record<string, any>);
     if (entries.length === 0) {
@@ -2295,94 +2370,11 @@ async function buildPanel(tabPane: Element) {
     versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
     panelEl.appendChild(versionLine);
 
-    const roadworkSection = document.createElement("div");
-    roadworkSection.className = "roadwork-section";
-    const roadworkHeading = document.createElement("h3");
-    roadworkHeading.textContent = "Roadwork";
-    roadworkSection.appendChild(roadworkHeading);
-
-    const field1 = document.createElement("div");
-    field1.className = "roadwork-field";
-    const lbl1 = document.createElement("label");
-    lbl1.textContent = "Service";
-    const flexDiv = document.createElement("div");
-    flexDiv.style.cssText = "display:flex;gap:4px;";
-    const sel = document.createElement("select");
-    sel.id = "rw-service-select";
-    sel.style.flex = "1";
-    const srvRefreshBtn = document.createElement("button");
-    srvRefreshBtn.className = "roadwork-btn roadwork-btn-icon";
-    srvRefreshBtn.id = "rw-service-refresh-btn";
-    srvRefreshBtn.title = "Refresh services list";
-    srvRefreshBtn.textContent = "↻";
-    flexDiv.appendChild(sel);
-    flexDiv.appendChild(srvRefreshBtn);
-    field1.appendChild(lbl1);
-    field1.appendChild(flexDiv);
-    roadworkSection.appendChild(field1);
-
-    const customField = document.createElement("div");
-    customField.className = "roadwork-field";
-    const customLbl = document.createElement("label");
-    customLbl.textContent = "Custom sources (index.json URLs)";
-    customField.appendChild(customLbl);
-
-    const customRow = document.createElement("div");
-    customRow.style.cssText = "display:flex;gap:4px;";
-    const customInput = document.createElement("input");
-    customInput.type = "url";
-    customInput.placeholder = "https://example.com/index.json";
-    customInput.style.flex = "1";
-    const addBtn = document.createElement("button");
-    addBtn.className = "roadwork-btn roadwork-btn-secondary";
-    addBtn.textContent = "Add";
-    customRow.appendChild(customInput);
-    customRow.appendChild(addBtn);
-    customField.appendChild(customRow);
-
-    const customList = document.createElement("div");
-    customList.className = "roadwork-custom-sources";
-    customField.appendChild(customList);
-
-    roadworkSection.appendChild(customField);
-
-    const btnDiv = document.createElement("div");
-    const refBtn = document.createElement("button");
-    refBtn.className = "roadwork-btn roadwork-btn-secondary";
-    refBtn.id = "rw-refresh-btn";
-    refBtn.textContent = "Refresh now";
-    btnDiv.appendChild(refBtn);
-    const debugBtn = document.createElement("button");
-    debugBtn.className = "roadwork-btn roadwork-btn-secondary";
-    debugBtn.id = "rw-debug-btn";
-    debugBtn.textContent = "Debug";
-    debugBtn.title = "Open the descriptor helper for the current service";
-    btnDiv.appendChild(debugBtn);
-    roadworkSection.appendChild(btnDiv);
-
-    const refreshDiv = document.createElement("div");
-    refreshDiv.className = "roadwork-field";
-    const lbl2 = document.createElement("label");
-    lbl2.textContent = "Dernier rafraîchissement";
-    const lastRefreshSpan = document.createElement("span");
-    lastRefreshSpan.id = "rw-last-refresh";
-    lastRefreshSpan.style.color = "#666";
-    lastRefreshSpan.textContent = "—";
-    refreshDiv.appendChild(lbl2);
-    refreshDiv.appendChild(lastRefreshSpan);
-    roadworkSection.appendChild(refreshDiv);
-
-    const statDiv = document.createElement("div");
-    statDiv.id = "rw-status";
-    statDiv.className = "roadwork-status";
-    roadworkSection.appendChild(statDiv);
-    panelEl.appendChild(roadworkSection);
-
     const opendataSection = document.createElement("div");
     opendataSection.className = "roadwork-section";
 
     const opendataHeading = document.createElement("h3");
-    opendataHeading.textContent = "Opendata";
+    opendataHeading.textContent = "Misc data";
     opendataSection.appendChild(opendataHeading);
 
     const opendataBtns = document.createElement("div");
@@ -2463,151 +2455,6 @@ async function buildPanel(tabPane: Element) {
     panelEl.appendChild(logLevelDiv);
 
     tabPane.appendChild(panelEl);
-
-    statusEl = panelEl.querySelector("#rw-status");
-    lastRefreshEl = panelEl.querySelector("#rw-last-refresh");
-
-    const serviceSelect = panelEl.querySelector("#rw-service-select");
-    const refreshBtn = panelEl.querySelector("#rw-refresh-btn");
-    const serviceRefreshBtn = panelEl.querySelector("#rw-service-refresh-btn");
-
-    async function populateServices() {
-        const services = await fetchServices();
-        servicesData = services;
-        if (services.length > 0) {
-            populateServiceSelect(serviceSelect, services);
-        } else {
-            const opt = document.createElement("option");
-            opt.value = settings.service;
-            opt.textContent = settings.service;
-            serviceSelect.appendChild(opt);
-        }
-    }
-    await populateServices();
-
-    serviceSelect.addEventListener("change", async () => {
-        const newService = serviceSelect.value;
-        if (newService === settings.service) return;
-
-        clearCache(settings.service);
-
-        settings.service = newService;
-        saveSettings();
-
-        currentRoadworks = {};
-        selectedRoadworkId = null;
-        hideDetailPanel();
-        clearMapFeatures();
-        updateFloatingTable();
-
-        setStatus("Loading...");
-        try {
-            const data = await fetchRoadworks(true);
-            currentRoadworks = data.roadworks || {};
-            applyStatusOverrides();
-            renderRoadworksToMap(currentRoadworks);
-            updateFloatingTable();
-            const count = Object.keys(currentRoadworks).length;
-            setStatus(`${count} roadwork(s) loaded`, "success");
-            const now = Date.now();
-            try {
-                localStorage.setItem(LAST_REFRESH_KEY, String(now));
-            } catch (_) {}
-            if (lastRefreshEl) {
-                lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
-            }
-        } catch (e) {
-            setStatus(e.message, "error");
-        }
-
-        const svcInfo = servicesData.find((s) => s.name === newService);
-        if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
-            wmeSDK.Map.setMapCenter({
-                lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
-                zoomLevel: 12,
-            });
-        }
-    });
-
-    serviceRefreshBtn.addEventListener("click", async () => {
-        setStatus("Refreshing services...");
-        await syncCustomDescriptorsToWasm(true);
-        const services = await fetchServices(true);
-        servicesData = services;
-        if (services.length > 0) {
-            populateServiceSelect(serviceSelect, services);
-            setStatus("Services refreshed", "success");
-        } else {
-            setStatus("Failed to refresh services", "error");
-        }
-    });
-
-    refreshBtn.addEventListener("click", () => {
-        refreshData();
-    });
-
-    const debugBtnEl = panelEl.querySelector("#rw-debug-btn");
-    debugBtnEl.addEventListener("click", openDescriptorHelper);
-
-    function renderCustomSources() {
-        customList.replaceChildren();
-        const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
-        for (const url of sources) {
-            const row = document.createElement("div");
-            row.className = "roadwork-custom-source-row";
-            const span = document.createElement("span");
-            span.textContent = url;
-            span.style.flex = "1";
-            span.style.wordBreak = "break-all";
-            const del = document.createElement("button");
-            del.className = "roadwork-btn roadwork-btn-icon";
-            del.textContent = "\u00d7";
-            del.title = "Remove";
-            del.addEventListener("click", async () => {
-                settings.customSources = settings.customSources.filter((s) => s !== url);
-                saveSettings();
-                renderCustomSources();
-                setStatus("Reloading services...");
-                await syncCustomDescriptorsToWasm(true);
-                const services = await fetchServices(true);
-                servicesData = services;
-                if (services.length > 0) {
-                    populateServiceSelect(serviceSelect, services);
-                    setStatus("Services refreshed", "success");
-                } else {
-                    setStatus("Failed to load custom sources", "error");
-                }
-            });
-            row.appendChild(span);
-            row.appendChild(del);
-            customList.appendChild(row);
-        }
-    }
-
-    addBtn.addEventListener("click", async () => {
-        const url = customInput.value.trim();
-        if (!/^https?:\/\//i.test(url)) {
-            setStatus("URL must be absolute http(s)", "error");
-            return;
-        }
-        if (settings.customSources.includes(url)) return;
-        settings.customSources = [...settings.customSources, url];
-        saveSettings();
-        customInput.value = "";
-        renderCustomSources();
-        setStatus("Loading custom sources...");
-        await syncCustomDescriptorsToWasm(true);
-        const services = await fetchServices(true);
-        servicesData = services;
-        if (services.length > 0) {
-            populateServiceSelect(serviceSelect, services);
-            setStatus("Services refreshed", "success");
-        } else {
-            setStatus("Failed to load custom sources", "error");
-        }
-    });
-
-    renderCustomSources();
 
     const opendataImportBtn = panelEl.querySelector("#rw-opendata-import-btn");
     const opendataCreateBtn = panelEl.querySelector("#rw-opendata-create-btn");

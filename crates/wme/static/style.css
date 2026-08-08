@@ -75,19 +75,6 @@
     background: #f0f5ff;
 }
 
-.roadwork-custom-sources {
-    margin-top: 6px;
-}
-
-.roadwork-custom-source-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 0;
-    font-size: 12px;
-    color: #555;
-}
-
 .roadwork-status {
     margin-top: 10px;
     padding: 6px 8px;
@@ -149,18 +136,62 @@
     color: #333;
 }
 
-.roadwork-floating-header button {
+.rw-floating-close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 16px;
+    line-height: 1;
+    color: #666;
+    cursor: pointer;
+}
+
+.rw-floating-close:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.rw-floating-controls {
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    flex-shrink: 0;
+}
+
+.rw-floating-controls select {
+    flex: 1;
+    padding: 4px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.rw-floating-controls button {
     background: none;
     border: 1px solid #ccc;
     border-radius: 3px;
-    padding: 2px 8px;
+    padding: 4px 10px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     color: #555;
 }
 
-.roadwork-floating-header button:hover {
+.rw-floating-controls button:hover {
     background: #eee;
+}
+
+.rw-floating-status {
+    margin: 0;
+    padding: 4px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid #e0e0e0;
+    border-radius: 0;
+    flex-shrink: 0;
+    min-height: 18px;
+    box-sizing: border-box;
 }
 
 .roadwork-table-wrap {
