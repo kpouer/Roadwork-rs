@@ -15,10 +15,45 @@
 
     let helperOverlay: HTMLDivElement | null = null;
     let helperIframe: HTMLIFrameElement | null = null;
+    let pendingHelperData: string | null = null;
 
     function closeHelper() {
         if (helperIframe) helperIframe.src = 'about:blank';
         if (helperOverlay) helperOverlay.classList.add('rw-helper-hidden');
+        pendingHelperData = null;
+    }
+
+    function sendPendingHelperData() {
+        if (pendingHelperData === null || !helperIframe?.contentWindow) return;
+        let acked = false;
+        const listener = (ev: MessageEvent) => {
+            if (
+                ev.source === helperIframe.contentWindow &&
+                ev.data?.type === 'ROADWORK_HELPER_DATA_ACK'
+            ) {
+                acked = true;
+                window.removeEventListener('message', listener);
+                clearInterval(timer);
+                clearTimeout(timeout);
+            }
+        };
+        window.addEventListener('message', listener);
+        const timer = setInterval(() => {
+            if (acked || !helperIframe?.contentWindow) return;
+            helperIframe.contentWindow.postMessage(
+                { type: 'ROADWORK_HELPER_DATA', data: pendingHelperData },
+                '*'
+            );
+        }, 300);
+        const timeout = setTimeout(() => {
+            if (acked) return;
+            window.removeEventListener('message', listener);
+            clearInterval(timer);
+        }, 30000);
+        helperIframe.contentWindow.postMessage(
+            { type: 'ROADWORK_HELPER_DATA', data: pendingHelperData },
+            '*'
+        );
     }
 
     function createHelperOverlay() {
@@ -93,8 +128,12 @@
         if (e.data.descriptor) {
             params.set('descriptor', e.data.descriptor);
         }
+        pendingHelperData = typeof e.data.data === 'string' ? e.data.data : null;
         helperIframe.src = chrome.runtime.getURL('app/index.html') + '?' + params.toString();
         helperOverlay.classList.remove('rw-helper-hidden');
         window.postMessage({ type: 'ROADWORK_OPEN_HELPER_ACK', service: e.data?.service }, '*');
+        if (pendingHelperData !== null) {
+            sendPendingHelperData();
+        }
     });
 })();

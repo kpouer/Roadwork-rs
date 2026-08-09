@@ -38,6 +38,10 @@ pub(crate) struct ServiceHelperDialog {
     validation_report: Option<Vec<PathValidation>>,
 }
 
+/// Above this size, raw JSON editors are not shown at all to avoid
+/// laying out a huge document overflowing egui.
+const MAX_EDITABLE_JSON_BYTES: usize = 4 * 1024 * 1024;
+
 impl ServiceHelperDialog {
     pub(crate) fn new(service: &str) -> Self {
         let mut dialog = Self {
@@ -142,17 +146,8 @@ impl ServiceHelperDialog {
         });
         ui.separator();
         let available_height = ui.available_height();
-        let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
         let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut job = egui_extras::syntax_highlighting::highlight(
-                ui.ctx(),
-                ui.style(),
-                &theme,
-                text.as_str(),
-                "json",
-            );
-            job.wrap.max_width = wrap_width;
-            ui.fonts_mut(|f| f.layout_job(job))
+            super::layout_json_text(ui, text, wrap_width)
         };
         let screen = ui.ctx().content_rect().size();
         egui::Panel::left("helper_left")
@@ -224,14 +219,24 @@ impl ServiceHelperDialog {
                     .id_salt("result_json_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.result_json)
-                                .code_editor()
-                                .interactive(false)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(15)
-                                .layouter(&mut json_layouter),
-                        );
+                        if self.result_json.len() > MAX_EDITABLE_JSON_BYTES {
+                            ui.colored_label(
+                                ui.visuals().error_fg_color,
+                                format!(
+                                    "Document too large to edit ({}) — no preview available",
+                                    format_bytes(self.result_json.len())
+                                ),
+                            );
+                        } else {
+                            ui.add(
+                                egui::TextEdit::multiline(&mut self.result_json)
+                                    .code_editor()
+                                    .interactive(false)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(15)
+                                    .layouter(&mut json_layouter),
+                            );
+                        }
                     });
             });
         egui::CentralPanel::default().show_inside(ui, |ui| {
@@ -265,16 +270,28 @@ impl ServiceHelperDialog {
                 .id_salt("raw_json_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let response = ui.add(
-                        egui::TextEdit::multiline(&mut self.raw_json)
-                            .code_editor()
-                            .interactive(true)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(15)
-                            .layouter(&mut json_layouter),
-                    );
-                    if response.changed() {
-                        self.validation_report = None;
+                    let editable = self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES;
+                    if !editable {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            format!(
+                                "Document too large to edit ({}) — no preview available",
+                                format_bytes(self.raw_json.len())
+                            ),
+                        );
+                    }
+                    if editable {
+                        let response = ui.add(
+                            egui::TextEdit::multiline(&mut self.raw_json)
+                                .code_editor()
+                                .interactive(true)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(15)
+                                .layouter(&mut json_layouter),
+                        );
+                        if response.changed() {
+                            self.validation_report = None;
+                        }
                     }
                 });
         });
@@ -322,8 +339,7 @@ impl ServiceHelperDialog {
                             Some(params)
                         };
                         *dirty = true;
-                        *descriptor_json =
-                            serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                        *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                         *url = descriptor.metadata.url.clone().unwrap_or_default();
                     }
                 }
@@ -337,7 +353,7 @@ impl ServiceHelperDialog {
         {
             descriptor.metadata.center = center;
             *dirty = true;
-            *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+            *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
         }
     }
 
@@ -351,7 +367,7 @@ impl ServiceHelperDialog {
             };
             if descriptor.metadata.url != new_url {
                 descriptor.metadata.url = new_url;
-                self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                self.descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                 changed = true;
             }
         }
@@ -391,7 +407,7 @@ impl ServiceHelperDialog {
             Some(descriptor) => {
                 self.url = descriptor.metadata.url.clone().unwrap_or_default();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
-                serde_json::to_string_pretty(descriptor).unwrap_or_default()
+                super::pretty_json_tabs(descriptor).unwrap_or_default()
             }
             None => String::new(),
         };
@@ -416,9 +432,7 @@ impl ServiceHelperDialog {
                     .map_err(|e| e.to_string())
                     .map(|text| {
                         serde_json::from_str::<serde_json::Value>(&text)
-                            .map(|value| {
-                                serde_json::to_string_pretty(&value).unwrap_or(text.clone())
-                            })
+                            .map(|value| super::pretty_json_tabs(&value).unwrap_or(text.clone()))
                             .unwrap_or(text)
                     })
             }
@@ -694,6 +708,10 @@ impl ServiceHelperDialog {
             self.result_json.clear();
             return;
         }
+        if self.roadwork_count == 0 {
+            self.result_json.clear();
+            return;
+        }
         let ods = RoadworkService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
@@ -705,7 +723,7 @@ impl ServiceHelperDialog {
                     .and_then(|elements| elements.get(self.current_index))
                     .cloned()
                     .unwrap_or(array);
-                self.result_json = serde_json::to_string_pretty(&element).unwrap_or_default();
+                self.result_json = super::pretty_json_tabs(&element).unwrap_or_default();
             }
             Err(e) => self.result_json = format!("Parse error: {e}"),
         }
@@ -720,4 +738,15 @@ fn url_params_to_vec(params: &Option<HashMap<String, String>>) -> Vec<(String, S
         .collect();
     vec.sort_by(|a, b| a.0.cmp(&b.0));
     vec
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    if bytes < KB as usize {
+        format!("{bytes} B")
+    } else if (bytes as f64) < KB * KB {
+        format!("{:.1} KB", bytes as f64 / KB)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (KB * KB))
+    }
 }

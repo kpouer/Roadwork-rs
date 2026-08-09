@@ -923,3 +923,65 @@
     accent-color: #4a90d9;
 }
 
+.rw-data-dropzone {
+    padding: 8px;
+    text-align: center;
+    font-size: 11px;
+    color: #aaa;
+    border-top: 1px dashed #ddd;
+    transition: background 0.2s, color 0.2s;
+}
+
+.rw-data-dropzone-active {
+    background: #f0f5ff;
+    color: #0d9488;
+    border-top-color: #0d9488;
+}
+
+.rw-import-choice-body {
+    overflow-y: auto;
+    font-size: 12px;
+    color: #444;
+}
+
+.rw-import-choice-create {
+    width: 100%;
+    margin-bottom: 8px;
+    text-align: center;
+    background: #0d9488;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.rw-import-choice-create:hover {
+    background: #0f766e;
+}
+
+.rw-import-choice-label {
+    font-weight: 600;
+    margin: 4px 0;
+    color: #333;
+}
+
+.rw-import-choice-source {
+    width: 100%;
+    text-align: left;
+    margin: 2px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    color: #333;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.rw-import-choice-source:hover {
+    background: #f0f5ff;
+    border-color: #0d9488;
+}
+

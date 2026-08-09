@@ -39,6 +39,56 @@ where
     wasm_bindgen_futures::spawn_local(future);
 }
 
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static PENDING_OPENDATA_DATA: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn take_pending_opendata_data() -> Option<String> {
+    PENDING_OPENDATA_DATA.with(|cell| cell.borrow_mut().take())
+}
+
+/// Registers a `message` listener that receives `ROADWORK_HELPER_DATA` posted by the
+/// WME extension content script, storing the data for the opendata helper dialog.
+#[cfg(target_arch = "wasm32")]
+pub fn setup_helper_data_listener() {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::prelude::Closure;
+    let window = web_sys::window().expect("No window");
+    let win = window.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+        let window = win.clone();
+        let Ok(obj) = event.data().dyn_into::<js_sys::Object>() else {
+            return;
+        };
+        let type_value = js_sys::Reflect::get(&obj, &js_sys::JsString::from("type")).ok();
+        if type_value.as_ref().and_then(|v| v.as_string()).as_deref()
+            != Some("ROADWORK_HELPER_DATA")
+        {
+            return;
+        }
+        let data_value = js_sys::Reflect::get(&obj, &js_sys::JsString::from("data")).ok();
+        if let Some(json) = data_value.and_then(|v| v.as_string()) {
+            PENDING_OPENDATA_DATA.with(|cell| *cell.borrow_mut() = Some(json));
+        }
+        let ack = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &ack,
+            &js_sys::JsString::from("type"),
+            &js_sys::JsString::from("ROADWORK_HELPER_DATA_ACK"),
+        );
+        if let Some(parent) = window.parent().ok().flatten() {
+            let _ = parent.post_message(&ack, "*");
+        }
+    }) as Box<dyn FnMut(web_sys::MessageEvent)>);
+    window
+        .add_event_listener_with_callback("message", closure.as_ref().unchecked_ref())
+        .expect("Failed to add message listener");
+    closure.forget();
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn spawn_task<F>(future: F)
 where
@@ -407,21 +457,9 @@ impl RoadworkApp {
 impl App for RoadworkApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let dropped_files: Vec<egui::DroppedFile> = ui.ctx().input(|i| i.raw.dropped_files.clone());
-        for file in dropped_files {
-            if self.show_opendata_service_helper_dialog {
-                match self.opendata_service_helper.handle_dropped_file(file) {
-                    Ok(name) => {
-                        self.toasts.success(format!("Data imported from {name}"));
-                    }
-                    Err(e) => {
-                        self.toasts.error(format!("Import failed: {e}"));
-                    }
-                }
-            } else {
-                self.toasts.info(
-                    "Drop a data file to import it, after opening the opendata service helper",
-                );
-            }
+        if !dropped_files.is_empty() && !self.show_opendata_service_helper_dialog {
+            self.toasts
+                .info("Drop a data file to import it, after opening the opendata service helper");
         }
 
         if self.helper_only {

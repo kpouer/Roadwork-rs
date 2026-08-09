@@ -92,6 +92,156 @@ const DEFAULTS = {
 
 const OPENDATA_LAYER = "Opendata";
 const OPENDATA_CACHE_KEY_PREFIX = "roadwork-wme-opendata-cache-";
+const OPENDATA_DATA_KEY_PREFIX = "roadwork-wme-opendata-data-";
+
+// --- IndexedDB storage for large data (opendata service data, caches, polygon groups).
+// localStorage stays for small preferences; big payloads go to IndexedDB to dodge its ~5MB quota.
+
+const IDB_NAME = "roadwork-wme";
+const IDB_STORE = "kv";
+
+let idbDb: IDBDatabase | null = null;
+
+function idbOpen(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        if (idbDb) { resolve(idbDb); return; }
+        if (typeof indexedDB === "undefined") {
+            reject(new Error("IndexedDB not available"));
+            return;
+        }
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(IDB_STORE)) {
+                db.createObjectStore(IDB_STORE, { keyPath: "key" });
+            }
+        };
+        req.onsuccess = () => {
+            idbDb = req.result;
+            idbDb.onversionchange = () => { idbDb.close(); idbDb = null; };
+            resolve(idbDb);
+        };
+        req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
+    });
+}
+
+function idbStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {
+    return idbOpen().then((db) => db.transaction(IDB_STORE, mode).objectStore(IDB_STORE));
+}
+
+function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+    });
+}
+
+async function idbGet(key: string): Promise<string | null> {
+    try {
+        const store = await idbStore("readonly");
+        const row = await idbRequest(store.get(key));
+        return row && typeof row.value === "string" ? row.value : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function idbPut(key: string, value: string): Promise<boolean> {
+    try {
+        const store = await idbStore("readwrite");
+        await idbRequest(store.put({ key, value }));
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function idbDelete(key: string): Promise<void> {
+    try {
+        const store = await idbStore("readwrite");
+        await idbRequest(store.delete(key));
+    } catch (_) {}
+}
+
+async function idbClear(): Promise<void> {
+    try {
+        const store = await idbStore("readwrite");
+        await idbRequest(store.clear());
+    } catch (_) {}
+}
+
+async function idbAllKeys(): Promise<string[]> {
+    try {
+        const store = await idbStore("readonly");
+        const keys = await idbRequest(store.getAllKeys());
+        return keys.map((k) => String(k));
+    } catch (_) {
+        return [];
+    }
+}
+
+// Raw opendata service data (ex-svc.data), persisted in IndexedDB and mirrored in memory
+// so the existing synchronous read sites keep working.
+let opendataServiceData: Record<string, string> = {};
+
+function getOpendataServiceData(name: string): string | null {
+    return opendataServiceData[name] ?? null;
+}
+
+async function saveOpendataServiceData(name: string, data: string | null): Promise<void> {
+    const key = OPENDATA_DATA_KEY_PREFIX + name;
+    if (data) {
+        opendataServiceData[name] = data;
+        await idbPut(key, data);
+    } else {
+        delete opendataServiceData[name];
+        await idbDelete(key);
+    }
+}
+
+async function loadAllOpendataServiceData(): Promise<void> {
+    const fresh: Record<string, string> = {};
+    const names = Object.keys(getOpendataServices());
+    for (const name of names) {
+        const value = await idbGet(OPENDATA_DATA_KEY_PREFIX + name);
+        if (value !== null) fresh[name] = value;
+    }
+    opendataServiceData = fresh;
+}
+
+async function migrateLegacyStorage() {
+    try {
+        const bigPrefixes = [CACHE_KEY_PREFIX, OPENDATA_CACHE_KEY_PREFIX];
+        for (const key of Object.keys(localStorage)) {
+            if (key === POLYGON_GROUPS_KEY || bigPrefixes.some((p) => key.startsWith(p))) {
+                const value = localStorage.getItem(key);
+                if (value === null) continue;
+                if (await idbPut(key, value)) {
+                    localStorage.removeItem(key);
+                }
+            }
+        }
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+            let parsed: any = null;
+            try { parsed = JSON.parse(raw); } catch (_) {}
+            if (parsed && parsed.opendataServices && typeof parsed.opendataServices === "object") {
+                let changed = false;
+                for (const name of Object.keys(parsed.opendataServices)) {
+                    const svc = parsed.opendataServices[name];
+                    if (svc && typeof svc.data === "string") {
+                        await saveOpendataServiceData(name, svc.data);
+                        delete svc.data;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+                }
+            }
+        }
+    } catch (_) {}
+}
 
 let wmeSDK: WmeSDK = null;
 let settings = {...DEFAULTS};
@@ -121,6 +271,7 @@ let dataPanelEl = null;
 let dataToggleBtn = null;
 let dataTableBody = null;
 let dataSourceSelectEl = null;
+let dataDropzoneEl = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -181,9 +332,9 @@ function getCacheKey(service: string) {
     return CACHE_KEY_PREFIX + service;
 }
 
-function loadCache(service: string) {
+async function loadCache(service: string) {
     try {
-        const raw = localStorage.getItem(getCacheKey(service));
+        const raw = await idbGet(getCacheKey(service));
         if (!raw) return null;
         const cached = JSON.parse(raw);
         const maxAge = 86400 * 1000;
@@ -194,9 +345,9 @@ function loadCache(service: string) {
     }
 }
 
-function saveCache(service: string, data) {
+async function saveCache(service: string, data) {
     try {
-        localStorage.setItem(getCacheKey(service), JSON.stringify({
+        await idbPut(getCacheKey(service), JSON.stringify({
             data: data,
             timestamp: Date.now(),
         }));
@@ -204,22 +355,22 @@ function saveCache(service: string, data) {
     }
 }
 
-function clearCache(service: string) {
+async function clearCache(service: string) {
     try {
-        localStorage.removeItem(getCacheKey(service));
+        await idbDelete(getCacheKey(service));
     } catch (_) {
     }
 }
 
-function savePolygonGroups() {
+async function savePolygonGroups() {
     try {
-        localStorage.setItem(POLYGON_GROUPS_KEY, JSON.stringify({ groups: polygonGroups, nextId: nextGroupId }));
+        await idbPut(POLYGON_GROUPS_KEY, JSON.stringify({ groups: polygonGroups, nextId: nextGroupId }));
     } catch (_) {}
 }
 
-function loadPolygonGroups() {
+async function loadPolygonGroups() {
     try {
-        const raw = localStorage.getItem(POLYGON_GROUPS_KEY);
+        const raw = await idbGet(POLYGON_GROUPS_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed === "object" && parsed.groups) {
@@ -334,13 +485,13 @@ async function fetchServices(forceRefresh = false) {
 
 async function fetchRoadworks(forceRefresh = false) {
     if (!forceRefresh) {
-        const cached = loadCache(settings.service);
+        const cached = await loadCache(settings.service);
         if (cached) return cached;
     }
     try {
         const data = await rpcCall("get_roadworks", [settings.service]);
         console.info("[Roadwork] fetchRoadworks received data, type:", typeof data, "roadworks keys:", data?.roadworks ? Object.keys(data.roadworks).length : "no roadworks field");
-        saveCache(settings.service, data);
+        await saveCache(settings.service, data);
         return data;
     } catch (e) {
         throw new Error(`Failed to fetch roadworks: ${e}`);
@@ -489,12 +640,101 @@ function editOpendataService(name: string) {
         setStatus(`No descriptor for ${name}`, "error");
         return;
     }
-    openHelper("opendata", false, name, svc.descriptor);
+    openHelper("opendata", false, name, svc.descriptor, getOpendataServiceData(name));
 }
 
-function openHelper(helper: string, create: boolean = false, service?: string, descriptor?: string) {
+function handleDataJsonDrop(text: string, fileName: string) {
+    let parsed: any = null;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {
+        setStatus("Invalid JSON: " + e.message, "error");
+        return;
+    }
+    const name = parsed?.metadata?.name;
+    if (typeof name === "string" && name.trim()) {
+        setStatus(`Opening descriptor helper for "${name.trim()}"...`, "info");
+        openHelper("opendata", false, name.trim(), text);
+        return;
+    }
+    showDataImportChoice(text, fileName);
+}
+
+function showDataImportChoice(text: string, fileName: string) {
+    const baseName = (fileName || "data").replace(/\.[^/.]+$/, "");
+    const services = getOpendataServices();
+    const names = Object.keys(services).sort();
+
+    const overlay = document.createElement("div");
+    overlay.className = "rw-opendata-export-overlay";
+
+    const box = document.createElement("div");
+    box.className = "rw-opendata-export-box";
+
+    const header = document.createElement("div");
+    header.className = "rw-opendata-export-header";
+    const title = document.createElement("h4");
+    title.textContent = "Importer les données";
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "roadwork-btn roadwork-btn-icon";
+    closeBtn.textContent = "\u00d7";
+    closeBtn.addEventListener("click", () => overlay.remove());
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    box.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "rw-import-choice-body";
+
+    const intro = document.createElement("div");
+    intro.textContent =
+        "Ce fichier contient des données brutes (pas un descripteur). " +
+        "Choisissez une source à mettre à jour, ou créez-en une nouvelle.";
+    body.appendChild(intro);
+
+    const createBtn = document.createElement("button");
+    createBtn.className = "rw-import-choice-create";
+    createBtn.textContent = "Créer une nouvelle source";
+    createBtn.addEventListener("click", () => {
+        overlay.remove();
+        openHelper("opendata", true, baseName, undefined, text);
+    });
+    body.appendChild(createBtn);
+
+    if (names.length > 0) {
+        const label = document.createElement("div");
+        label.className = "rw-import-choice-label";
+        label.textContent = "Mettre à jour une source existante";
+        body.appendChild(label);
+        for (const name of names) {
+            const btn = document.createElement("button");
+            btn.className = "rw-import-choice-source";
+            btn.textContent = name;
+            btn.title = "Ouvrir l'assistant avec ces données pour " + name;
+            btn.addEventListener("click", () => {
+                overlay.remove();
+                openHelper("opendata", false, name, services[name]?.descriptor, text);
+            });
+            body.appendChild(btn);
+        }
+    } else {
+        const empty = document.createElement("div");
+        empty.className = "roadwork-opendata-empty";
+        empty.textContent = "Aucune source existante.";
+        body.appendChild(empty);
+    }
+
+    box.appendChild(body);
+    overlay.appendChild(box);
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+}
+
+function openHelper(helper: string, create: boolean = false, service?: string, descriptor?: string, data?: string) {
     const target = service || settings.service;
-    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, target, ", create =", create);
+    console.log(`[Roadwork] openHelper, helper = ${helper}, service =`, target, ", create =", create, ", has data =", !!data);
     if (!wasmIframe) {
         setStatus("WASM iframe not available", "error");
         return;
@@ -504,6 +744,9 @@ function openHelper(helper: string, create: boolean = false, service?: string, d
     const msg: any = { type: "ROADWORK_OPEN_HELPER", helper, service: target, create };
     if (descriptor) {
         msg.descriptor = descriptor;
+    }
+    if (data) {
+        msg.data = data;
     }
     window.postMessage(msg, "*");
     setTimeout(() => {
@@ -552,7 +795,7 @@ function createFloatingPanel() {
 
     const resetBtn = document.createElement("button");
     resetBtn.textContent = "Reset";
-    resetBtn.title = "Reset all data (clear localStorage)";
+    resetBtn.title = "Reset all data (clear storage)";
     resetBtn.addEventListener("click", () => clearExtensionStorage());
 
     const closeBtn = document.createElement("button");
@@ -650,7 +893,7 @@ function createFloatingPanel() {
         const newService = serviceSelectEl.value;
         if (newService === settings.service) return;
 
-        clearCache(settings.service);
+        await clearCache(settings.service);
 
         settings.service = newService;
         saveSettings();
@@ -1276,6 +1519,8 @@ async function clearExtensionStorage() {
             }
         }
     } catch (_) {}
+    await idbClear();
+    opendataServiceData = {};
     await syncCustomDescriptorsToWasm(true).catch(() => {});
     window.location.reload();
 }
@@ -1467,7 +1712,7 @@ function renderRoadworksToMap(roadworks) {
 async function refreshData() {
     setStatus("Loading...");
     try {
-        clearCache(settings.service);
+        await clearCache(settings.service);
         const data = await fetchRoadworks(true);
         currentRoadworks = data.roadworks || {};
         applyStatusOverrides();
@@ -1512,9 +1757,9 @@ function getOpendataCacheKey(name: string) {
     return OPENDATA_CACHE_KEY_PREFIX + name;
 }
 
-function loadOpendataCache(name: string) {
+async function loadOpendataCache(name: string) {
     try {
-        const raw = localStorage.getItem(getOpendataCacheKey(name));
+        const raw = await idbGet(getOpendataCacheKey(name));
         if (!raw) return null;
         const cached = JSON.parse(raw);
         const maxAge = 86400 * 1000;
@@ -1525,18 +1770,18 @@ function loadOpendataCache(name: string) {
     }
 }
 
-function saveOpendataCache(name: string, data) {
+async function saveOpendataCache(name: string, data) {
     try {
-        localStorage.setItem(getOpendataCacheKey(name), JSON.stringify({
+        await idbPut(getOpendataCacheKey(name), JSON.stringify({
             data: data,
             timestamp: Date.now(),
         }));
     } catch (_) {}
 }
 
-function clearOpendataCache(name: string) {
+async function clearOpendataCache(name: string) {
     try {
-        localStorage.removeItem(getOpendataCacheKey(name));
+        await idbDelete(getOpendataCacheKey(name));
     } catch (_) {}
 }
 
@@ -1548,15 +1793,26 @@ async function syncOpendataDescriptorsToWasm() {
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
     if (!forceRefresh) {
-        const cached = loadOpendataCache(name);
+        const cached = await loadOpendataCache(name);
         if (cached) {
             currentOpendata[name] = cached;
             return cached;
         }
     }
-    const data = await rpcCall("get_opendata", [name]);
+    const svc = getOpendataServices()[name];
+    let data;
+    if (getOpendataDescriptorUrl(svc)) {
+        data = await rpcCall("get_opendata", [name]);
+    } else {
+        const stored = getOpendataServiceData(name);
+        if (stored) {
+            data = JSON.parse(stored);
+        } else {
+            throw new Error(`No URL and no stored data for ${name}`);
+        }
+    }
     currentOpendata[name] = data;
-    saveOpendataCache(name, data);
+    await saveOpendataCache(name, data);
     return data;
 }
 
@@ -1581,10 +1837,10 @@ async function refreshOpendata() {
     renderOpendataList();
 }
 
-function loadAllOpendataCaches() {
+async function loadAllOpendataCaches() {
     const services = getOpendataServices();
     for (const name of Object.keys(services)) {
-        const cached = loadOpendataCache(name);
+        const cached = await loadOpendataCache(name);
         if (cached) {
             currentOpendata[name] = cached;
         }
@@ -1723,9 +1979,9 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
 
 async function refreshOpendataService(name: string) {
     const svc = getOpendataServices()[name];
-    if (!getOpendataDescriptorUrl(svc)) {
+    if (!getOpendataDescriptorUrl(svc) && !getOpendataServiceData(name)) {
         setStatus(
-            `Cannot refresh ${name}: the descriptor has no URL. Edit the source and drop a data file to import its data.`,
+            `Cannot refresh ${name}: the descriptor has no URL and no stored data. Edit the source and drop a data file to import its data.`,
             "error",
         );
         return;
@@ -1742,12 +1998,13 @@ async function refreshOpendataService(name: string) {
     }
 }
 
-function removeOpendataService(name: string) {
+async function removeOpendataService(name: string) {
     const services = getOpendataServices();
     delete services[name];
     settings.opendataServices = services;
     saveSettings();
-    clearOpendataCache(name);
+    await saveOpendataServiceData(name, null);
+    await clearOpendataCache(name);
     delete currentOpendata[name];
     renderOpendataToMap();
     renderOpendataList();
@@ -1766,24 +2023,33 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
         delete services[oldName];
     }
     const existing = services[name] || {};
-    services[name] = {
+    const svc: any = {
         descriptor: descriptor,
         enabled: existing.enabled ?? true,
         visible: existing.visible ?? true,
     };
+    services[name] = svc;
     settings.opendataServices = services;
     saveSettings();
+    if (data) {
+        await saveOpendataServiceData(name, data);
+    }
     setStatus(`Opendata service "${name}" saved`, "success");
     renderOpendataList();
     try {
         await syncOpendataDescriptorsToWasm();
         if (data) {
-            await parseOpendataAndCache(name, data);
+            try {
+                currentOpendata[name] = JSON.parse(data);
+                await saveOpendataCache(name, currentOpendata[name]);
+            } catch (e) {
+                setStatus(`Failed to parse stored data for ${name}: ${e.message}`, "error");
+            }
         } else if (getOpendataDescriptorUrl(services[name])) {
             await fetchOpendataData(name, true);
         } else {
             setStatus(
-                `Opendata service "${name}" has no URL - drop a data file when editing it to import its data`,
+                `Opendata service "${name}" has no URL and no data - drop a data file when editing it to import its data`,
                 "info",
             );
         }
@@ -1798,14 +2064,7 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
     }
 }
 
-async function parseOpendataAndCache(name: string, json: string) {
-    const data = await rpcCall("parse_opendata", [json, name]);
-    currentOpendata[name] = data;
-    saveOpendataCache(name, data);
-    return data;
-}
-
-function handleOpendataJson(text: string) {
+async function handleOpendataJson(text: string) {
     let descriptor;
     try {
         descriptor = JSON.parse(text);
@@ -1820,11 +2079,12 @@ function handleOpendataJson(text: string) {
     }
     const services = getOpendataServices();
     const existing = services[name] || {};
-    services[name] = {
+    const svc: any = {
         descriptor: JSON.stringify(descriptor, null, 2),
         enabled: existing.enabled ?? true,
         visible: existing.visible ?? true,
     };
+    services[name] = svc;
     settings.opendataServices = services;
     saveSettings();
     setStatus(`Opendata service "${name}" imported`, "success");
@@ -1839,10 +2099,21 @@ function handleOpendataJson(text: string) {
                 setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
             });
     } else {
-        setStatus(
-            `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
-            "info",
-        );
+        const stored = getOpendataServiceData(name);
+        if (stored) {
+            try {
+                currentOpendata[name] = JSON.parse(stored);
+                await saveOpendataCache(name, currentOpendata[name]);
+                renderOpendataToMap();
+            } catch (e) {
+                setStatus(`Failed to parse stored data for ${name}: ${e.message}`, "error");
+            }
+        } else {
+            setStatus(
+                `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
+                "info",
+            );
+        }
     }
     renderOpendataList();
 }
@@ -2161,6 +2432,11 @@ function createDataPanel() {
 
     dataPanelEl.appendChild(controls);
 
+    dataDropzoneEl = document.createElement("div");
+    dataDropzoneEl.className = "rw-data-dropzone";
+    dataDropzoneEl.textContent = "D\u00e9posez un fichier .json ici (descripteur ou donn\u00e9es)";
+    dataPanelEl.appendChild(dataDropzoneEl);
+
     const importInputEl = document.createElement("input");
     importInputEl.type = "file";
     importInputEl.id = "rw-opendata-import-input";
@@ -2392,10 +2668,28 @@ function updatePolygonesPanel() {
     }
 }
 
+function getDraggedFileExtension(e: DragEvent): string | null {
+    const items = e.dataTransfer?.items;
+    if (!items) return null;
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file") {
+            const f = item.getAsFile();
+            if (f && f.name) {
+                const dot = f.name.lastIndexOf(".");
+                return dot >= 0 ? f.name.substring(dot + 1).toLowerCase() : "";
+            }
+        }
+    }
+    return null;
+}
+
 function setupPolygonesDragDrop() {
     let dragCounter = 0;
 
     document.addEventListener("dragenter", (e) => {
+        const ext = getDraggedFileExtension(e);
+        if (ext !== null && ext !== "wkt" && ext !== "txt") return;
         e.preventDefault();
         dragCounter++;
         if (dragCounter === 1) {
@@ -2411,6 +2705,7 @@ function setupPolygonesDragDrop() {
     });
 
     document.addEventListener("dragleave", (e) => {
+        if (dragCounter === 0) return;
         e.preventDefault();
         dragCounter--;
         if (dragCounter <= 0) {
@@ -2427,7 +2722,6 @@ function setupPolygonesDragDrop() {
         if (!files || files.length === 0) return;
         const file = files[0];
         if (!file.name.match(/\.(wkt|txt)$/i)) {
-            alert("Veuillez d\u00e9poser un fichier .wkt ou .txt");
             return;
         }
         const reader = new FileReader();
@@ -2455,6 +2749,55 @@ function setupPolygonesDragDrop() {
                     }
                 }
             }
+        };
+        reader.readAsText(file);
+    });
+}
+
+function setupDataDragDrop() {
+    let dragCounter = 0;
+
+    document.addEventListener("dragenter", (e) => {
+        const ext = getDraggedFileExtension(e);
+        if (ext !== "json") return;
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) {
+            if (dataPanelEl) dataPanelEl.classList.remove("rw-hidden");
+            if (dataToggleBtn) dataToggleBtn.style.display = "none";
+            updateDataPanel();
+            if (dataDropzoneEl) dataDropzoneEl.classList.add("rw-data-dropzone-active");
+        }
+    });
+
+    document.addEventListener("dragover", (e) => {
+        const ext = getDraggedFileExtension(e);
+        if (ext !== "json") return;
+        e.preventDefault();
+    });
+
+    document.addEventListener("dragleave", (e) => {
+        if (dragCounter === 0) return;
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            if (dataDropzoneEl) dataDropzoneEl.classList.remove("rw-data-dropzone-active");
+        }
+    });
+
+    document.addEventListener("drop", (e) => {
+        const ext = getDraggedFileExtension(e);
+        if (ext !== "json") return;
+        e.preventDefault();
+        dragCounter = 0;
+        if (dataDropzoneEl) dataDropzoneEl.classList.remove("rw-data-dropzone-active");
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            handleDataJsonDrop(String(evt.target.result || ""), file.name);
         };
         reader.readAsText(file);
     });
@@ -2501,11 +2844,14 @@ async function buildPanel(tabPane: Element) {
 }
 
 async function init() {
+    await migrateLegacyStorage();
+
     await applyLogLevel(settings.logLevel);
 
     loadSettings();
     loadHideFinished();
     loadSortState();
+    await loadAllOpendataServiceData();
     await syncCustomDescriptorsToWasm(false).catch((e) => {
         console.warn("[Roadwork] Failed to sync custom descriptors:", e);
     });
@@ -2684,10 +3030,10 @@ async function init() {
     await syncOpendataDescriptorsToWasm().catch((e) => {
         console.warn("[Roadwork] Failed to sync opendata descriptors:", e);
     });
-    loadAllOpendataCaches();
+    await loadAllOpendataCaches();
     renderOpendataToMap();
 
-    const restored = loadPolygonGroups();
+    const restored = await loadPolygonGroups();
     const hasRestored = Object.keys(restored).length > 0;
     if (hasRestored) {
         polygonGroups = restored;
@@ -2703,6 +3049,7 @@ async function init() {
     createPolygonesUI();
     setupPolygonesDragDrop();
     createDataPanel();
+    setupDataDragDrop();
     if (hasRestored) {
         updatePolygonesPanel();
     }
@@ -2798,7 +3145,7 @@ async function init() {
         },
     });
 
-    const cached = loadCache(settings.service);
+    const cached = await loadCache(settings.service);
     if (cached) {
         currentRoadworks = cached.roadworks || {};
         applyStatusOverrides();

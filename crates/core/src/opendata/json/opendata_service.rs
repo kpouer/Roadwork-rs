@@ -38,6 +38,10 @@ impl OpendataService {
         let Ok(value) = serde_json::from_str::<Value>(json) else {
             return false;
         };
+        self.roadwork_array_targets_array_value(&value)
+    }
+
+    pub fn roadwork_array_targets_array_value(&self, value: &Value) -> bool {
         let Ok(results) = value.query(&self.service_descriptor.data_array) else {
             return false;
         };
@@ -50,11 +54,26 @@ impl OpendataService {
     }
 
     pub fn element_count(&self, json: &str) -> usize {
-        self.roadwork_elements(json).len()
+        let Ok(value) = serde_json::from_str::<Value>(json) else {
+            return 0;
+        };
+        self.element_count_value(&value)
+    }
+
+    pub fn element_count_value(&self, value: &Value) -> usize {
+        self.roadwork_array(value)
+            .map(|array| array.len())
+            .unwrap_or(0)
     }
 
     pub fn element_at(&self, json: &str, index: usize) -> Option<Value> {
         self.roadwork_elements(json).get(index).cloned()
+    }
+
+    pub fn element_at_value(&self, value: &Value, index: usize) -> Option<Value> {
+        self.roadwork_array(value)
+            .ok()
+            .and_then(|array| array.get(index).map(|v| (*v).clone()))
     }
 
     /// Validates every descriptor path against every element of the data array.
@@ -208,10 +227,22 @@ impl OpendataService {
         let Ok(value) = serde_json::from_str::<Value>(json) else {
             return Vec::new();
         };
-        let Ok(results) = value.query(&self.service_descriptor.data_array) else {
-            return Vec::new();
-        };
-        results.into_iter().cloned().collect()
+        self.roadwork_elements_value(&value)
+    }
+
+    pub(crate) fn roadwork_elements_value(&self, value: &Value) -> Vec<Value> {
+        self.roadwork_array(value)
+            .map(|array| array.into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the elements matched by `dataArray`, borrowing from the document.
+    ///
+    /// This performs a single `jsonpath` query, avoiding the full-element cloning
+    /// done by [`Self::roadwork_elements_value`]. It is safe to reuse the returned
+    /// slice while the document stays alive.
+    pub fn roadwork_array<'a>(&self, value: &'a Value) -> Result<Vec<&'a Value>, MyError> {
+        Ok(value.query(&self.service_descriptor.data_array)?)
     }
 
     pub fn path_points_to_scalar(&self, json: &str, path: &str) -> bool {
@@ -283,8 +314,12 @@ impl OpendataService {
     }
 
     pub fn parse_json(&self, json: &str) -> Result<OpendataData, MyError> {
-        let json: serde_json::Value = serde_json::from_str(json)?;
-        let data_array = json.query(&self.service_descriptor.data_array)?;
+        let value: serde_json::Value = serde_json::from_str(json)?;
+        self.parse_value(&value)
+    }
+
+    pub fn parse_value(&self, value: &Value) -> Result<OpendataData, MyError> {
+        let data_array = value.query(&self.service_descriptor.data_array)?;
         info!("Found {} items", data_array.len());
         let mut opendata = Vec::with_capacity(data_array.len());
         for value in data_array {
@@ -303,8 +338,8 @@ impl OpendataService {
     }
 
     pub fn parse_json_preview(&self, json: &str) -> Result<OpendataData, MyError> {
-        let json: serde_json::Value = serde_json::from_str(json)?;
-        let data_array = json.query(&self.service_descriptor.data_array)?;
+        let value: serde_json::Value = serde_json::from_str(json)?;
+        let data_array = value.query(&self.service_descriptor.data_array)?;
         let mut items = Vec::with_capacity(data_array.len());
         for (index, value) in data_array.into_iter().enumerate() {
             let mut item = self.build_opendata_preview(value);
@@ -318,6 +353,10 @@ impl OpendataService {
 
     pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, MyError> {
         let value: Value = serde_json::from_str(json)?;
+        self.extract_value(&value)
+    }
+
+    pub fn extract_value(&self, value: &Value) -> Result<Value, MyError> {
         let results = value.query(&self.service_descriptor.data_array)?;
         Ok(Value::Array(results.into_iter().cloned().collect()))
     }
@@ -417,7 +456,7 @@ impl OpendataService {
         opendata
     }
 
-    fn is_valid(opendata: &Opendata) -> bool {
+    pub fn is_valid(opendata: &Opendata) -> bool {
         if opendata.longitude == 0.0 && opendata.latitude == 0.0 {
             warn!("{opendata:?} is invalid because it has no location");
             return false;
@@ -556,5 +595,32 @@ mod validate_tests {
             service_descriptor,
         };
         assert_eq!(ods.build_url(), "u?app_token=abc");
+    }
+
+    #[test]
+    fn roadwork_array_borrows_matching_elements() {
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor: descriptor(),
+        };
+        let value: Value = serde_json::from_str(json()).unwrap();
+        let array = ods.roadwork_array(&value).unwrap();
+        assert_eq!(array.len(), 2);
+        assert_eq!(ods.element_count_value(&value), 2);
+        assert_eq!(array[0]["recordid"], "abc");
+        assert_eq!(ods.element_at_value(&value, 1).unwrap()["recordid"], "abc");
+        assert!(ods.element_at_value(&value, 99).is_none());
+    }
+
+    #[test]
+    fn roadwork_array_reports_bad_path() {
+        let mut service_descriptor = descriptor();
+        service_descriptor.data_array = "$.nope".to_string();
+        let ods = OpendataService {
+            service_name: "test".to_string(),
+            service_descriptor,
+        };
+        let value: Value = serde_json::from_str(json()).unwrap();
+        assert_eq!(ods.roadwork_array(&value).unwrap().len(), 0);
     }
 }

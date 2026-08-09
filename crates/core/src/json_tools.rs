@@ -153,7 +153,11 @@ pub fn find_json_arrays(json: &str) -> Vec<(String, usize)> {
     let Ok(value) = serde_json::from_str::<Value>(json) else {
         return Vec::new();
     };
-    let mut arrays = (&value).collect_arrays("$");
+    find_json_arrays_value(&value)
+}
+
+pub fn find_json_arrays_value(value: &Value) -> Vec<(String, usize)> {
+    let mut arrays = value.collect_arrays("$");
     arrays.sort_by_key(|b| std::cmp::Reverse(b.1));
     arrays
 }
@@ -255,3 +259,377 @@ pub fn format_fetched_value(value: &Value) -> String {
 const MAX_ARRAY_INDEX: usize = 8;
 const MAX_ARRAY_DEPTH: usize = 4;
 const MAX_SCALAR_PATHS: usize = 200;
+
+/// An incremental, cooperative JSON scanner.
+///
+/// Parses a JSON document a bounded number of bytes at a time, reporting the
+/// fraction of the document consumed so far. This keeps the UI responsive and
+/// lets a progress bar reflect real byte-level progress on large files. When
+/// the scan completes, the whole document is available as a `serde_json::Value`.
+///
+/// The scanner owns its source so it can live across frames (or threads) while
+/// the document is being processed incrementally.
+pub struct JsonScan {
+    src: Box<[u8]>,
+    pos: usize,
+    end: usize,
+    stack: Vec<ScanFrame>,
+    root: Option<Value>,
+    error: Option<String>,
+    mode: ScanMode,
+    token_buf: String,
+    string_escaped: bool,
+    unicode_hex: u32,
+    unicode_left: u8,
+}
+
+enum ScanMode {
+    Expect,
+    InString,
+    InScalar,
+}
+
+enum ScanFrame {
+    Array {
+        values: Vec<Value>,
+    },
+    Object {
+        fields: Vec<(String, Value)>,
+        pending_key: Option<String>,
+        expect_value: bool,
+    },
+}
+
+impl JsonScan {
+    pub fn new(source: &str) -> Self {
+        let src = source.as_bytes().to_vec().into_boxed_slice();
+        let end = src.len();
+        Self {
+            src,
+            pos: 0,
+            end,
+            stack: Vec::new(),
+            root: None,
+            error: None,
+            mode: ScanMode::Expect,
+            token_buf: String::new(),
+            string_escaped: false,
+            unicode_hex: 0,
+            unicode_left: 0,
+        }
+    }
+
+    /// The source document as a string.
+    pub fn source(&self) -> &str {
+        std::str::from_utf8(&self.src).unwrap_or_default()
+    }
+
+    /// True once the document has been fully scanned (or failed).
+    pub fn is_done(&self) -> bool {
+        self.root.is_some() || self.error.is_some()
+    }
+
+    /// Fraction (0..=1) of the document consumed so far.
+    pub fn progress(&self) -> f32 {
+        if self.end == 0 {
+            return 1.0;
+        }
+        (self.pos as f32 / self.end as f32).clamp(0.0, 1.0)
+    }
+
+    /// Advances the scan by up to `budget` bytes and returns the progress.
+    pub fn step(&mut self, budget: usize) -> f32 {
+        if self.is_done() {
+            return self.progress();
+        }
+        let stop = self.end.min(self.pos.saturating_add(budget.max(1)));
+        while self.pos < stop {
+            let b = self.src[self.pos];
+            match self.mode {
+                ScanMode::InString => {
+                    self.pos += 1;
+                    if self.unicode_left > 0 {
+                        let d = hex_digit(b);
+                        self.unicode_hex = (self.unicode_hex << 4) | u32::from(d);
+                        self.unicode_left -= 1;
+                        if self.unicode_left == 0 {
+                            if let Some(c) = char::from_u32(self.unicode_hex) {
+                                self.token_buf.push(c);
+                            } else {
+                                self.token_buf.push('\u{FFFD}');
+                            }
+                        }
+                        continue;
+                    }
+                    if self.string_escaped {
+                        self.string_escaped = false;
+                        match b {
+                            b'"' => self.token_buf.push('"'),
+                            b'\\' => self.token_buf.push('\\'),
+                            b'/' => self.token_buf.push('/'),
+                            b'b' => self.token_buf.push('\u{0008}'),
+                            b'f' => self.token_buf.push('\u{000C}'),
+                            b'n' => self.token_buf.push('\n'),
+                            b'r' => self.token_buf.push('\r'),
+                            b't' => self.token_buf.push('\t'),
+                            b'u' => {
+                                self.unicode_hex = 0;
+                                self.unicode_left = 4;
+                            }
+                            other => {
+                                self.error = Some(format!("Invalid escape \\{}", other as char));
+                            }
+                        }
+                    } else if b == b'\\' {
+                        self.string_escaped = true;
+                    } else if b == b'"' {
+                        self.finish_string_token();
+                        self.mode = ScanMode::Expect;
+                    } else {
+                        self.token_buf.push(b as char);
+                    }
+                }
+                ScanMode::InScalar => {
+                    if is_scalar_end(b) {
+                        self.finish_scalar_token();
+                        self.mode = ScanMode::Expect;
+                        continue;
+                    }
+                    self.token_buf.push(b as char);
+                    self.pos += 1;
+                }
+                ScanMode::Expect => match b {
+                    b' ' | b'\t' | b'\n' | b'\r' => {
+                        self.pos += 1;
+                    }
+                    b'{' => {
+                        self.stack.push(ScanFrame::Object {
+                            fields: Vec::new(),
+                            pending_key: None,
+                            expect_value: false,
+                        });
+                        self.pos += 1;
+                    }
+                    b'[' => {
+                        self.stack.push(ScanFrame::Array { values: Vec::new() });
+                        self.pos += 1;
+                    }
+                    b'}' => {
+                        self.finish_container(false);
+                        self.pos += 1;
+                    }
+                    b']' => {
+                        self.finish_container(true);
+                        self.pos += 1;
+                    }
+                    b',' => {
+                        self.pos += 1;
+                    }
+                    b':' => {
+                        if let Some(ScanFrame::Object { expect_value, .. }) = self.stack.last_mut()
+                        {
+                            *expect_value = true;
+                        } else {
+                            self.error = Some("Unexpected ':'".to_string());
+                        }
+                        self.pos += 1;
+                    }
+                    b'"' => {
+                        self.mode = ScanMode::InString;
+                        self.token_buf.clear();
+                        self.string_escaped = false;
+                        self.unicode_left = 0;
+                        self.pos += 1;
+                    }
+                    b'-' | b'0'..=b'9' | b't' | b'f' | b'n' => {
+                        self.mode = ScanMode::InScalar;
+                        self.token_buf.clear();
+                        self.token_buf.push(b as char);
+                        self.pos += 1;
+                    }
+                    other => {
+                        self.error = Some(format!("Unexpected byte 0x{other:02x}"));
+                    }
+                },
+            }
+            if self.is_done() {
+                break;
+            }
+        }
+        if !self.is_done() && self.pos >= self.end {
+            self.error = Some("Unexpected end of input".to_string());
+        }
+        self.progress()
+    }
+
+    /// Consumes the scanner, returning the source document and the parsed value.
+    pub fn into_parts(self) -> (String, Result<serde_json::Value, String>) {
+        let Self {
+            src,
+            pos,
+            end,
+            root,
+            error,
+            ..
+        } = self;
+        let source = String::from_utf8_lossy(&src).into_owned();
+        let result = (|| {
+            if let Some(err) = error {
+                return Err(err);
+            }
+            let root = root.ok_or_else(|| "JSON scan not finished".to_string())?;
+            let tail = &src[pos.min(end)..];
+            if !tail.iter().all(u8::is_ascii_whitespace) {
+                return Err("Trailing content after JSON value".to_string());
+            }
+            Ok(root)
+        })();
+        (source, result)
+    }
+
+    fn finish_scalar_token(&mut self) {
+        let token = std::mem::take(&mut self.token_buf);
+        let value = match token.as_str() {
+            "true" => Some(Value::Bool(true)),
+            "false" => Some(Value::Bool(false)),
+            "null" => Some(Value::Null),
+            _ => serde_json::from_str::<Value>(&token).ok(),
+        };
+        match value {
+            Some(v) => self.attach_value(v),
+            None => self.error = Some(format!("Invalid token {token}")),
+        }
+    }
+
+    fn finish_string_token(&mut self) {
+        let s = std::mem::take(&mut self.token_buf);
+        self.attach_value(Value::String(s));
+    }
+
+    fn attach_value(&mut self, value: Value) {
+        if self.error.is_some() {
+            return;
+        }
+        match self.stack.last_mut() {
+            None => {
+                self.root = Some(value);
+            }
+            Some(ScanFrame::Array { values }) => {
+                values.push(value);
+            }
+            Some(ScanFrame::Object {
+                fields,
+                pending_key,
+                expect_value,
+            }) => {
+                if !*expect_value && pending_key.is_none() {
+                    match value {
+                        Value::String(s) => {
+                            *pending_key = Some(s);
+                        }
+                        _ => {
+                            self.error = Some("Object key must be a string".to_string());
+                        }
+                    }
+                } else {
+                    let key = pending_key.take().unwrap_or_default();
+                    fields.push((key, value));
+                    *expect_value = false;
+                }
+            }
+        }
+    }
+
+    fn finish_container(&mut self, is_array: bool) {
+        if self.error.is_some() {
+            return;
+        }
+        let value = match self.stack.pop() {
+            Some(ScanFrame::Array { values }) if is_array => Some(Value::Array(values)),
+            Some(ScanFrame::Object { fields, .. }) if !is_array => {
+                Some(Value::Object(fields.into_iter().collect()))
+            }
+            _ => {
+                self.error = Some(if is_array {
+                    "Unexpected ']'".to_string()
+                } else {
+                    "Unexpected '}'".to_string()
+                });
+                return;
+            }
+        };
+        if let Some(v) = value {
+            self.attach_value(v);
+        }
+    }
+}
+
+fn hex_digit(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        b'A'..=b'F' => b - b'A' + 10,
+        _ => 0,
+    }
+}
+
+fn is_scalar_end(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b',' | b'}' | b']')
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    fn scan_all(source: &str) -> (String, Result<Value, String>) {
+        let mut scan = JsonScan::new(source);
+        let mut last = 0.0;
+        while !scan.is_done() {
+            let p = scan.step(7);
+            assert!(p >= last, "progress went backwards {p} < {last}");
+            last = p;
+        }
+        assert!(scan.progress() >= 0.0);
+        scan.into_parts()
+    }
+
+    #[test]
+    fn parses_object_matches_serde() {
+        let source = r#"{"a": 1, "b": [true, null, "x"], "c": {"d": -1.5e3}}"#;
+        let expected = serde_json::from_str::<Value>(source).unwrap();
+        let (_src, result) = scan_all(source);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn parses_array() {
+        let source = r#"[{"id":"1"},{"id":"2"}]"#;
+        let (_, result) = scan_all(source);
+        assert_eq!(result.unwrap().as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unicode_escapes() {
+        let source = r#"{"s":"caf\u00e9 \u20ac"}"#;
+        let (_, result) = scan_all(source);
+        assert_eq!(result.unwrap()["s"], "café €");
+    }
+
+    #[test]
+    fn truncated_input_is_error() {
+        let (_, result) = scan_all(r#"{"a": [1, 2, "#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn trailing_garbage_is_error() {
+        let (_, result) = scan_all(r#"{"a":1} trailing"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn source_is_round_tripped() {
+        let (source, _) = scan_all(r#"{"x":42}"#);
+        assert_eq!(source, r#"{"x":42}"#);
+    }
+}

@@ -16,7 +16,6 @@ declare global {
         set_custom_descriptors(descriptors: unknown): void;
         set_opendata_custom_descriptors(descriptors: unknown): void;
         get_opendata(service: unknown): Promise<unknown>;
-        parse_opendata(json: string, service_name: string): unknown;
     };
 
     namespace chrome {

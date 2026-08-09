@@ -24,8 +24,11 @@ fn main() -> eframe::Result {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     eframe::WebLogger::init(LevelFilter::Info).ok();
+    install_panic_hook();
 
     let web_options = eframe::WebOptions::default();
+
+    roadwork_egui::roadwork_app::setup_helper_data_listener();
 
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()
@@ -53,6 +56,45 @@ fn main() {
             .await
             .expect("failed to start eframe");
     });
+}
+
+/// Installs a panic hook that always surfaces the panic message: directly to the
+/// browser console and as a fixed overlay on the page, so a crash is never a
+/// silent freeze and the root cause is visible without digging through the
+/// console. Only `eframe`'s console logger is not enough: panics in the app
+/// would otherwise just print an opaque wasm `RuntimeError: unreachable`.
+#[cfg(target_arch = "wasm32")]
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            format!("{:?}", info.payload())
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let message = format!("Roadwork panic: {payload} ({location})");
+        web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&message));
+        if let Some(window) = web_sys::window()
+            && let Some(document) = window.document()
+            && let Ok(div) = document.create_element("div")
+        {
+            let _ = div.set_attribute(
+                "style",
+                "position:fixed;top:0;left:0;right:0;z-index:99999;\
+                 background:#a00;color:#fff;font:12px monospace;padding:8px;\
+                 white-space:pre-wrap;",
+            );
+            div.set_text_content(Some(&message));
+            if let Some(body) = document.body() {
+                let _ = body.insert_adjacent_element("afterbegin", &div);
+            }
+        }
+    }));
 }
 
 #[cfg(target_arch = "wasm32")]

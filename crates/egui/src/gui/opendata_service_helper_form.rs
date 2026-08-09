@@ -27,7 +27,7 @@ pub(crate) struct FieldsValues {
     pub description: Option<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct PathCandidates {
     pub scalars: Vec<(String, String)>,
     pub arrays: Vec<(String, usize)>,

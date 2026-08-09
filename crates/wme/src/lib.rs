@@ -159,25 +159,3 @@ pub async fn get_opendata(service_name: &str) -> Result<JsValue, JsValue> {
     data.serialize(&serializer)
         .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
-
-/// Parses already-fetched JSON (e.g. aggregated by the opendata service helper)
-/// into `OpendataData` without making any HTTP request.
-#[wasm_bindgen]
-pub fn parse_opendata(json: &str, service_name: &str) -> Result<JsValue, JsValue> {
-    info!("[wasm] parse_opendata: {service_name}");
-    let descriptor = OPENDATA_DESCRIPTORS
-        .with(|cell| cell.borrow().get(service_name).cloned())
-        .ok_or_else(|| JsValue::from_str(&format!("Unknown opendata service: {service_name}")))?;
-
-    let service = OpendataService {
-        service_name: service_name.to_string(),
-        service_descriptor: descriptor,
-    };
-    let data = service
-        .parse_json(json)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
-    info!("[wasm] parse_opendata: data loaded {}", data.opendata.len());
-    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
-    data.serialize(&serializer)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
-}

@@ -2,11 +2,20 @@ use super::center_picker_dialog::CenterPickerDialog;
 use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
+use roadwork_core::json_tools::JsonScan;
+use roadwork_core::model::opendata::Opendata;
+use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+/// Bytes consumed by the JSON scan per frame while importing a dropped file.
+const SCAN_STEP_BUDGET: usize = 128 * 1024;
+
+/// Opendata elements built per frame by the cooperative import runner.
+const IMPORT_FRAME_BUDGET: usize = 1024;
 
 #[derive(Clone)]
 enum FetchState {
@@ -39,7 +48,183 @@ pub(crate) struct OpendataServiceHelperDialog {
     pending_descriptor: Option<String>,
     #[allow(dead_code)]
     original_name: String,
+    pending_data_applied: bool,
+    opendata_bytes: usize,
+    opendata_count: usize,
+    drop_scan: Option<DropScan>,
+    parsed_json: Option<Arc<serde_json::Value>>,
+    parsed_opendata: Option<serde_json::Value>,
+    processing: Arc<Mutex<ImportProgress>>,
+    importing: bool,
+    import_runner: Option<ImportRunner>,
 }
+
+struct DropScan {
+    file_name: String,
+    scan: JsonScan,
+}
+
+/// Shared, cooperatively-updated state of the background import pipeline.
+#[derive(Default)]
+struct ImportProgress {
+    label: String,
+    progress: f32,
+    result: Option<ImportPayload>,
+    error: Option<String>,
+}
+
+struct ImportPayload {
+    element_count: usize,
+    parsed_opendata: Option<serde_json::Value>,
+    opendata_count: usize,
+    result_json: String,
+    array_paths: Vec<(String, usize)>,
+}
+
+/// Cooperative, frame-polled post-scan import pipeline.
+///
+/// Built like [`JsonScan`]: each `poll()` call does a bounded amount of work and
+/// returns `true` once the whole import (or an error) has been produced. This
+/// keeps the UI responsive and animated on wasm without relying on the async
+/// executor or timers. Runs on the UI thread, so any panic is caught and
+/// surfaced as a visible error instead of silently hanging the dialog.
+struct ImportRunner {
+    ods: OpendataService,
+    value: Arc<serde_json::Value>,
+    elements: Option<Vec<serde_json::Value>>,
+    total: usize,
+    index: usize,
+    items: Vec<Opendata>,
+}
+
+impl ImportRunner {
+    fn new(ods: OpendataService, value: Arc<serde_json::Value>) -> Self {
+        Self {
+            ods,
+            value,
+            elements: None,
+            total: 0,
+            index: 0,
+            items: Vec::new(),
+        }
+    }
+
+    /// Advances the import by up to `IMPORT_FRAME_BUDGET` elements. Returns
+    /// `true` when the import is finished (result or error set in `state`).
+    fn poll(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) -> bool {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.poll_inner(state, ctx)));
+        match result {
+            Ok(done) => done,
+            Err(payload) => {
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                log::error!("Import runner panicked: {message}");
+                state.lock().unwrap().error = Some(format!("Import failed: {message}"));
+                ctx.request_repaint();
+                true
+            }
+        }
+    }
+
+    fn poll_inner(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) -> bool {
+        if self.elements.is_none() {
+            if self.ods.service_descriptor.data_array.trim().is_empty() {
+                let message = "Unable to parse the data: the descriptor has no dataArray path — \
+                               fill it in the descriptor form before importing."
+                    .to_string();
+                log::error!("{message}");
+                state.lock().unwrap().error = Some(message);
+                ctx.request_repaint();
+                return true;
+            }
+            match self.ods.roadwork_array(&self.value) {
+                Ok(array) => {
+                    self.total = array.len();
+                    self.elements = Some(array.into_iter().cloned().collect());
+                }
+                Err(e) => {
+                    log::error!("Unable to query the data array: {e}");
+                    state.lock().unwrap().error = Some(format!("Unable to parse the data: {e}"));
+                    ctx.request_repaint();
+                    return true;
+                }
+            }
+            if self.total == 0 {
+                self.finalize(state, ctx);
+                return true;
+            }
+            self.set_progress(state, ctx, format!("Building… 0/{}", self.total), 0.0);
+        }
+        let end = (self.index + IMPORT_FRAME_BUDGET).min(self.total);
+        if let Some(elements) = self.elements.as_ref() {
+            for node in &elements[self.index..end] {
+                if let Ok(item) = self.ods.build_opendata(node)
+                    && OpendataService::is_valid(&item)
+                {
+                    self.items.push(item);
+                }
+            }
+        }
+        self.index = end;
+        if self.index < self.total {
+            self.set_progress(
+                state,
+                ctx,
+                format!("Building… {}/{}", self.index, self.total),
+                self.index as f32 / self.total as f32,
+            );
+            ctx.request_repaint();
+            return false;
+        }
+        self.finalize(state, ctx);
+        true
+    }
+
+    fn set_progress(
+        &self,
+        state: &Arc<Mutex<ImportProgress>>,
+        ctx: &Context,
+        label: String,
+        progress: f32,
+    ) {
+        let mut state = state.lock().unwrap();
+        state.label = label;
+        state.progress = progress;
+        ctx.request_repaint();
+    }
+
+    fn finalize(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) {
+        let data = OpendataData::new(&self.ods.service_name, std::mem::take(&mut self.items));
+        let result_json = self
+            .elements
+            .as_ref()
+            .and_then(|elements| elements.first())
+            .map(|element| super::pretty_json_tabs(element).unwrap_or_default())
+            .unwrap_or_else(|| "[]".to_string());
+        state.lock().unwrap().result = Some(ImportPayload {
+            element_count: self.total,
+            parsed_opendata: serde_json::to_value(&data).ok(),
+            opendata_count: data.opendata.len(),
+            result_json,
+            array_paths: roadwork_core::json_tools::find_json_arrays_value(&self.value),
+        });
+        let mut state = state.lock().unwrap();
+        state.label = "Done".to_string();
+        state.progress = 1.0;
+        ctx.request_repaint();
+    }
+}
+
+/// Maximum characters rendered in a single table cell.
+const MAX_CELL_CHARS: usize = 512;
+
+/// Above this size, raw JSON editors are not shown at all to avoid
+/// laying out a huge document overflowing egui.
+const MAX_EDITABLE_JSON_BYTES: usize = 4 * 1024 * 1024;
 
 impl OpendataServiceHelperDialog {
     pub(crate) fn new(
@@ -75,6 +260,9 @@ impl OpendataServiceHelperDialog {
             }
         }
         self.was_open = is_open;
+        if is_open && !self.pending_data_applied {
+            self.pending_data_applied = self.apply_pending_data();
+        }
         let result = match &*self.fetch_state.lock().unwrap() {
             Some(FetchState::Done(result)) => Some(result.clone()),
             _ => None,
@@ -85,6 +273,7 @@ impl OpendataServiceHelperDialog {
                 Ok(text) => {
                     self.raw_json = text;
                     self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
+                    self.auto_fill_data_array();
                     self.error = None;
                     self.dirty = true;
                     self.validation_report = None;
@@ -96,6 +285,24 @@ impl OpendataServiceHelperDialog {
                     toasts.error(format!("Fetch error: {e}"));
                 }
             }
+        }
+        let dropped_files: Vec<egui::DroppedFile> = ui.ctx().input(|i| i.raw.dropped_files.clone());
+        for file in dropped_files {
+            if let Err(e) = self.start_dropped_import(file) {
+                toasts.error(format!("Import failed: {e}"));
+            }
+        }
+        self.step_drop_scan(ui.ctx(), toasts);
+        if self.importing {
+            let done = self
+                .import_runner
+                .as_mut()
+                .map(|runner| runner.poll(&self.processing, ui.ctx()))
+                .unwrap_or(true);
+            if done {
+                self.import_runner = None;
+            }
+            self.poll_import_result(ui.ctx(), toasts);
         }
         self.recompute_if_dirty();
 
@@ -151,13 +358,15 @@ impl OpendataServiceHelperDialog {
             }
             ui.separator();
             #[cfg(target_arch = "wasm32")]
-            let can_save =
-                !self.descriptor_json.trim().is_empty() && !self.raw_json.trim().is_empty();
+            let can_save = {
+                let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
+                !self.descriptor_json.trim().is_empty() && has_data
+            };
             #[cfg(target_arch = "wasm32")]
             if ui
                 .add_enabled(can_save, egui::Button::new("Save to extension"))
                 .on_hover_text(
-                    "Save the descriptor and the fetched data into the Roadwork WME extension \
+                    "Save the descriptor and the opendata into the Roadwork WME extension \
                      and enable the service",
                 )
                 .clicked()
@@ -221,10 +430,14 @@ impl OpendataServiceHelperDialog {
             .min_size(60.0)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Fetched data").strong());
-                    if self.element_count > 0 {
+                    ui.label(RichText::new("Opendata data").strong());
+                    if self.opendata_count > 0 {
                         ui.separator();
-                        ui.label(format!("{} elements", self.element_count));
+                        ui.label(format!(
+                            "{} items · {}",
+                            self.opendata_count,
+                            format_bytes(self.opendata_bytes)
+                        ));
                     }
                 });
                 if let Some(report) = &self.validation_report {
@@ -232,101 +445,148 @@ impl OpendataServiceHelperDialog {
                     self.show_validation_report(ui, report);
                 }
                 ui.separator();
-                if self.raw_json.trim().is_empty() {
-                    ui.label("Fetch the JSON first to display the opendata as a table.");
+                if self.parsed_opendata.is_some() {
+                    self.show_opendata_table(ui);
                 } else {
-                    self.show_data_table(ui);
+                    self.show_data_drop_zone(ui);
                 }
             });
         self.show_url_fetch_panel(ui);
     }
 
-    fn show_data_table(&self, ui: &mut Ui) {
-        let Some(descriptor) = &self.descriptor else {
-            ui.label("No descriptor available.");
+    fn show_data_drop_zone(&mut self, ui: &mut Ui) {
+        let hovering = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+        egui::Frame::group(ui.style())
+            .inner_margin(egui::Margin::symmetric(8, 14))
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    if let Some(scan) = &self.drop_scan {
+                        ui.add(
+                            egui::ProgressBar::new(scan.scan.progress())
+                                .text(format!("Importing {}…", scan.file_name)),
+                        );
+                        ui.label(format!("{:.0}%", scan.scan.progress() * 100.0));
+                    } else if self.importing {
+                        let (label, progress) = {
+                            let state = self.processing.lock().unwrap();
+                            (state.label.clone(), state.progress)
+                        };
+                        ui.add(
+                            egui::ProgressBar::new(progress)
+                                .text(label),
+                        );
+                        ui.label(format!("{:.0}%", progress * 100.0));
+                    } else if hovering {
+                        ui.colored_label(
+                            ui.visuals().hyperlink_color,
+                            "Drop the file to import it",
+                        );
+                    } else if !self.raw_json.trim().is_empty() {
+                        ui.colored_label(
+                            ui.visuals().hyperlink_color,
+                            "JSON loaded — pick the dataArray path in the descriptor (✨) \
+                             to build the opendata.",
+                        );
+                    } else {
+                        ui.label("Drop a .json data file here to import it, or fetch from the URL above.");
+                    }
+                });
+            });
+    }
+
+    fn show_opendata_table(&mut self, ui: &mut Ui) {
+        let Some(value) = &self.parsed_opendata else {
+            ui.label("Unable to parse the stored opendata data.");
             return;
         };
-        let ods = OpendataService::from(descriptor);
-        let Ok(array) = ods.extract_roadwork_array(&self.raw_json) else {
-            ui.label("Unable to parse the fetched JSON as an array of opendata.");
+        self.show_opendata_table_value(ui, value);
+    }
+
+    fn show_opendata_table_value(&self, ui: &mut Ui, value: &serde_json::Value) {
+        let Some(opendata) = value.get("opendata").and_then(|o| o.as_object()) else {
+            ui.label("No opendata in the stored data.");
             return;
         };
-        let elements = array.as_array().cloned().unwrap_or_default();
-        if elements.is_empty() {
-            ui.label("No opendata in the fetched JSON.");
+        if opendata.is_empty() {
+            ui.label("No opendata item.");
             return;
         }
-        let columns = self.table_columns(&elements);
-        if columns.is_empty() {
-            ui.label("No data to display.");
-            return;
-        }
-        let mut table = egui_extras::TableBuilder::new(ui)
+        let table = egui_extras::TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(egui_extras::Column::auto().at_least(36.0));
-        for _ in &columns {
-            table = table.column(egui_extras::Column::remainder().at_least(80.0));
-        }
+            .column(egui_extras::Column::auto().at_least(36.0))
+            .column(egui_extras::Column::remainder().at_least(80.0))
+            .column(egui_extras::Column::auto().at_least(70.0))
+            .column(egui_extras::Column::auto().at_least(70.0))
+            .column(egui_extras::Column::auto().at_least(70.0))
+            .column(egui_extras::Column::remainder().at_least(80.0));
         table
             .header(20.0, |mut header| {
-                header.col(|ui| {
-                    ui.strong("#");
-                });
-                for (label, _) in &columns {
+                for label in [
+                    "#",
+                    "id",
+                    "latitude",
+                    "longitude",
+                    "polygones",
+                    "description",
+                ] {
                     header.col(|ui| {
                         ui.strong(label);
                     });
                 }
             })
             .body(|body| {
-                body.rows(18.0, elements.len(), |mut row| {
+                body.rows(18.0, opendata.len(), |mut row| {
                     let index = row.index();
-                    let element = &elements[index];
+                    let item = opendata
+                        .values()
+                        .nth(index)
+                        .unwrap_or(&serde_json::Value::Null);
                     row.col(|ui| {
                         ui.label((index + 1).to_string());
                     });
-                    for (_, path) in &columns {
-                        let value = ods
-                            .path_fetched_value_in(element, path)
-                            .unwrap_or_else(|| "—".to_string());
-                        row.col(|ui| {
-                            ui.label(value);
-                        });
-                    }
+                    let cell = |v: &serde_json::Value| -> String {
+                        let text = match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            _ => "—".to_string(),
+                        };
+                        if text.chars().count() > MAX_CELL_CHARS {
+                            text.chars().take(MAX_CELL_CHARS).collect::<String>() + "…"
+                        } else {
+                            text
+                        }
+                    };
+                    row.col(|ui| {
+                        ui.label(cell(item.get("id").unwrap_or(&serde_json::Value::Null)));
+                    });
+                    row.col(|ui| {
+                        ui.label(cell(
+                            item.get("latitude").unwrap_or(&serde_json::Value::Null),
+                        ));
+                    });
+                    row.col(|ui| {
+                        ui.label(cell(
+                            item.get("longitude").unwrap_or(&serde_json::Value::Null),
+                        ));
+                    });
+                    let polygon_count = item
+                        .get("polygons")
+                        .and_then(|p| p.as_array())
+                        .map(|p| p.len())
+                        .unwrap_or(0);
+                    row.col(|ui| {
+                        ui.label(polygon_count.to_string());
+                    });
+                    row.col(|ui| {
+                        ui.label(cell(
+                            item.get("description").unwrap_or(&serde_json::Value::Null),
+                        ));
+                    });
                 });
             });
-    }
-
-    fn table_columns(&self, elements: &[serde_json::Value]) -> Vec<(String, String)> {
-        let Some(descriptor) = &self.descriptor else {
-            return Vec::new();
-        };
-        let mut columns: Vec<(String, String)> = Vec::new();
-        let id = descriptor.id.trim();
-        if !id.is_empty() {
-            columns.push(("id".to_string(), id.to_string()));
-        }
-        for (label, optional) in [
-            ("latitude", &descriptor.latitude),
-            ("longitude", &descriptor.longitude),
-            ("polygon", &descriptor.polygon),
-            ("description", &descriptor.description),
-        ] {
-            if let Some(path) = optional.as_deref().filter(|path| !path.trim().is_empty()) {
-                columns.push((label.to_string(), path.to_string()));
-            }
-        }
-        if !columns.is_empty() {
-            return columns;
-        }
-        let Some(first) = elements.first() else {
-            return Vec::new();
-        };
-        let mut scalars = roadwork_core::json_tools::element_scalar_paths(first);
-        scalars.truncate(MAX_TABLE_COLUMNS);
-        scalars
     }
 
     fn show_url_fetch_panel(&mut self, ui: &mut Ui) {
@@ -336,16 +596,7 @@ impl OpendataServiceHelperDialog {
             _ => (false, String::new()),
         };
         let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
-            let mut job = egui_extras::syntax_highlighting::highlight(
-                ui.ctx(),
-                ui.style(),
-                &theme,
-                text.as_str(),
-                "json",
-            );
-            job.wrap.max_width = wrap_width;
-            ui.fonts_mut(|f| f.layout_job(job))
+            super::layout_json_text(ui, text, wrap_width)
         };
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.label(RichText::new("URL").strong());
@@ -386,16 +637,29 @@ impl OpendataServiceHelperDialog {
                 .id_salt("opendata_raw_json_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let response = ui.add(
-                        egui::TextEdit::multiline(&mut self.raw_json)
-                            .code_editor()
-                            .interactive(true)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(15)
-                            .layouter(&mut json_layouter),
-                    );
-                    if response.changed() {
-                        self.validation_report = None;
+                    let editable = self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES;
+                    if !editable {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            format!(
+                                "Document too large to edit ({}) — no preview available",
+                                format_bytes(self.raw_json.len())
+                            ),
+                        );
+                    }
+                    if editable {
+                        let response = ui.add(
+                            egui::TextEdit::multiline(&mut self.raw_json)
+                                .code_editor()
+                                .interactive(true)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(15)
+                                .layouter(&mut json_layouter),
+                        );
+                        if response.changed() {
+                            self.parsed_json = None;
+                            self.validation_report = None;
+                        }
                     }
                 });
         });
@@ -451,9 +715,11 @@ impl OpendataServiceHelperDialog {
                             Some(params)
                         };
                         *dirty = true;
-                        *descriptor_json =
-                            serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                        *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                         *url = descriptor.metadata.url.clone().unwrap_or_default();
+                        self.parsed_opendata = None;
+                        self.opendata_bytes = 0;
+                        self.opendata_count = 0;
                     }
                 }
                 None => {
@@ -466,7 +732,7 @@ impl OpendataServiceHelperDialog {
         {
             descriptor.metadata.center = center;
             *dirty = true;
-            *descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+            *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
         }
     }
 
@@ -480,17 +746,21 @@ impl OpendataServiceHelperDialog {
             };
             if descriptor.metadata.url != new_url {
                 descriptor.metadata.url = new_url;
-                self.descriptor_json = serde_json::to_string_pretty(descriptor).unwrap_or_default();
+                self.descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                 changed = true;
             }
         }
         if changed {
             self.raw_json.clear();
+            self.parsed_json = None;
             self.result_json.clear();
             self.array_paths.clear();
             self.error = None;
             self.dirty = true;
             self.validation_report = None;
+            self.parsed_opendata = None;
+            self.opendata_bytes = 0;
+            self.opendata_count = 0;
         }
     }
 
@@ -504,11 +774,15 @@ impl OpendataServiceHelperDialog {
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
                 self.descriptor = Some(descriptor);
                 self.raw_json.clear();
+                self.parsed_json = None;
                 self.result_json.clear();
                 self.array_paths.clear();
                 self.error = None;
                 self.dirty = true;
                 self.validation_report = None;
+                self.parsed_opendata = None;
+                self.opendata_bytes = 0;
+                self.opendata_count = 0;
                 true
             }
             Err(e) => {
@@ -541,9 +815,10 @@ impl OpendataServiceHelperDialog {
         self.descriptor_json = self
             .descriptor
             .as_ref()
-            .map(|descriptor| serde_json::to_string_pretty(descriptor).unwrap_or_default())
+            .map(|descriptor| super::pretty_json_tabs(descriptor).unwrap_or_default())
             .unwrap_or_default();
         self.raw_json.clear();
+        self.parsed_json = None;
         self.result_json.clear();
         self.error = None;
         self.dirty = true;
@@ -551,12 +826,33 @@ impl OpendataServiceHelperDialog {
         self.current_index = 0;
         self.element_count = 0;
         self.validation_report = None;
+        self.parsed_opendata = None;
+        self.opendata_bytes = 0;
+        self.opendata_count = 0;
+        self.importing = false;
+        self.import_runner = None;
+        self.drop_scan = None;
+        *self.processing.lock().unwrap() = ImportProgress::default();
     }
 
-    pub(crate) fn handle_dropped_file(
-        &mut self,
-        file: egui::DroppedFile,
-    ) -> Result<String, String> {
+    #[cfg(target_arch = "wasm32")]
+    fn set_opendata_data(&mut self, json: String) {
+        let value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+        self.set_opendata_data_value(value);
+        self.opendata_bytes = json.len();
+    }
+
+    fn set_opendata_data_value(&mut self, value: serde_json::Value) {
+        self.opendata_count = value
+            .get("opendata")
+            .and_then(|o| o.as_object())
+            .map(|map| map.len())
+            .unwrap_or(0);
+        self.opendata_bytes = serde_json::to_string(&value).map(|s| s.len()).unwrap_or(0);
+        self.parsed_opendata = Some(value);
+    }
+
+    fn start_dropped_import(&mut self, file: egui::DroppedFile) -> Result<(), String> {
         let name = file.name.clone();
         let content = if let Some(path) = file.path {
             std::fs::read_to_string(&path)
@@ -569,13 +865,185 @@ impl OpendataServiceHelperDialog {
         if content.trim().is_empty() {
             return Err(format!("Dropped file \"{name}\" is empty"));
         }
-        self.raw_json = content;
-        self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
-        self.result_json.clear();
+        self.drop_scan = Some(DropScan {
+            file_name: name,
+            scan: JsonScan::new(&content),
+        });
         self.error = None;
-        self.dirty = true;
-        self.validation_report = None;
-        Ok(name)
+        Ok(())
+    }
+
+    fn step_drop_scan(&mut self, ctx: &Context, toasts: &mut Toasts) {
+        let Some(mut job) = self.drop_scan.take() else {
+            return;
+        };
+        if !job.scan.is_done() {
+            job.scan.step(SCAN_STEP_BUDGET);
+        }
+        if job.scan.is_done() {
+            self.apply_scan_result(job, toasts);
+        } else {
+            self.drop_scan = Some(job);
+            ctx.request_repaint();
+        }
+    }
+
+    fn apply_scan_result(&mut self, job: DropScan, toasts: &mut Toasts) {
+        let file_name = job.file_name;
+        let (source, result) = job.scan.into_parts();
+        match result {
+            Err(e) => {
+                self.error = Some(format!("Invalid JSON in \"{file_name}\": {e}"));
+                toasts.error(format!("Import failed: {e}"));
+            }
+            Ok(value) => {
+                if let Some(name) = value
+                    .get("metadata")
+                    .and_then(|m| m.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                {
+                    self.descriptor_json = super::pretty_json_tabs(&value).unwrap_or(source);
+                    self.apply_descriptor_json();
+                    toasts.success(format!("Descriptor \"{name}\" loaded from {file_name}"));
+                } else if is_opendata_data_value(&value) {
+                    self.raw_json.clear();
+                    self.result_json.clear();
+                    self.error = None;
+                    self.dirty = true;
+                    self.validation_report = None;
+                    self.set_opendata_data_value(value);
+                    toasts.success(format!("Data imported from {file_name}"));
+                } else {
+                    self.raw_json = super::pretty_json_tabs(&value).unwrap_or(source);
+                    let value = Arc::new(value);
+                    self.parsed_json = Some(Arc::clone(&value));
+                    self.array_paths = roadwork_core::json_tools::find_json_arrays_value(&value);
+                    self.result_json.clear();
+                    self.error = None;
+                    self.validation_report = None;
+                    self.parsed_opendata = None;
+                    self.opendata_bytes = 0;
+                    self.opendata_count = 0;
+                    self.element_count = 0;
+                    self.current_index = 0;
+                    self.auto_fill_data_array();
+                    let has_data_array = self
+                        .descriptor
+                        .as_ref()
+                        .is_some_and(|d| !d.data_array.trim().is_empty());
+                    if has_data_array {
+                        self.importing = self.start_import_processing(value);
+                        toasts.success(format!("Data imported from {file_name}"));
+                    } else {
+                        toasts.success(format!(
+                            "JSON imported from {file_name} — pick the dataArray path (✨) to build the opendata"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fills `dataArray` with the unique array found in the fetched/imported
+    /// JSON, if any. Returns `true` when the path was filled.
+    fn auto_fill_data_array(&mut self) -> bool {
+        if self.array_paths.len() != 1 {
+            return false;
+        }
+        let Some(descriptor) = self.descriptor.as_mut() else {
+            return false;
+        };
+        if !descriptor.data_array.trim().is_empty() {
+            return false;
+        }
+        descriptor.data_array = format!("{}[*]", self.array_paths[0].0);
+        self.descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
+        true
+    }
+
+    /// Starts the cooperative import for the dropped raw data. Returns `false`
+    /// when no descriptor is loaded, so nothing can be built.
+    fn start_import_processing(&mut self, value: Arc<serde_json::Value>) -> bool {
+        let Some(descriptor) = &self.descriptor else {
+            return false;
+        };
+        let ods = OpendataService::from(descriptor);
+        *self.processing.lock().unwrap() = ImportProgress {
+            label: "Parsing…".to_string(),
+            progress: 0.0,
+            result: None,
+            error: None,
+        };
+        self.import_runner = Some(ImportRunner::new(ods, value));
+        true
+    }
+
+    fn poll_import_result(&mut self, ctx: &Context, toasts: &mut Toasts) {
+        let mut state = self.processing.lock().unwrap();
+        if let Some(e) = state.error.take() {
+            self.importing = false;
+            self.error = Some(e.clone());
+            toasts.error(format!("Import failed: {e}"));
+            return;
+        }
+        let Some(payload) = state.result.take() else {
+            ctx.request_repaint();
+            return;
+        };
+        self.importing = false;
+        self.element_count = payload.element_count;
+        if self.element_count == 0 {
+            self.current_index = 0;
+        } else {
+            self.current_index = self.current_index.min(self.element_count - 1);
+        }
+        self.parsed_opendata = payload.parsed_opendata;
+        self.opendata_count = payload.opendata_count;
+        self.opendata_bytes = self
+            .parsed_opendata
+            .as_ref()
+            .and_then(|value| serde_json::to_string(value).ok())
+            .map(|json| json.len())
+            .unwrap_or(0);
+        self.result_json = payload.result_json;
+        self.array_paths = payload.array_paths;
+    }
+
+    /// Applies data posted by the extension content script (`ROADWORK_HELPER_DATA`)
+    /// once it arrives. Returns `true` when data has been consumed.
+    fn apply_pending_data(&mut self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let Some(json) = crate::roadwork_app::take_pending_opendata_data() else {
+                return false;
+            };
+            if is_opendata_data(&json) {
+                self.raw_json.clear();
+                self.parsed_json = None;
+                self.array_paths = Vec::new();
+                self.set_opendata_data(json);
+            } else {
+                self.raw_json = serde_json::from_str::<serde_json::Value>(&json)
+                    .map(|value| super::pretty_json_tabs(&value).unwrap_or(json.clone()))
+                    .unwrap_or(json);
+                self.parsed_json = None;
+                self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
+                self.parsed_opendata = None;
+                self.opendata_bytes = 0;
+                self.opendata_count = 0;
+            }
+            self.result_json.clear();
+            self.error = None;
+            self.dirty = true;
+            self.validation_report = None;
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            false
+        }
     }
 
     fn fetch(&mut self, ctx: Context) {
@@ -594,9 +1062,7 @@ impl OpendataServiceHelperDialog {
                     .map_err(|e| e.to_string())
                     .map(|text| {
                         serde_json::from_str::<serde_json::Value>(&text)
-                            .map(|value| {
-                                serde_json::to_string_pretty(&value).unwrap_or(text.clone())
-                            })
+                            .map(|value| super::pretty_json_tabs(&value).unwrap_or(text.clone()))
                             .unwrap_or(text)
                     })
             }
@@ -610,12 +1076,14 @@ impl OpendataServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return true;
         }
-        match &self.descriptor {
-            Some(descriptor) => {
-                let ods = OpendataService::from(descriptor);
-                ods.roadwork_array_targets_array(&self.raw_json)
-            }
-            None => false,
+        let Some(descriptor) = &self.descriptor else {
+            return false;
+        };
+        let ods = OpendataService::from(descriptor);
+        if let Some(value) = &self.parsed_json {
+            ods.roadwork_array_targets_array_value(value)
+        } else {
+            ods.roadwork_array_targets_array(&self.raw_json)
         }
     }
 
@@ -678,11 +1146,12 @@ impl OpendataServiceHelperDialog {
             &wasm_bindgen::JsValue::from_str(&self.descriptor_json),
         )
         .map_err(|e| format!("{e:?}"))?;
-        if !self.raw_json.trim().is_empty() {
+        if let Some(data) = &self.parsed_opendata {
+            let data = serde_json::to_string(data).map_err(|e| e.to_string())?;
             js_sys::Reflect::set(
                 &object,
                 &wasm_bindgen::JsValue::from_str("data"),
-                &wasm_bindgen::JsValue::from_str(&self.raw_json),
+                &wasm_bindgen::JsValue::from_str(&data),
             )
             .map_err(|e| format!("{e:?}"))?;
         }
@@ -750,17 +1219,26 @@ impl OpendataServiceHelperDialog {
             });
     }
 
+    fn current_element(&self) -> Option<serde_json::Value> {
+        let descriptor = self.descriptor.as_ref()?;
+        let ods = OpendataService::from(descriptor);
+        if let Some(value) = self.parsed_json.as_deref() {
+            ods.element_at_value(value, self.current_index)
+        } else if !self.raw_json.trim().is_empty() {
+            ods.element_at(&self.raw_json, self.current_index)
+        } else {
+            None
+        }
+    }
+
     fn field_values(&self) -> FieldsValues {
         let Some(descriptor) = &self.descriptor else {
             return FieldsValues::default();
         };
-        if self.raw_json.trim().is_empty() {
-            return FieldsValues::default();
-        }
-        let ods = OpendataService::from(descriptor);
-        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+        let Some(element) = self.current_element() else {
             return FieldsValues::default();
         };
+        let ods = OpendataService::from(descriptor);
         let path = |path: &str| ods.path_fetched_value_in(&element, path);
         let optional_path = |optional: &Option<String>| optional.as_deref().and_then(path);
         FieldsValues {
@@ -774,14 +1252,7 @@ impl OpendataServiceHelperDialog {
     }
 
     fn path_candidates(&self) -> PathCandidates {
-        let Some(descriptor) = &self.descriptor else {
-            return PathCandidates::default();
-        };
-        if self.raw_json.trim().is_empty() {
-            return PathCandidates::default();
-        }
-        let ods = OpendataService::from(descriptor);
-        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+        let Some(element) = self.current_element() else {
             return PathCandidates::default();
         };
         PathCandidates {
@@ -794,13 +1265,10 @@ impl OpendataServiceHelperDialog {
         let Some(descriptor) = &self.descriptor else {
             return FieldsValidation::valid();
         };
-        if self.raw_json.trim().is_empty() {
-            return FieldsValidation::valid();
-        }
-        let ods = OpendataService::from(descriptor);
-        let Some(element) = ods.element_at(&self.raw_json, self.current_index) else {
+        let Some(element) = self.current_element() else {
             return FieldsValidation::valid();
         };
+        let ods = OpendataService::from(descriptor);
         FieldsValidation {
             data_array: self.opendata_array_is_valid(),
             id: ods.path_points_to_scalar_in(&element, &descriptor.id),
@@ -841,13 +1309,29 @@ impl OpendataServiceHelperDialog {
         match &self.descriptor {
             Some(descriptor) => {
                 let ods = OpendataService::from(descriptor);
-                self.element_count = ods.element_count(&self.raw_json);
+                let data = if let Some(value) = self.parsed_json.as_deref() {
+                    self.element_count = ods.element_count_value(value);
+                    ods.parse_value(value).ok()
+                } else {
+                    self.element_count = ods.element_count(&self.raw_json);
+                    ods.parse_json(&self.raw_json).ok()
+                };
                 if self.element_count == 0 {
                     self.current_index = 0;
                 } else {
                     self.current_index = self.current_index.min(self.element_count - 1);
                 }
                 self.update_result_json();
+                self.parsed_opendata = data
+                    .as_ref()
+                    .and_then(|data| serde_json::to_value(data).ok());
+                self.opendata_bytes = self
+                    .parsed_opendata
+                    .as_ref()
+                    .and_then(|value| serde_json::to_string(value).ok())
+                    .map(|json| json.len())
+                    .unwrap_or(0);
+                self.opendata_count = data.as_ref().map(|data| data.opendata.len()).unwrap_or(0);
             }
             None => {
                 self.element_count = 0;
@@ -866,15 +1350,24 @@ impl OpendataServiceHelperDialog {
             self.result_json.clear();
             return;
         }
+        if self.element_count == 0 {
+            self.result_json.clear();
+            return;
+        }
         let ods = OpendataService::from(descriptor);
-        match ods.extract_roadwork_array(&self.raw_json) {
+        let array = if let Some(value) = self.parsed_json.as_deref() {
+            ods.extract_value(value)
+        } else {
+            ods.extract_roadwork_array(&self.raw_json)
+        };
+        match array {
             Ok(array) => {
                 let element = array
                     .as_array()
                     .and_then(|elements| elements.get(self.current_index))
                     .cloned()
                     .unwrap_or(array);
-                self.result_json = serde_json::to_string_pretty(&element).unwrap_or_default();
+                self.result_json = super::pretty_json_tabs(&element).unwrap_or_default();
             }
             Err(e) => self.result_json = format!("Parse error: {e}"),
         }
@@ -891,4 +1384,24 @@ fn url_params_to_vec(params: &Option<HashMap<String, String>>) -> Vec<(String, S
     vec
 }
 
-const MAX_TABLE_COLUMNS: usize = 8;
+fn format_bytes(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    if bytes < KB as usize {
+        format!("{bytes} B")
+    } else if (bytes as f64) < KB * KB {
+        format!("{:.1} KB", bytes as f64 / KB)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (KB * KB))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn is_opendata_data(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .is_some_and(|value| value.get("opendata").is_some_and(|o| o.is_object()))
+}
+
+fn is_opendata_data_value(value: &serde_json::Value) -> bool {
+    value.get("opendata").is_some_and(|o| o.is_object())
+}
