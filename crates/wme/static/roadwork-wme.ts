@@ -92,7 +92,6 @@ const DEFAULTS = {
 
 const OPENDATA_LAYER = "Opendata";
 const OPENDATA_CACHE_KEY_PREFIX = "roadwork-wme-opendata-cache-";
-const OPENDATA_DATA_LEGACY_KEY_PREFIX = "roadwork-wme-opendata-data-";
 
 // --- IndexedDB storage for large data (opendata service data, caches, polygon groups).
 // localStorage stays for small preferences; big payloads go to IndexedDB to dodge its ~5MB quota.
@@ -208,11 +207,6 @@ async function migrateLegacyStorage() {
                 if (changed) {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
                 }
-            }
-        }
-        for (const key of await idbAllKeys()) {
-            if (key.startsWith(OPENDATA_DATA_LEGACY_KEY_PREFIX)) {
-                await idbDelete(key);
             }
         }
     } catch (_) {}
