@@ -92,7 +92,7 @@ const DEFAULTS = {
 
 const OPENDATA_LAYER = "Opendata";
 const OPENDATA_CACHE_KEY_PREFIX = "roadwork-wme-opendata-cache-";
-const OPENDATA_DATA_KEY_PREFIX = "roadwork-wme-opendata-data-";
+const OPENDATA_DATA_LEGACY_KEY_PREFIX = "roadwork-wme-opendata-data-";
 
 // --- IndexedDB storage for large data (opendata service data, caches, polygon groups).
 // localStorage stays for small preferences; big payloads go to IndexedDB to dodge its ~5MB quota.
@@ -180,35 +180,6 @@ async function idbAllKeys(): Promise<string[]> {
     }
 }
 
-// Raw opendata service data (ex-svc.data), persisted in IndexedDB and mirrored in memory
-// so the existing synchronous read sites keep working.
-let opendataServiceData: Record<string, string> = {};
-
-function getOpendataServiceData(name: string): string | null {
-    return opendataServiceData[name] ?? null;
-}
-
-async function saveOpendataServiceData(name: string, data: string | null): Promise<void> {
-    const key = OPENDATA_DATA_KEY_PREFIX + name;
-    if (data) {
-        opendataServiceData[name] = data;
-        await idbPut(key, data);
-    } else {
-        delete opendataServiceData[name];
-        await idbDelete(key);
-    }
-}
-
-async function loadAllOpendataServiceData(): Promise<void> {
-    const fresh: Record<string, string> = {};
-    const names = Object.keys(getOpendataServices());
-    for (const name of names) {
-        const value = await idbGet(OPENDATA_DATA_KEY_PREFIX + name);
-        if (value !== null) fresh[name] = value;
-    }
-    opendataServiceData = fresh;
-}
-
 async function migrateLegacyStorage() {
     try {
         const bigPrefixes = [CACHE_KEY_PREFIX, OPENDATA_CACHE_KEY_PREFIX];
@@ -230,7 +201,6 @@ async function migrateLegacyStorage() {
                 for (const name of Object.keys(parsed.opendataServices)) {
                     const svc = parsed.opendataServices[name];
                     if (svc && typeof svc.data === "string") {
-                        await saveOpendataServiceData(name, svc.data);
                         delete svc.data;
                         changed = true;
                     }
@@ -238,6 +208,11 @@ async function migrateLegacyStorage() {
                 if (changed) {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
                 }
+            }
+        }
+        for (const key of await idbAllKeys()) {
+            if (key.startsWith(OPENDATA_DATA_LEGACY_KEY_PREFIX)) {
+                await idbDelete(key);
             }
         }
     } catch (_) {}
@@ -640,7 +615,8 @@ function editOpendataService(name: string) {
         setStatus(`No descriptor for ${name}`, "error");
         return;
     }
-    openHelper("opendata", false, name, svc.descriptor, getOpendataServiceData(name));
+    const cached = currentOpendata[name];
+    openHelper("opendata", false, name, svc.descriptor, cached ? JSON.stringify(cached) : undefined);
 }
 
 function handleDataJsonDrop(text: string, fileName: string) {
@@ -1520,7 +1496,6 @@ async function clearExtensionStorage() {
         }
     } catch (_) {}
     await idbClear();
-    opendataServiceData = {};
     await syncCustomDescriptorsToWasm(true).catch(() => {});
     window.location.reload();
 }
@@ -1762,8 +1737,6 @@ async function loadOpendataCache(name: string) {
         const raw = await idbGet(getOpendataCacheKey(name));
         if (!raw) return null;
         const cached = JSON.parse(raw);
-        const maxAge = 86400 * 1000;
-        if (Date.now() - cached.timestamp > maxAge) return null;
         return cached.data;
     } catch (_) {
         return null;
@@ -1792,23 +1765,23 @@ async function syncOpendataDescriptorsToWasm() {
 }
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
-    if (!forceRefresh) {
+    const svc = getOpendataServices()[name];
+    if (!forceRefresh && getOpendataDescriptorUrl(svc)) {
         const cached = await loadOpendataCache(name);
         if (cached) {
             currentOpendata[name] = cached;
             return cached;
         }
     }
-    const svc = getOpendataServices()[name];
     let data;
     if (getOpendataDescriptorUrl(svc)) {
         data = await rpcCall("get_opendata", [name]);
     } else {
-        const stored = getOpendataServiceData(name);
-        if (stored) {
-            data = JSON.parse(stored);
+        const cached = await loadOpendataCache(name);
+        if (cached) {
+            data = cached;
         } else {
-            throw new Error(`No URL and no stored data for ${name}`);
+            throw new Error(`No URL and no cached data for ${name}`);
         }
     }
     currentOpendata[name] = data;
@@ -1979,9 +1952,9 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
 
 async function refreshOpendataService(name: string) {
     const svc = getOpendataServices()[name];
-    if (!getOpendataDescriptorUrl(svc) && !getOpendataServiceData(name)) {
+    if (!getOpendataDescriptorUrl(svc) && !(await loadOpendataCache(name))) {
         setStatus(
-            `Cannot refresh ${name}: the descriptor has no URL and no stored data. Edit the source and drop a data file to import its data.`,
+            `Cannot refresh ${name}: the descriptor has no URL and no cached data. Edit the source and drop a data file to import its data.`,
             "error",
         );
         return;
@@ -2003,7 +1976,6 @@ async function removeOpendataService(name: string) {
     delete services[name];
     settings.opendataServices = services;
     saveSettings();
-    await saveOpendataServiceData(name, null);
     await clearOpendataCache(name);
     delete currentOpendata[name];
     renderOpendataToMap();
@@ -2031,9 +2003,6 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
     services[name] = svc;
     settings.opendataServices = services;
     saveSettings();
-    if (data) {
-        await saveOpendataServiceData(name, data);
-    }
     setStatus(`Opendata service "${name}" saved`, "success");
     renderOpendataList();
     try {
@@ -2099,15 +2068,10 @@ async function handleOpendataJson(text: string) {
                 setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
             });
     } else {
-        const stored = getOpendataServiceData(name);
-        if (stored) {
-            try {
-                currentOpendata[name] = JSON.parse(stored);
-                await saveOpendataCache(name, currentOpendata[name]);
-                renderOpendataToMap();
-            } catch (e) {
-                setStatus(`Failed to parse stored data for ${name}: ${e.message}`, "error");
-            }
+        const cached = await loadOpendataCache(name);
+        if (cached) {
+            currentOpendata[name] = cached;
+            renderOpendataToMap();
         } else {
             setStatus(
                 `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
@@ -2851,7 +2815,6 @@ async function init() {
     loadSettings();
     loadHideFinished();
     loadSortState();
-    await loadAllOpendataServiceData();
     await syncCustomDescriptorsToWasm(false).catch((e) => {
         console.warn("[Roadwork] Failed to sync custom descriptors:", e);
     });
