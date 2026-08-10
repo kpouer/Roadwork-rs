@@ -3,13 +3,12 @@ use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCa
 use super::service_helper_form::{ElementMemo, MemoKey};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
-use roadwork_core::json_tools::JsonScan;
+use roadwork_core::json_tools::{JsonScan, JsonTools};
 use roadwork_core::model::opendata::Opendata;
 use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -227,6 +226,100 @@ impl ImportRunner {
         state.label = "Done".to_string();
         state.progress = 1.0;
         ctx.request_repaint();
+    }
+}
+
+/// Columns shown in the opendata preview table. `id` is always present
+/// (required field); the optional ones appear only when selected in the
+/// descriptor.
+struct TableColumns {
+    id: bool,
+    latitude: bool,
+    longitude: bool,
+    polygon: bool,
+    description: bool,
+}
+
+impl TableColumns {
+    fn from_descriptor(descriptor: &OpendataServiceDescriptor) -> Self {
+        Self {
+            id: true,
+            latitude: descriptor.latitude.is_some(),
+            longitude: descriptor.longitude.is_some(),
+            polygon: descriptor.polygon.is_some(),
+            description: descriptor.description.is_some(),
+        }
+    }
+}
+
+/// A single row of the opendata preview table, pre-formatted for display.
+struct PreviewRow {
+    id: String,
+    latitude: String,
+    longitude: String,
+    polygon_count: usize,
+    description: String,
+}
+
+impl PreviewRow {
+    /// Built directly from a raw element of the fetched JSON, so the preview
+    /// shows values even before the item has a valid location.
+    fn from_raw(
+        ods: &OpendataService,
+        descriptor: &OpendataServiceDescriptor,
+        element: &serde_json::Value,
+    ) -> Self {
+        let fetched = |path: &Option<String>| {
+            path.as_deref()
+                .and_then(|path| ods.path_fetched_value_in(element, path))
+                .unwrap_or_default()
+        };
+        Self {
+            id: ods
+                .path_fetched_value_in(element, &descriptor.id)
+                .unwrap_or_default(),
+            latitude: fetched(&descriptor.latitude),
+            longitude: fetched(&descriptor.longitude),
+            polygon_count: descriptor
+                .polygon
+                .as_deref()
+                .and_then(|path| element.get_path_as_polygons(path))
+                .map(|polygons| polygons.len())
+                .unwrap_or(0),
+            description: fetched(&descriptor.description),
+        }
+    }
+
+    fn from_parsed(item: &serde_json::Value) -> Self {
+        let fetched = |v: Option<&serde_json::Value>| -> String {
+            match v {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Number(n)) => n.to_string(),
+                Some(serde_json::Value::Bool(b)) => b.to_string(),
+                _ => String::new(),
+            }
+        };
+        Self {
+            id: fetched(item.get("id")),
+            latitude: fetched(item.get("latitude")),
+            longitude: fetched(item.get("longitude")),
+            polygon_count: item
+                .get("polygons")
+                .and_then(|p| p.as_array())
+                .map(|p| p.len())
+                .unwrap_or(0),
+            description: fetched(item.get("description")),
+        }
+    }
+}
+
+fn display_cell(text: &str) -> String {
+    if text.is_empty() {
+        "—".to_string()
+    } else if text.chars().count() > MAX_CELL_CHARS {
+        text.chars().take(MAX_CELL_CHARS).collect::<String>() + "…"
+    } else {
+        text.to_string()
     }
 }
 
@@ -466,8 +559,8 @@ impl OpendataServiceHelperDialog {
                     self.show_validation_report(ui, report);
                 }
                 ui.separator();
-                if let Some(data) = &self.parsed_opendata {
-                    self.show_opendata_table_value(ui, data);
+                if self.fields_chosen() {
+                    self.show_opendata_table(ui);
                 } else {
                     self.show_data_drop_zone(ui);
                 }
@@ -515,91 +608,122 @@ impl OpendataServiceHelperDialog {
             });
     }
 
-    fn show_opendata_table_value(&self, ui: &mut Ui, value: &serde_json::Value) {
-        let Some(opendata) = value.get("opendata").and_then(|o| o.as_object()) else {
-            ui.label("No opendata in the stored data.");
+    fn show_opendata_table(&self, ui: &mut Ui) {
+        let Some(descriptor) = &self.descriptor else {
             return;
         };
-        if opendata.is_empty() {
-            ui.label("No opendata item.");
-            return;
-        }
-        let table = egui_extras::TableBuilder::new(ui)
+        let columns = TableColumns::from_descriptor(descriptor);
+        let rows = self.preview_rows(descriptor);
+        let mut table = egui_extras::TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(egui_extras::Column::auto().at_least(36.0))
-            .column(egui_extras::Column::remainder().at_least(80.0))
-            .column(egui_extras::Column::auto().at_least(70.0))
-            .column(egui_extras::Column::auto().at_least(70.0))
-            .column(egui_extras::Column::auto().at_least(70.0))
-            .column(egui_extras::Column::remainder().at_least(80.0));
+            .column(egui_extras::Column::auto().at_least(36.0));
+        if columns.id {
+            table = table.column(egui_extras::Column::remainder().at_least(80.0));
+        }
+        if columns.latitude {
+            table = table.column(egui_extras::Column::auto().at_least(70.0));
+        }
+        if columns.longitude {
+            table = table.column(egui_extras::Column::auto().at_least(70.0));
+        }
+        if columns.polygon {
+            table = table.column(egui_extras::Column::auto().at_least(70.0));
+        }
+        if columns.description {
+            table = table.column(egui_extras::Column::remainder().at_least(80.0));
+        }
         table
             .header(20.0, |mut header| {
-                for label in [
-                    "#",
-                    "id",
-                    "latitude",
-                    "longitude",
-                    "polygones",
-                    "description",
-                ] {
+                header.col(|ui| {
+                    ui.strong("#");
+                });
+                if columns.id {
                     header.col(|ui| {
-                        ui.strong(label);
+                        ui.strong("id");
+                    });
+                }
+                if columns.latitude {
+                    header.col(|ui| {
+                        ui.strong("latitude");
+                    });
+                }
+                if columns.longitude {
+                    header.col(|ui| {
+                        ui.strong("longitude");
+                    });
+                }
+                if columns.polygon {
+                    header.col(|ui| {
+                        ui.strong("polygones");
+                    });
+                }
+                if columns.description {
+                    header.col(|ui| {
+                        ui.strong("description");
                     });
                 }
             })
             .body(|body| {
-                body.rows(18.0, opendata.len().min(PREVIEW_MAX_ELEMENTS), |mut row| {
+                body.rows(18.0, rows.len(), |mut row| {
                     let index = row.index();
-                    let item = opendata
-                        .values()
-                        .nth(index)
-                        .unwrap_or(&serde_json::Value::Null);
+                    let item = &rows[index];
                     row.col(|ui| {
                         ui.label((index + 1).to_string());
                     });
-                    let cell = |v: &serde_json::Value| -> String {
-                        let text = match v {
-                            serde_json::Value::String(s) => s.clone(),
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::Bool(b) => b.to_string(),
-                            _ => "—".to_string(),
-                        };
-                        if text.chars().count() > MAX_CELL_CHARS {
-                            text.chars().take(MAX_CELL_CHARS).collect::<String>() + "…"
-                        } else {
-                            text
-                        }
-                    };
-                    row.col(|ui| {
-                        ui.label(cell(item.get("id").unwrap_or(&serde_json::Value::Null)));
-                    });
-                    row.col(|ui| {
-                        ui.label(cell(
-                            item.get("latitude").unwrap_or(&serde_json::Value::Null),
-                        ));
-                    });
-                    row.col(|ui| {
-                        ui.label(cell(
-                            item.get("longitude").unwrap_or(&serde_json::Value::Null),
-                        ));
-                    });
-                    let polygon_count = item
-                        .get("polygons")
-                        .and_then(|p| p.as_array())
-                        .map(|p| p.len())
-                        .unwrap_or(0);
-                    row.col(|ui| {
-                        ui.label(polygon_count.to_string());
-                    });
-                    row.col(|ui| {
-                        ui.label(cell(
-                            item.get("description").unwrap_or(&serde_json::Value::Null),
-                        ));
-                    });
+                    if columns.id {
+                        row.col(|ui| {
+                            ui.label(display_cell(&item.id));
+                        });
+                    }
+                    if columns.latitude {
+                        row.col(|ui| {
+                            ui.label(display_cell(&item.latitude));
+                        });
+                    }
+                    if columns.longitude {
+                        row.col(|ui| {
+                            ui.label(display_cell(&item.longitude));
+                        });
+                    }
+                    if columns.polygon {
+                        row.col(|ui| {
+                            ui.label(item.polygon_count.to_string());
+                        });
+                    }
+                    if columns.description {
+                        row.col(|ui| {
+                            ui.label(display_cell(&item.description));
+                        });
+                    }
                 });
             });
+    }
+
+    fn preview_rows(&self, descriptor: &OpendataServiceDescriptor) -> Vec<PreviewRow> {
+        if let Some(value) = self.parsed_json.as_deref() {
+            let ods = OpendataService::from(descriptor);
+            ods.roadwork_array(value)
+                .unwrap_or_default()
+                .into_iter()
+                .take(PREVIEW_MAX_ELEMENTS)
+                .map(|element| PreviewRow::from_raw(&ods, descriptor, element))
+                .collect()
+        } else {
+            let opendata = self
+                .parsed_opendata
+                .as_ref()
+                .and_then(|value| value.get("opendata"))
+                .and_then(|o| o.as_object())
+                .map(|o| o.values().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            opendata
+                .into_iter()
+                .take(PREVIEW_MAX_ELEMENTS)
+                .map(|item| PreviewRow::from_parsed(&item))
+                .collect()
+        }
     }
 
     fn show_url_fetch_panel(&mut self, ui: &mut Ui) {
@@ -1242,6 +1366,18 @@ impl OpendataServiceHelperDialog {
         } else {
             None
         }
+    }
+
+    fn fields_chosen(&self) -> bool {
+        let Some(descriptor) = &self.descriptor else {
+            return false;
+        };
+        !descriptor.data_array.trim().is_empty()
+            || !descriptor.id.trim().is_empty()
+            || descriptor.latitude.is_some()
+            || descriptor.longitude.is_some()
+            || descriptor.polygon.is_some()
+            || descriptor.description.is_some()
     }
 
     fn field_values(&self) -> FieldsValues {
