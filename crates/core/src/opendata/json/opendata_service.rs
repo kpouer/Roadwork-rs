@@ -319,10 +319,19 @@ impl OpendataService {
     }
 
     pub fn parse_value(&self, value: &Value) -> Result<OpendataData, MyError> {
+        self.parse_value_preview(value, usize::MAX)
+    }
+
+    /// Parses at most `limit` elements of the data array, used for previews.
+    pub fn parse_value_preview(
+        &self,
+        value: &Value,
+        limit: usize,
+    ) -> Result<OpendataData, MyError> {
         let data_array = value.query(&self.service_descriptor.data_array)?;
         info!("Found {} items", data_array.len());
-        let mut opendata = Vec::with_capacity(data_array.len());
-        for value in data_array {
+        let mut opendata = Vec::with_capacity(limit.min(data_array.len()));
+        for value in data_array.into_iter().take(limit) {
             match self.build_opendata(value) {
                 Ok(item) => {
                     if Self::is_valid(&item) {

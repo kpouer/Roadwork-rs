@@ -1,5 +1,6 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
+use super::service_helper_form::{ElementMemo, MemoKey};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::json_tools::JsonScan;
@@ -8,6 +9,7 @@ use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +18,10 @@ const SCAN_STEP_BUDGET: usize = 128 * 1024;
 
 /// Opendata elements built per frame by the cooperative import runner.
 const IMPORT_FRAME_BUDGET: usize = 1024;
+
+/// Maximum number of elements previewed in the opendata table. The preview is
+/// always built from the first `PREVIEW_MAX_ELEMENTS` of the data array.
+const PREVIEW_MAX_ELEMENTS: usize = 100;
 
 #[derive(Clone)]
 enum FetchState {
@@ -57,6 +63,8 @@ pub(crate) struct OpendataServiceHelperDialog {
     processing: Arc<Mutex<ImportProgress>>,
     importing: bool,
     import_runner: Option<ImportRunner>,
+    memo: ElementMemo,
+    memo_key: MemoKey,
 }
 
 struct DropScan {
@@ -93,6 +101,7 @@ struct ImportRunner {
     value: Arc<serde_json::Value>,
     elements: Option<Vec<serde_json::Value>>,
     total: usize,
+    limit: usize,
     index: usize,
     items: Vec<Opendata>,
 }
@@ -104,6 +113,7 @@ impl ImportRunner {
             value,
             elements: None,
             total: 0,
+            limit: 0,
             index: 0,
             items: Vec::new(),
         }
@@ -144,7 +154,8 @@ impl ImportRunner {
             match self.ods.roadwork_array(&self.value) {
                 Ok(array) => {
                     self.total = array.len();
-                    self.elements = Some(array.into_iter().cloned().collect());
+                    self.limit = self.total.min(PREVIEW_MAX_ELEMENTS);
+                    self.elements = Some(array.into_iter().take(self.limit).cloned().collect());
                 }
                 Err(e) => {
                     log::error!("Unable to query the data array: {e}");
@@ -157,9 +168,9 @@ impl ImportRunner {
                 self.finalize(state, ctx);
                 return true;
             }
-            self.set_progress(state, ctx, format!("Building… 0/{}", self.total), 0.0);
+            self.set_progress(state, ctx, format!("Building… 0/{}", self.limit), 0.0);
         }
-        let end = (self.index + IMPORT_FRAME_BUDGET).min(self.total);
+        let end = (self.index + IMPORT_FRAME_BUDGET).min(self.limit);
         if let Some(elements) = self.elements.as_ref() {
             for node in &elements[self.index..end] {
                 if let Ok(item) = self.ods.build_opendata(node)
@@ -170,12 +181,12 @@ impl ImportRunner {
             }
         }
         self.index = end;
-        if self.index < self.total {
+        if self.index < self.limit {
             self.set_progress(
                 state,
                 ctx,
-                format!("Building… {}/{}", self.index, self.total),
-                self.index as f32 / self.total as f32,
+                format!("Building… {}/{}", self.index, self.limit),
+                self.index as f32 / self.limit as f32,
             );
             ctx.request_repaint();
             return false;
@@ -272,6 +283,7 @@ impl OpendataServiceHelperDialog {
             match result {
                 Ok(text) => {
                     self.raw_json = text;
+                    self.parsed_json = None;
                     self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
                     self.auto_fill_data_array();
                     self.error = None;
@@ -430,14 +442,23 @@ impl OpendataServiceHelperDialog {
             .min_size(60.0)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Opendata data").strong());
+                    ui.label(RichText::new("Sample data").strong());
                     if self.opendata_count > 0 {
                         ui.separator();
-                        ui.label(format!(
-                            "{} items · {}",
-                            self.opendata_count,
-                            format_bytes(self.opendata_bytes)
-                        ));
+                        if self.element_count > PREVIEW_MAX_ELEMENTS {
+                            ui.label(format!(
+                                "first {} of {} items · {}",
+                                self.opendata_count,
+                                self.element_count,
+                                format_bytes(self.opendata_bytes)
+                            ));
+                        } else {
+                            ui.label(format!(
+                                "{} items · {}",
+                                self.opendata_count,
+                                format_bytes(self.opendata_bytes)
+                            ));
+                        }
                     }
                 });
                 if let Some(report) = &self.validation_report {
@@ -445,8 +466,8 @@ impl OpendataServiceHelperDialog {
                     self.show_validation_report(ui, report);
                 }
                 ui.separator();
-                if self.parsed_opendata.is_some() {
-                    self.show_opendata_table(ui);
+                if let Some(data) = &self.parsed_opendata {
+                    self.show_opendata_table_value(ui, data);
                 } else {
                     self.show_data_drop_zone(ui);
                 }
@@ -494,14 +515,6 @@ impl OpendataServiceHelperDialog {
             });
     }
 
-    fn show_opendata_table(&mut self, ui: &mut Ui) {
-        let Some(value) = &self.parsed_opendata else {
-            ui.label("Unable to parse the stored opendata data.");
-            return;
-        };
-        self.show_opendata_table_value(ui, value);
-    }
-
     fn show_opendata_table_value(&self, ui: &mut Ui, value: &serde_json::Value) {
         let Some(opendata) = value.get("opendata").and_then(|o| o.as_object()) else {
             ui.label("No opendata in the stored data.");
@@ -537,7 +550,7 @@ impl OpendataServiceHelperDialog {
                 }
             })
             .body(|body| {
-                body.rows(18.0, opendata.len(), |mut row| {
+                body.rows(18.0, opendata.len().min(PREVIEW_MAX_ELEMENTS), |mut row| {
                     let index = row.index();
                     let item = opendata
                         .values()
@@ -1309,12 +1322,15 @@ impl OpendataServiceHelperDialog {
         match &self.descriptor {
             Some(descriptor) => {
                 let ods = OpendataService::from(descriptor);
+                if self.parsed_json.is_none() {
+                    self.parsed_json = serde_json::from_str(&self.raw_json).ok().map(Arc::new);
+                }
                 let data = if let Some(value) = self.parsed_json.as_deref() {
                     self.element_count = ods.element_count_value(value);
-                    ods.parse_value(value).ok()
+                    ods.parse_value_preview(value, PREVIEW_MAX_ELEMENTS).ok()
                 } else {
-                    self.element_count = ods.element_count(&self.raw_json);
-                    ods.parse_json(&self.raw_json).ok()
+                    self.element_count = 0;
+                    None
                 };
                 if self.element_count == 0 {
                     self.current_index = 0;

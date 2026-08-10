@@ -2,6 +2,7 @@ use egui::{Color32, RichText, Ui};
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 
 use super::center_picker_dialog::CenterPickerDialog;
+pub use super::service_helper_form::PathCandidates;
 use super::service_helper_form::{
     LABEL_WIDTH, Wand, center_row, optional_text_row, roadwork_array_row, text_row,
     url_params_grid, validated,
@@ -25,12 +26,6 @@ pub(crate) struct FieldsValues {
     pub longitude: Option<String>,
     pub polygon: Option<String>,
     pub description: Option<String>,
-}
-
-#[derive(Default, Clone)]
-pub(crate) struct PathCandidates {
-    pub scalars: Vec<(String, String)>,
-    pub arrays: Vec<(String, usize)>,
 }
 
 impl FieldsValidation {
