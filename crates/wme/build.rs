@@ -374,6 +374,11 @@ fn main() {
         out_dir.join("wasm-init.js"),
     )
     .expect("Failed to copy wasm-init.js");
+    fs::copy(
+        ts_out_dir.join("wasm-worker.js"),
+        out_dir.join("wasm-worker.js"),
+    )
+    .expect("Failed to copy wasm-worker.js");
 
     // --- Generate extension icons for the Chrome Web Store ---
     println!("cargo:warning=Generating extension icons...");

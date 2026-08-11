@@ -1,61 +1,58 @@
-//! Persistence/caching for the WME extension.
+//! Persistence/caching for the WME extension, backed by SQLite.
 //!
-//! On native this is backed by SQLite (used for tests only). On wasm32 it is
-//! backed by IndexedDB through `web-sys` — no C compiler required, and every
-//! write is persisted by the browser automatically.
+//! On native this is backed by bundled SQLite (used for tests only). On wasm32
+//! the same `rusqlite` code runs against `sqlite-wasm-rs`, persisting to the
+//! Origin Private File System (OPFS) through the `sahpool` VFS
+//! (`sqlite-wasm-vfs`). OPFS requires a dedicated worker at runtime, so the
+//! wasm module runs inside the extension's `wasm-worker.js`.
 
-#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
-#[cfg(not(target_arch = "wasm32"))]
 use roadwork_core::model::opendata::Opendata;
 use roadwork_core::model::opendata_data::OpendataData;
-#[cfg(not(target_arch = "wasm32"))]
 use roadwork_core::model::roadwork::Roadwork;
 use roadwork_core::model::roadwork_data::RoadworkData;
-#[cfg(not(target_arch = "wasm32"))]
 use roadwork_core::model::wkt::polygon::Polygon;
 use roadwork_core::now_millis;
 
-#[cfg(not(target_arch = "wasm32"))]
 use rusqlite::{Connection, OptionalExtension, params};
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
+/// What kind of snapshot a `cache` row describes.
+#[derive(Debug, Clone, Copy)]
+pub enum CacheType {
+    Roadwork,
+    Opendata,
+}
 
-#[cfg(target_arch = "wasm32")]
-const ROADWORK_STORE: &str = "roadworks";
-#[cfg(target_arch = "wasm32")]
-const OPENDATA_STORE: &str = "opendata";
-#[cfg(target_arch = "wasm32")]
-const KV_STORE: &str = "kv";
+impl CacheType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CacheType::Roadwork => "roadwork",
+            CacheType::Opendata => "opendata",
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
-    #[cfg(not(target_arch = "wasm32"))]
     Sqlite(rusqlite::Error),
     Json(serde_json::Error),
-    #[cfg(target_arch = "wasm32")]
-    Js(wasm_bindgen::JsValue),
+    Vfs(String),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            #[cfg(not(target_arch = "wasm32"))]
             Error::Sqlite(e) => write!(f, "sqlite: {e}"),
             Error::Json(e) => write!(f, "json: {e}"),
-            #[cfg(target_arch = "wasm32")]
-            Error::Js(e) => write!(f, "js: {e:?}"),
+            Error::Vfs(e) => write!(f, "vfs: {e}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
         Error::Sqlite(e)
@@ -68,13 +65,6 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-impl From<wasm_bindgen::JsValue> for Error {
-    fn from(e: wasm_bindgen::JsValue) -> Self {
-        Error::Js(e)
-    }
-}
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Whether a snapshot fetched at `fetched_at_ms` is older than `max_age_ms`.
@@ -82,136 +72,23 @@ fn is_stale(fetched_at_ms: i64, max_age_ms: u64) -> bool {
     (now_millis() as i64).saturating_sub(fetched_at_ms) >= max_age_ms as i64
 }
 
-#[cfg(target_arch = "wasm32")]
-pub struct Store {
-    db: web_sys::IdbDatabase,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl Store {
-    /// Opens the cache, connecting to the `roadwork` IndexedDB database.
-    pub async fn open() -> Result<Self> {
-        let db = indexed_db::open().await?;
-        Ok(Self { db })
-    }
-
-    /// Replaces the cached roadworks for `service`, recording `now` as the
-    /// fetched time.
-    pub async fn save_roadworks(&mut self, service: &str, data: &RoadworkData) -> Result<()> {
-        let payload = serde_json::to_vec(data)?;
-        let value = indexed_db::record(Some(now_millis() as i64), &payload);
-        indexed_db::put(&self.db, ROADWORK_STORE, service, &value).await?;
-        Ok(())
-    }
-
-    /// Returns the cached roadworks for `service`, if present and not older
-    /// than `max_age_ms`.
-    pub async fn get_roadworks_cached(
-        &self,
-        service: &str,
-        max_age_ms: u64,
-    ) -> Result<Option<RoadworkData>> {
-        let Some((fetched_at, payload)) = self.read_roadworks(service).await? else {
-            return Ok(None);
-        };
-        let Some(fetched_at) = fetched_at else {
-            return Ok(None);
-        };
-        if is_stale(fetched_at, max_age_ms) {
-            return Ok(None);
-        }
-        Ok(Some(serde_json::from_slice(&payload)?))
-    }
-
-    /// Returns the cached roadworks for `service`, regardless of age.
-    pub async fn get_roadworks(&self, service: &str) -> Result<Option<RoadworkData>> {
-        let Some((_, payload)) = self.read_roadworks(service).await? else {
-            return Ok(None);
-        };
-        Ok(Some(serde_json::from_slice(&payload)?))
-    }
-
-    async fn read_roadworks(&self, service: &str) -> Result<Option<(Option<i64>, Vec<u8>)>> {
-        match indexed_db::get(&self.db, ROADWORK_STORE, service).await? {
-            Some(value) => Ok(Some(indexed_db::decode_record(&value)?)),
-            None => Ok(None),
-        }
-    }
-
-    /// Replaces the cached opendata items for `service`. Opendata never expires.
-    pub async fn save_opendata(&mut self, service: &str, data: &OpendataData) -> Result<()> {
-        let payload = serde_json::to_vec(data)?;
-        let value = indexed_db::record(None, &payload);
-        indexed_db::put(&self.db, OPENDATA_STORE, service, &value).await?;
-        Ok(())
-    }
-
-    /// Returns the cached opendata items for `service`.
-    pub async fn get_opendata(&self, service: &str) -> Result<Option<OpendataData>> {
-        let Some(value) = indexed_db::get(&self.db, OPENDATA_STORE, service).await? else {
-            return Ok(None);
-        };
-        let (_, payload) = indexed_db::decode_record(&value)?;
-        Ok(Some(serde_json::from_slice(&payload)?))
-    }
-
-    /// Removes every cached row for `service` (roadworks and opendata).
-    pub async fn remove(&mut self, service: &str) -> Result<()> {
-        indexed_db::delete(&self.db, ROADWORK_STORE, service).await?;
-        indexed_db::delete(&self.db, OPENDATA_STORE, service).await?;
-        Ok(())
-    }
-
-    /// Removes the cached roadworks for `service`.
-    pub async fn remove_roadworks(&mut self, service: &str) -> Result<()> {
-        indexed_db::delete(&self.db, ROADWORK_STORE, service).await?;
-        Ok(())
-    }
-
-    /// Removes the cached opendata for `service`.
-    pub async fn remove_opendata(&mut self, service: &str) -> Result<()> {
-        indexed_db::delete(&self.db, OPENDATA_STORE, service).await?;
-        Ok(())
-    }
-
-    /// Stores an arbitrary string under `key` (miscellaneous state such as
-    /// polygon groups).
-    pub async fn put_raw(&mut self, key: &str, value: &str) -> Result<()> {
-        indexed_db::put(&self.db, KV_STORE, key, &JsValue::from_str(value)).await?;
-        Ok(())
-    }
-
-    /// Returns the string stored under `key`, if any.
-    pub async fn get_raw(&self, key: &str) -> Result<Option<String>> {
-        match indexed_db::get(&self.db, KV_STORE, key).await? {
-            Some(value) => Ok(value.as_string()),
-            None => Ok(None),
-        }
-    }
-
-    /// Removes every cached row.
-    pub async fn clear_all(&mut self) -> Result<()> {
-        indexed_db::clear(&self.db, ROADWORK_STORE).await?;
-        indexed_db::clear(&self.db, OPENDATA_STORE).await?;
-        indexed_db::clear(&self.db, KV_STORE).await?;
-        Ok(())
-    }
-
-    /// IndexedDB writes are persisted automatically; kept for API parity.
-    pub async fn flush(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub struct Store {
     conn: Connection,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Store {
-    /// Opens the store on a real file (native builds / tests).
-    pub fn open() -> Result<Self> {
+    /// Opens the store. On wasm32 this installs the OPFS `sahpool` VFS first
+    /// (a dedicated worker is required at runtime); on native it opens a file.
+    pub async fn open() -> Result<Self> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            sqlite_wasm_vfs::sahpool::install::<rusqlite::ffi::WasmOsCallback>(
+                &sqlite_wasm_vfs::sahpool::OpfsSAHPoolCfg::default(),
+                true,
+            )
+            .await
+            .map_err(|e| Error::Vfs(e.to_string()))?;
+        }
         Self::open_path("roadwork.db")
     }
 
@@ -226,7 +103,7 @@ impl Store {
     pub fn save_roadworks(&mut self, service: &str, data: &RoadworkData) -> Result<()> {
         let fetched_at = now_millis() as i64;
         let tx = self.conn.transaction()?;
-        upsert_fetched_at(&tx, service, fetched_at)?;
+        upsert_fetched_at(&tx, service, CacheType::Roadwork, fetched_at)?;
         tx.execute("DELETE FROM roadwork WHERE service = ?1", params![service])?;
         {
             let mut stmt = tx.prepare(
@@ -257,8 +134,8 @@ impl Store {
         let fetched_at: Option<i64> = self
             .conn
             .query_row(
-                "SELECT fetched_at FROM cache WHERE service = ?1",
-                params![service],
+                "SELECT fetched_at FROM cache WHERE service = ?1 AND type = ?2",
+                params![service, CacheType::Roadwork.as_str()],
                 |row| row.get(0),
             )
             .optional()?;
@@ -299,7 +176,7 @@ impl Store {
     pub fn save_opendata(&mut self, service: &str, data: &OpendataData) -> Result<()> {
         let fetched_at = now_millis() as i64;
         let tx = self.conn.transaction()?;
-        upsert_fetched_at(&tx, service, fetched_at)?;
+        upsert_fetched_at(&tx, service, CacheType::Opendata, fetched_at)?;
         tx.execute("DELETE FROM data WHERE service = ?1", params![service])?;
         {
             let mut stmt = tx.prepare(
@@ -368,9 +245,58 @@ impl Store {
     /// Removes every cached row for `service` (roadworks, opendata, cache).
     pub fn remove(&mut self, service: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM roadwork WHERE service = ?1", params![service])?;
+        tx.execute("DELETE FROM data WHERE service = ?1", params![service])?;
         tx.execute("DELETE FROM cache WHERE service = ?1", params![service])?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Removes the cached roadworks for `service`.
+    pub fn remove_roadworks(&mut self, service: &str) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM roadwork WHERE service = ?1", params![service])?;
+        tx.execute(
+            "DELETE FROM cache WHERE service = ?1 AND type = ?2",
+            params![service, CacheType::Roadwork.as_str()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes the cached opendata for `service`.
+    pub fn remove_opendata(&mut self, service: &str) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM data WHERE service = ?1", params![service])?;
+        tx.execute(
+            "DELETE FROM cache WHERE service = ?1 AND type = ?2",
+            params![service, CacheType::Opendata.as_str()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Stores an arbitrary string under `key` (miscellaneous state such as
+    /// polygon groups).
+    pub fn put_raw(&mut self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO kv(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Returns the string stored under `key`, if any.
+    pub fn get_raw(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     /// Removes every cached row.
@@ -379,28 +305,33 @@ impl Store {
         tx.execute("DELETE FROM data", [])?;
         tx.execute("DELETE FROM roadwork", [])?;
         tx.execute("DELETE FROM cache", [])?;
+        tx.execute("DELETE FROM kv", [])?;
         tx.commit()?;
         Ok(())
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn upsert_fetched_at(tx: &rusqlite::Transaction<'_>, service: &str, fetched_at: i64) -> Result<()> {
+fn upsert_fetched_at(
+    tx: &rusqlite::Transaction<'_>,
+    service: &str,
+    cache_type: CacheType,
+    fetched_at: i64,
+) -> Result<()> {
     tx.execute(
-        "INSERT INTO cache(service, fetched_at) VALUES (?1, ?2)
-         ON CONFLICT(service) DO UPDATE SET fetched_at = excluded.fetched_at",
-        params![service, fetched_at],
+        "INSERT INTO cache(service, type, fetched_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(service, type) DO UPDATE SET fetched_at = excluded.fetched_at",
+        params![service, cache_type.as_str(), fetched_at],
     )?;
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 const DDL: &str = "
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 CREATE TABLE IF NOT EXISTS cache (
     service    TEXT NOT NULL,
+    type       TEXT NOT NULL,
     fetched_at INTEGER NOT NULL,
-    PRIMARY KEY (service)
+    PRIMARY KEY (service, type)
 );
 CREATE TABLE IF NOT EXISTS data (
     service     TEXT NOT NULL,
@@ -409,8 +340,7 @@ CREATE TABLE IF NOT EXISTS data (
     longitude   REAL NOT NULL,
     polygons    TEXT,
     description TEXT,
-    PRIMARY KEY (service, id),
-    FOREIGN KEY (service) REFERENCES cache(service) ON DELETE CASCADE
+    PRIMARY KEY (service, id)
 );
 CREATE INDEX IF NOT EXISTS idx_data_location ON data(latitude, longitude);
 CREATE TABLE IF NOT EXISTS roadwork (
@@ -419,20 +349,19 @@ CREATE TABLE IF NOT EXISTS roadwork (
     latitude  REAL NOT NULL,
     longitude REAL NOT NULL,
     payload   BLOB NOT NULL,
-    PRIMARY KEY (service, id),
-    FOREIGN KEY (service) REFERENCES cache(service) ON DELETE CASCADE
+    PRIMARY KEY (service, id)
 );
 CREATE INDEX IF NOT EXISTS idx_roadwork_location ON roadwork(latitude, longitude);
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 ";
 
-#[cfg(not(target_arch = "wasm32"))]
 fn init_schema(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(&format!("PRAGMA foreign_keys = ON;\n{DDL}"))?;
     Ok(())
 }
-
-#[cfg(target_arch = "wasm32")]
-mod indexed_db;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
@@ -546,6 +475,34 @@ mod tests {
         assert!(store.get_roadworks("Z").unwrap().is_none());
         store.remove("A").unwrap();
         assert!(store.get_roadworks("A").unwrap().is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn typed_removal_and_kv() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("roadwork-db-test-kv-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut store = Store::open_path(&path).unwrap();
+        store.save_roadworks("A", &sample_roadworks("A")).unwrap();
+        store.save_opendata("A", &sample_opendata("A")).unwrap();
+
+        // Removing roadworks leaves opendata intact.
+        store.remove_roadworks("A").unwrap();
+        assert!(store.get_roadworks("A").unwrap().is_none());
+        assert!(store.get_opendata("A").unwrap().is_some());
+
+        // kv roundtrip.
+        assert!(store.get_raw("k").unwrap().is_none());
+        store.put_raw("k", "v").unwrap();
+        assert_eq!(store.get_raw("k").unwrap().as_deref(), Some("v"));
+        store.put_raw("k", "v2").unwrap();
+        assert_eq!(store.get_raw("k").unwrap().as_deref(), Some("v2"));
+
+        // clear_all wipes everything including kv.
+        store.clear_all().unwrap();
+        assert!(store.get_opendata("A").unwrap().is_none());
+        assert!(store.get_raw("k").unwrap().is_none());
         let _ = std::fs::remove_file(&path);
     }
 }

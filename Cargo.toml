@@ -6,6 +6,7 @@ resolver = "3"
 members = [
     "crates/sync",
     "crates/core",
+    "crates/db",
     "crates/service",
     "crates/egui",
     "crates/wme"

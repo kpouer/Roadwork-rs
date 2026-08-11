@@ -10,6 +10,7 @@ declare global {
 
     const wasm_bindgen: {
         (init_input: unknown): Promise<unknown>;
+        open_store(): Promise<unknown>;
         get_services(): unknown;
         get_roadworks(descriptor: unknown, forceRefresh: unknown): Promise<unknown>;
         clear_all_cache(): Promise<unknown>;

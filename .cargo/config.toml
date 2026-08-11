@@ -1,0 +1,10 @@
+[env]
+TS_RS_LARGE_INT = "number"
+TS_RS_EXPORT_DIR = { value = "crates/wme/static/types", relative = true }
+
+# Prebuilt SQLite for wasm32-unknown-unknown (see scripts/build-wasm-sqlite.sh).
+# sqlite-wasm-rs declares `links = "wsqlite3"`; this override skips its C build
+# (which needs clang/llvm-ar) and links the committed static library instead.
+[target.wasm32-unknown-unknown.wsqlite3]
+rustc-link-lib = ["wsqlite3"]
+rustc-link-search = ["vendor/wasm32-unknown-unknown"]

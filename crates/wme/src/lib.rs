@@ -72,6 +72,17 @@ fn store_put_back(store: roadwork_db::Store) {
     STORE.with(|cell| *cell.borrow_mut() = Some(store));
 }
 
+/// Opens the persistent store (installs the OPFS VFS on wasm32). Called by the
+/// worker at startup so the first cache access does not block on I/O.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn open_store() -> Result<(), JsValue> {
+    info!("[wasm] open_store");
+    let store = store_take().await?;
+    store_put_back(store);
+    Ok(())
+}
+
 #[cfg(target_arch = "wasm32")]
 fn js_err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
@@ -158,7 +169,6 @@ pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<Js
         } else {
             store
                 .get_roadworks_cached(service_name, ROADWORK_CACHE_MAX_AGE_MS)
-                .await
                 .map_err(js_err)?
         };
         let data = match cached {
@@ -168,10 +178,7 @@ pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<Js
             }
             None => {
                 let data = fetch_roadworks_data(service_name, descriptor).await?;
-                store
-                    .save_roadworks(service_name, &data)
-                    .await
-                    .map_err(js_err)?;
+                store.save_roadworks(service_name, &data).map_err(js_err)?;
                 data
             }
         };
@@ -191,7 +198,7 @@ pub async fn clear_all_cache() -> Result<(), JsValue> {
     #[cfg(target_arch = "wasm32")]
     {
         let mut store = store_take().await?;
-        store.clear_all().await.map_err(js_err)?;
+        store.clear_all().map_err(js_err)?;
         store_put_back(store);
     }
     Ok(())
@@ -240,7 +247,7 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
             .url
             .as_deref()
             .is_some_and(|url| !url.trim().is_empty());
-        let cached = store.get_opendata(service_name).await.map_err(js_err)?;
+        let cached = store.get_opendata(service_name).map_err(js_err)?;
         let data = match cached {
             Some(data) if !force_refresh => {
                 info!("[wasm] get_opendata: cache hit");
@@ -255,10 +262,7 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
                     .get_data()
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
-                store
-                    .save_opendata(service_name, &data)
-                    .await
-                    .map_err(js_err)?;
+                store.save_opendata(service_name, &data).map_err(js_err)?;
                 data
             }
             Some(data) => data,
@@ -294,7 +298,7 @@ pub async fn get_opendata_cached(service_name: &str) -> Result<JsValue, JsValue>
     #[cfg(target_arch = "wasm32")]
     {
         let store = store_take().await?;
-        let cached = store.get_opendata(service_name).await.map_err(js_err)?;
+        let cached = store.get_opendata(service_name).map_err(js_err)?;
         store_put_back(store);
         match cached {
             Some(data) => serialize_data(&data),
@@ -313,10 +317,7 @@ pub async fn store_opendata_data(service_name: &str, data_json: &str) -> Result<
     #[cfg(target_arch = "wasm32")]
     {
         let mut store = store_take().await?;
-        store
-            .save_opendata(service_name, &data)
-            .await
-            .map_err(js_err)?;
+        store.save_opendata(service_name, &data).map_err(js_err)?;
         store_put_back(store);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -331,7 +332,7 @@ pub async fn clear_roadworks_cache(service_name: &str) -> Result<(), JsValue> {
     #[cfg(target_arch = "wasm32")]
     {
         let mut store = store_take().await?;
-        store.remove_roadworks(service_name).await.map_err(js_err)?;
+        store.remove_roadworks(service_name).map_err(js_err)?;
         store_put_back(store);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -346,7 +347,7 @@ pub async fn clear_opendata_cache(service_name: &str) -> Result<(), JsValue> {
     #[cfg(target_arch = "wasm32")]
     {
         let mut store = store_take().await?;
-        store.remove_opendata(service_name).await.map_err(js_err)?;
+        store.remove_opendata(service_name).map_err(js_err)?;
         store_put_back(store);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -365,7 +366,7 @@ pub async fn get_polygon_groups() -> Result<JsValue, JsValue> {
     #[cfg(target_arch = "wasm32")]
     {
         let store = store_take().await?;
-        let raw = store.get_raw(POLYGON_GROUPS_KEY).await.map_err(js_err)?;
+        let raw = store.get_raw(POLYGON_GROUPS_KEY).map_err(js_err)?;
         store_put_back(store);
         match raw {
             Some(raw) => js_sys::JSON::parse(&raw),
@@ -384,10 +385,7 @@ pub async fn save_polygon_groups(payload: JsValue) -> Result<(), JsValue> {
     #[cfg(target_arch = "wasm32")]
     {
         let mut store = store_take().await?;
-        store
-            .put_raw(POLYGON_GROUPS_KEY, &raw)
-            .await
-            .map_err(js_err)?;
+        store.put_raw(POLYGON_GROUPS_KEY, &raw).map_err(js_err)?;
         store_put_back(store);
     }
     #[cfg(not(target_arch = "wasm32"))]
