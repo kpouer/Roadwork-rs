@@ -47,6 +47,10 @@ scope.onmessage = async (e: MessageEvent) => {
             result = await wasm_bindgen.get_opendata(args[0], args[1]);
         } else if (method === 'get_opendata_cached') {
             result = await wasm_bindgen.get_opendata_cached(args[0]);
+        } else if (method === 'get_roadworks_in_bbox') {
+            result = await wasm_bindgen.get_roadworks_in_bbox(args[0], args[1], args[2], args[3], args[4]);
+        } else if (method === 'get_opendata_in_bbox') {
+            result = await wasm_bindgen.get_opendata_in_bbox(args[0], args[1], args[2], args[3], args[4]);
         } else if (method === 'store_opendata_data') {
             await wasm_bindgen.store_opendata_data(args[0], args[1]);
             result = true;

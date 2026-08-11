@@ -310,6 +310,62 @@ pub async fn get_opendata_cached(service_name: &str) -> Result<JsValue, JsValue>
 }
 
 #[wasm_bindgen]
+pub async fn get_roadworks_in_bbox(
+    service_name: &str,
+    lat_min: f64,
+    lon_min: f64,
+    lat_max: f64,
+    lon_max: f64,
+) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_roadworks_in_bbox {service_name}");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let store = store_take().await?;
+        let result = store
+            .get_roadworks_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
+            .map_err(js_err)?;
+        store_put_back(store);
+        match result {
+            Some(data) => serialize_data(&data),
+            None => Ok(JsValue::NULL),
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (service_name, lat_min, lon_min, lat_max, lon_max);
+        Ok(JsValue::NULL)
+    }
+}
+
+#[wasm_bindgen]
+pub async fn get_opendata_in_bbox(
+    service_name: &str,
+    lat_min: f64,
+    lon_min: f64,
+    lat_max: f64,
+    lon_max: f64,
+) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata_in_bbox {service_name}");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let store = store_take().await?;
+        let result = store
+            .get_opendata_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
+            .map_err(js_err)?;
+        store_put_back(store);
+        match result {
+            Some(data) => serialize_data(&data),
+            None => Ok(JsValue::NULL),
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (service_name, lat_min, lon_min, lat_max, lon_max);
+        Ok(JsValue::NULL)
+    }
+}
+
+#[wasm_bindgen]
 pub async fn store_opendata_data(service_name: &str, data_json: &str) -> Result<(), JsValue> {
     info!("[wasm] store_opendata_data {service_name}");
     let data: OpendataData = serde_json::from_str(data_json)

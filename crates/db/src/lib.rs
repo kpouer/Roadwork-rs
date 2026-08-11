@@ -156,20 +156,30 @@ impl Store {
         let rows = stmt.query_map(params![service], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?;
-        let mut roadworks = HashMap::new();
-        for row in rows {
-            let (id, payload) = row?;
-            let rw: Roadwork = serde_json::from_slice(&payload)?;
-            roadworks.insert(id, rw);
-        }
-        if roadworks.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(RoadworkData {
-            source: service.to_string(),
-            roadworks,
-            created: now_millis(),
-        }))
+        collect_roadworks(service, rows)
+    }
+
+    /// Returns the cached roadworks for `service` whose point falls inside the
+    /// given latitude/longitude rectangle. The bound order does not matter.
+    pub fn get_roadworks_in_bbox(
+        &self,
+        service: &str,
+        lat_min: f64,
+        lon_min: f64,
+        lat_max: f64,
+        lon_max: f64,
+    ) -> Result<Option<RoadworkData>> {
+        let (lat_min, lat_max) = ordered(lat_min, lat_max);
+        let (lon_min, lon_max) = ordered(lon_min, lon_max);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, payload FROM roadwork
+             WHERE service = ?1 AND latitude BETWEEN ?2 AND ?3 AND longitude BETWEEN ?4 AND ?5",
+        )?;
+        let rows = stmt.query_map(
+            params![service, lat_min, lat_max, lon_min, lon_max],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+        collect_roadworks(service, rows)
     }
 
     /// Replaces the cached opendata items for `service`, bumping `fetched_at`.
@@ -216,30 +226,38 @@ impl Store {
                 row.get::<_, Option<String>>(4)?,
             ))
         })?;
-        let mut opendata = HashMap::new();
-        for row in rows {
-            let (id, latitude, longitude, polygons, description) = row?;
-            let polygons: Option<Vec<Polygon>> =
-                polygons.map(|p| serde_json::from_str(&p)).transpose()?;
-            opendata.insert(
-                id.clone(),
-                Opendata {
-                    id,
-                    latitude,
-                    longitude,
-                    polygons,
-                    description,
-                },
-            );
-        }
-        if opendata.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(OpendataData {
-            source: service.to_string(),
-            opendata,
-            created: now_millis(),
-        }))
+        collect_opendata(service, rows)
+    }
+
+    /// Returns the cached opendata items for `service` whose point falls inside
+    /// the given latitude/longitude rectangle. The bound order does not matter.
+    pub fn get_opendata_in_bbox(
+        &self,
+        service: &str,
+        lat_min: f64,
+        lon_min: f64,
+        lat_max: f64,
+        lon_max: f64,
+    ) -> Result<Option<OpendataData>> {
+        let (lat_min, lat_max) = ordered(lat_min, lat_max);
+        let (lon_min, lon_max) = ordered(lon_min, lon_max);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, latitude, longitude, polygons, description FROM data
+             WHERE service = ?1 AND latitude BETWEEN ?2 AND ?3 AND longitude BETWEEN ?4 AND ?5",
+        )?;
+        let rows = stmt.query_map(
+            params![service, lat_min, lat_max, lon_min, lon_max],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            },
+        )?;
+        collect_opendata(service, rows)
     }
 
     /// Removes every cached row for `service` (roadworks, opendata, cache).
@@ -291,11 +309,9 @@ impl Store {
     pub fn get_raw(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .conn
-            .query_row(
-                "SELECT value FROM kv WHERE key = ?1",
-                params![key],
-                |row| row.get(0),
-            )
+            .query_row("SELECT value FROM kv WHERE key = ?1", params![key], |row| {
+                row.get(0)
+            })
             .optional()?)
     }
 
@@ -323,6 +339,63 @@ fn upsert_fetched_at(
         params![service, cache_type.as_str(), fetched_at],
     )?;
     Ok(())
+}
+
+/// Returns `(min, max)` for a pair of bounds, ordering them.
+fn ordered(a: f64, b: f64) -> (f64, f64) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Assembles the roadwork rows into a `RoadworkData`, or `None` when empty.
+fn collect_roadworks(
+    service: &str,
+    rows: impl Iterator<Item = rusqlite::Result<(String, Vec<u8>)>>,
+) -> Result<Option<RoadworkData>> {
+    let mut roadworks = HashMap::new();
+    for row in rows {
+        let (id, payload) = row?;
+        let rw: Roadwork = serde_json::from_slice(&payload)?;
+        roadworks.insert(id, rw);
+    }
+    if roadworks.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(RoadworkData {
+        source: service.to_string(),
+        roadworks,
+        created: now_millis(),
+    }))
+}
+
+/// Assembles the opendata rows into an `OpendataData`, or `None` when empty.
+fn collect_opendata(
+    service: &str,
+    rows: impl Iterator<Item = rusqlite::Result<(String, f64, f64, Option<String>, Option<String>)>>,
+) -> Result<Option<OpendataData>> {
+    let mut opendata = HashMap::new();
+    for row in rows {
+        let (id, latitude, longitude, polygons, description) = row?;
+        let polygons: Option<Vec<Polygon>> =
+            polygons.map(|p| serde_json::from_str(&p)).transpose()?;
+        opendata.insert(
+            id.clone(),
+            Opendata {
+                id,
+                latitude,
+                longitude,
+                polygons,
+                description,
+            },
+        );
+    }
+    if opendata.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(OpendataData {
+        source: service.to_string(),
+        opendata,
+        created: now_millis(),
+    }))
 }
 
 const DDL: &str = "
@@ -475,6 +548,57 @@ mod tests {
         assert!(store.get_roadworks("Z").unwrap().is_none());
         store.remove("A").unwrap();
         assert!(store.get_roadworks("A").unwrap().is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn bbox_query() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("roadwork-db-test-bbox-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut store = Store::open_path(&path).unwrap();
+        store
+            .save_roadworks("France-Paris", &sample_roadworks("France-Paris"))
+            .unwrap();
+        store
+            .save_opendata("France-Paris", &sample_opendata("France-Paris"))
+            .unwrap();
+
+        // Roadwork point is (48.85, 2.35); opendata point is (48.8, 2.3).
+        let inside = store
+            .get_roadworks_in_bbox("France-Paris", 48.0, 2.0, 49.0, 3.0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(inside.roadworks.len(), 1);
+        assert!(inside.roadworks.contains_key("id-1"));
+
+        let opendata = store
+            .get_opendata_in_bbox("France-Paris", 48.0, 2.0, 49.0, 3.0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(opendata.opendata.len(), 1);
+        assert!(opendata.opendata.contains_key("od-1"));
+
+        // Outside the rectangle.
+        assert!(
+            store
+                .get_roadworks_in_bbox("France-Paris", 40.0, 1.0, 41.0, 2.0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .get_opendata_in_bbox("France-Paris", 40.0, 1.0, 41.0, 2.0)
+                .unwrap()
+                .is_none()
+        );
+
+        // Reversed bound order yields the same result.
+        let reversed = store
+            .get_roadworks_in_bbox("France-Paris", 49.0, 3.0, 48.0, 2.0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(reversed.roadworks.len(), 1);
         let _ = std::fs::remove_file(&path);
     }
 
