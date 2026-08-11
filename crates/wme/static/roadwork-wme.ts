@@ -119,6 +119,9 @@ let dataToggleBtn = null;
 let dataTableBody = null;
 let dataSourceSelectEl = null;
 let dataDropzoneEl = null;
+let viewportRefreshTimer = null;
+let viewportRefreshInFlight = false;
+let viewportRefreshPending = false;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -713,10 +716,6 @@ function createFloatingPanel() {
             const data = await fetchRoadworks(true);
             currentRoadworks = data.roadworks || {};
             applyStatusOverrides();
-            renderRoadworksToMap(currentRoadworks);
-            updateFloatingTable();
-            const count = Object.keys(currentRoadworks).length;
-            setStatus(`${count} roadwork(s) loaded`, "success");
             const now = Date.now();
             try {
                 localStorage.setItem(LAST_REFRESH_KEY, String(now));
@@ -724,6 +723,7 @@ function createFloatingPanel() {
             if (lastRefreshEl) {
                 lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
             }
+            await refreshViewport();
         } catch (e) {
             setStatus(e.message, "error");
         }
@@ -1512,6 +1512,114 @@ function renderRoadworksToMap(roadworks) {
     }
 }
 
+function getViewportBounds() {
+    if (!wmeSDK?.Map?.getMapExtent) return null;
+    try {
+        const extent = wmeSDK.Map.getMapExtent();
+        if (!Array.isArray(extent) || extent.length < 4) return null;
+        return {
+            latMin: extent[1],
+            lonMin: extent[0],
+            latMax: extent[3],
+            lonMax: extent[2],
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+async function queryRoadworksInViewport(bounds) {
+    const args = [settings.service, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax];
+    let data = await rpcCall("get_roadworks_in_bbox", args);
+    if (!data || !data.roadworks) {
+        await rpcCall("get_roadworks", [settings.service, false]).catch(() => {});
+        data = await rpcCall("get_roadworks_in_bbox", args);
+    }
+    return data?.roadworks || {};
+}
+
+async function queryOpendataInViewport(name, bounds) {
+    const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax];
+    let data = await rpcCall("get_opendata_in_bbox", args);
+    if (!data || !data.opendata) {
+        const cached = await rpcCall("get_opendata_cached", [name]).catch(() => null);
+        if (!cached) {
+            try {
+                await rpcCall("get_opendata", [name, false]);
+            } catch (_) {
+                return null;
+            }
+            data = await rpcCall("get_opendata_in_bbox", args);
+        }
+    }
+    return data?.opendata ? data : null;
+}
+
+async function refreshViewport() {
+    const bounds = getViewportBounds();
+    if (!bounds) {
+        renderRoadworksToMap(currentRoadworks);
+        renderOpendataToMap();
+        updateFloatingTable();
+        updateDataPanel();
+        return;
+    }
+    try {
+        currentRoadworks = await queryRoadworksInViewport(bounds);
+        applyStatusOverrides();
+        if (selectedRoadworkId && !currentRoadworks[selectedRoadworkId]) {
+            selectedRoadworkId = null;
+            hideDetailPanel();
+        }
+    } catch (e) {
+        console.warn("[Roadwork] Failed to refresh roadworks for viewport:", e);
+    }
+    const services = getOpendataServices();
+    for (const name of Object.keys(services)) {
+        const svc = services[name];
+        if (svc && svc.enabled === false) continue;
+        try {
+            currentOpendata[name] = await queryOpendataInViewport(name, bounds);
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to refresh opendata ${name} for viewport:`, e);
+            currentOpendata[name] = null;
+        }
+    }
+    renderRoadworksToMap(currentRoadworks);
+    renderOpendataToMap();
+    updateFloatingTable();
+    updateDataPanel();
+    const count = Object.keys(currentRoadworks).length;
+    setStatus(`${count} roadwork(s) dans la zone visible`);
+}
+
+function scheduleViewportRefresh() {
+    if (viewportRefreshTimer) {
+        clearTimeout(viewportRefreshTimer);
+    }
+    viewportRefreshTimer = setTimeout(() => {
+        viewportRefreshTimer = null;
+        runViewportRefresh();
+    }, 400);
+}
+
+async function runViewportRefresh() {
+    if (viewportRefreshInFlight) {
+        viewportRefreshPending = true;
+        return;
+    }
+    viewportRefreshInFlight = true;
+    try {
+        await refreshViewport();
+    } finally {
+        viewportRefreshInFlight = false;
+        if (viewportRefreshPending) {
+            viewportRefreshPending = false;
+            runViewportRefresh();
+        }
+    }
+}
+
 async function refreshData() {
     setStatus("Loading...");
     try {
@@ -1523,10 +1631,6 @@ async function refreshData() {
             selectedRoadworkId = null;
             hideDetailPanel();
         }
-        renderRoadworksToMap(currentRoadworks);
-        updateFloatingTable();
-        const count = Object.keys(currentRoadworks).length;
-        setStatus(`${count} roadwork(s) loaded`, "success");
         const now = Date.now();
         try {
             localStorage.setItem(LAST_REFRESH_KEY, String(now));
@@ -1534,6 +1638,7 @@ async function refreshData() {
         if (lastRefreshEl) {
             lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
         }
+        await refreshViewport();
     } catch (e) {
         setStatus(e.message, "error");
     }
@@ -2829,6 +2934,15 @@ async function init() {
     });
 
     wmeSDK.Events.on({
+        eventName: "wme-map-move-end",
+        eventHandler: () => scheduleViewportRefresh(),
+    });
+    wmeSDK.Events.on({
+        eventName: "wme-map-zoom-changed",
+        eventHandler: () => scheduleViewportRefresh(),
+    });
+
+    wmeSDK.Events.on({
         eventName: "wme-layer-feature-clicked",
         eventHandler: (evt) => {
             if (evt && evt.layerName === OPENDATA_LAYER && evt.featureId) {
@@ -2909,15 +3023,12 @@ async function init() {
         if (cached && cached.roadworks) {
             currentRoadworks = cached.roadworks || {};
             applyStatusOverrides();
-            renderRoadworksToMap(currentRoadworks);
-            updateFloatingTable();
-            const count = Object.keys(currentRoadworks).length;
-            setStatus(`${count} roadwork(s) from cache`, "success");
         } else {
-            refreshData();
+            await refreshData();
         }
     } catch (_) {
-        refreshData();
+        await refreshData();
     }
+    await refreshViewport();
     console.log("Roadwork init done");
 }
