@@ -69,7 +69,6 @@ const wasmReady = new Promise<void>((resolve, reject) => {
 const SCRIPT_ID = "roadwork-wme";
 const SCRIPT_NAME = "Roadwork for WME";
 const STORAGE_KEY = "roadwork-wme-settings";
-const CACHE_KEY_PREFIX = "roadwork-wme-cache-";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
 const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
@@ -91,126 +90,6 @@ const DEFAULTS = {
 };
 
 const OPENDATA_LAYER = "Opendata";
-const OPENDATA_CACHE_KEY_PREFIX = "roadwork-wme-opendata-cache-";
-
-// --- IndexedDB storage for large data (opendata service data, caches, polygon groups).
-// localStorage stays for small preferences; big payloads go to IndexedDB to dodge its ~5MB quota.
-
-const IDB_NAME = "roadwork-wme";
-const IDB_STORE = "kv";
-
-let idbDb: IDBDatabase | null = null;
-
-function idbOpen(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        if (idbDb) { resolve(idbDb); return; }
-        if (typeof indexedDB === "undefined") {
-            reject(new Error("IndexedDB not available"));
-            return;
-        }
-        const req = indexedDB.open(IDB_NAME, 1);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(IDB_STORE)) {
-                db.createObjectStore(IDB_STORE, { keyPath: "key" });
-            }
-        };
-        req.onsuccess = () => {
-            idbDb = req.result;
-            idbDb.onversionchange = () => { idbDb.close(); idbDb = null; };
-            resolve(idbDb);
-        };
-        req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
-    });
-}
-
-function idbStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {
-    return idbOpen().then((db) => db.transaction(IDB_STORE, mode).objectStore(IDB_STORE));
-}
-
-function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
-    });
-}
-
-async function idbGet(key: string): Promise<string | null> {
-    try {
-        const store = await idbStore("readonly");
-        const row = await idbRequest(store.get(key));
-        return row && typeof row.value === "string" ? row.value : null;
-    } catch (_) {
-        return null;
-    }
-}
-
-async function idbPut(key: string, value: string): Promise<boolean> {
-    try {
-        const store = await idbStore("readwrite");
-        await idbRequest(store.put({ key, value }));
-        return true;
-    } catch (_) {
-        return false;
-    }
-}
-
-async function idbDelete(key: string): Promise<void> {
-    try {
-        const store = await idbStore("readwrite");
-        await idbRequest(store.delete(key));
-    } catch (_) {}
-}
-
-async function idbClear(): Promise<void> {
-    try {
-        const store = await idbStore("readwrite");
-        await idbRequest(store.clear());
-    } catch (_) {}
-}
-
-async function idbAllKeys(): Promise<string[]> {
-    try {
-        const store = await idbStore("readonly");
-        const keys = await idbRequest(store.getAllKeys());
-        return keys.map((k) => String(k));
-    } catch (_) {
-        return [];
-    }
-}
-
-async function migrateLegacyStorage() {
-    try {
-        const bigPrefixes = [CACHE_KEY_PREFIX, OPENDATA_CACHE_KEY_PREFIX];
-        for (const key of Object.keys(localStorage)) {
-            if (key === POLYGON_GROUPS_KEY || bigPrefixes.some((p) => key.startsWith(p))) {
-                const value = localStorage.getItem(key);
-                if (value === null) continue;
-                if (await idbPut(key, value)) {
-                    localStorage.removeItem(key);
-                }
-            }
-        }
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            let parsed: any = null;
-            try { parsed = JSON.parse(raw); } catch (_) {}
-            if (parsed && parsed.opendataServices && typeof parsed.opendataServices === "object") {
-                let changed = false;
-                for (const name of Object.keys(parsed.opendataServices)) {
-                    const svc = parsed.opendataServices[name];
-                    if (svc && typeof svc.data === "string") {
-                        delete svc.data;
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-                }
-            }
-        }
-    } catch (_) {}
-}
 
 let wmeSDK: WmeSDK = null;
 let settings = {...DEFAULTS};
@@ -231,7 +110,6 @@ let selectedRoadworkId = null;
 let polygonGroups: any = {};
 let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
-const POLYGON_GROUPS_KEY = "roadwork-wme-polygon-groups";
 let detailPanelEl = null;
 let hideFinished = false;
 let sortColumn = -1;
@@ -297,55 +175,18 @@ async function applyLogLevel(level: string) {
     } catch (_) {}
 }
 
-function getCacheKey(service: string) {
-    return CACHE_KEY_PREFIX + service;
-}
-
-async function loadCache(service: string) {
-    try {
-        const raw = await idbGet(getCacheKey(service));
-        if (!raw) return null;
-        const cached = JSON.parse(raw);
-        const maxAge = 86400 * 1000;
-        if (Date.now() - cached.timestamp > maxAge) return null;
-        return cached.data;
-    } catch (_) {
-        return null;
-    }
-}
-
-async function saveCache(service: string, data) {
-    try {
-        await idbPut(getCacheKey(service), JSON.stringify({
-            data: data,
-            timestamp: Date.now(),
-        }));
-    } catch (_) {
-    }
-}
-
-async function clearCache(service: string) {
-    try {
-        await idbDelete(getCacheKey(service));
-    } catch (_) {
-    }
-}
-
 async function savePolygonGroups() {
     try {
-        await idbPut(POLYGON_GROUPS_KEY, JSON.stringify({ groups: polygonGroups, nextId: nextGroupId }));
+        await rpcCall("save_polygon_groups", [{ groups: polygonGroups, nextId: nextGroupId }]);
     } catch (_) {}
 }
 
 async function loadPolygonGroups() {
     try {
-        const raw = await idbGet(POLYGON_GROUPS_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object" && parsed.groups) {
-                nextGroupId = parsed.nextId || 0;
-                return parsed.groups;
-            }
+        const parsed = await rpcCall("get_polygon_groups");
+        if (parsed && typeof parsed === "object" && parsed.groups) {
+            nextGroupId = parsed.nextId || 0;
+            return parsed.groups;
         }
     } catch (_) {}
     return {};
@@ -453,14 +294,9 @@ async function fetchServices(forceRefresh = false) {
 }
 
 async function fetchRoadworks(forceRefresh = false) {
-    if (!forceRefresh) {
-        const cached = await loadCache(settings.service);
-        if (cached) return cached;
-    }
     try {
-        const data = await rpcCall("get_roadworks", [settings.service]);
+        const data = await rpcCall("get_roadworks", [settings.service, forceRefresh]);
         console.info("[Roadwork] fetchRoadworks received data, type:", typeof data, "roadworks keys:", data?.roadworks ? Object.keys(data.roadworks).length : "no roadworks field");
-        await saveCache(settings.service, data);
         return data;
     } catch (e) {
         throw new Error(`Failed to fetch roadworks: ${e}`);
@@ -862,8 +698,6 @@ function createFloatingPanel() {
     serviceSelectEl.addEventListener("change", async () => {
         const newService = serviceSelectEl.value;
         if (newService === settings.service) return;
-
-        await clearCache(settings.service);
 
         settings.service = newService;
         saveSettings();
@@ -1489,7 +1323,7 @@ async function clearExtensionStorage() {
             }
         }
     } catch (_) {}
-    await idbClear();
+    await rpcCall("clear_all_cache", []).catch(() => {});
     await syncCustomDescriptorsToWasm(true).catch(() => {});
     window.location.reload();
 }
@@ -1681,7 +1515,6 @@ function renderRoadworksToMap(roadworks) {
 async function refreshData() {
     setStatus("Loading...");
     try {
-        await clearCache(settings.service);
         const data = await fetchRoadworks(true);
         currentRoadworks = data.roadworks || {};
         applyStatusOverrides();
@@ -1722,16 +1555,9 @@ function getOpendataDescriptorUrl(svc: any): string | undefined {
     }
 }
 
-function getOpendataCacheKey(name: string) {
-    return OPENDATA_CACHE_KEY_PREFIX + name;
-}
-
 async function loadOpendataCache(name: string) {
     try {
-        const raw = await idbGet(getOpendataCacheKey(name));
-        if (!raw) return null;
-        const cached = JSON.parse(raw);
-        return cached.data;
+        return await rpcCall("get_opendata_cached", [name]);
     } catch (_) {
         return null;
     }
@@ -1739,16 +1565,13 @@ async function loadOpendataCache(name: string) {
 
 async function saveOpendataCache(name: string, data) {
     try {
-        await idbPut(getOpendataCacheKey(name), JSON.stringify({
-            data: data,
-            timestamp: Date.now(),
-        }));
+        await rpcCall("store_opendata_data", [name, JSON.stringify(data)]);
     } catch (_) {}
 }
 
 async function clearOpendataCache(name: string) {
     try {
-        await idbDelete(getOpendataCacheKey(name));
+        await rpcCall("clear_opendata_cache", [name]);
     } catch (_) {}
 }
 
@@ -1759,27 +1582,8 @@ async function syncOpendataDescriptorsToWasm() {
 }
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
-    const svc = getOpendataServices()[name];
-    if (!forceRefresh && getOpendataDescriptorUrl(svc)) {
-        const cached = await loadOpendataCache(name);
-        if (cached) {
-            currentOpendata[name] = cached;
-            return cached;
-        }
-    }
-    let data;
-    if (getOpendataDescriptorUrl(svc)) {
-        data = await rpcCall("get_opendata", [name]);
-    } else {
-        const cached = await loadOpendataCache(name);
-        if (cached) {
-            data = cached;
-        } else {
-            throw new Error(`No URL and no cached data for ${name}`);
-        }
-    }
+    const data = await rpcCall("get_opendata", [name, forceRefresh]);
     currentOpendata[name] = data;
-    await saveOpendataCache(name, data);
     return data;
 }
 
@@ -2802,8 +2606,6 @@ async function buildPanel(tabPane: Element) {
 }
 
 async function init() {
-    await migrateLegacyStorage();
-
     await applyLogLevel(settings.logLevel);
 
     loadSettings();
@@ -3102,15 +2904,19 @@ async function init() {
         },
     });
 
-    const cached = await loadCache(settings.service);
-    if (cached) {
-        currentRoadworks = cached.roadworks || {};
-        applyStatusOverrides();
-        renderRoadworksToMap(currentRoadworks);
-        updateFloatingTable();
-        const count = Object.keys(currentRoadworks).length;
-        setStatus(`${count} roadwork(s) from cache`, "success");
-    } else {
+    try {
+        const cached = await rpcCall("get_roadworks", [settings.service, false]);
+        if (cached && cached.roadworks) {
+            currentRoadworks = cached.roadworks || {};
+            applyStatusOverrides();
+            renderRoadworksToMap(currentRoadworks);
+            updateFloatingTable();
+            const count = Object.keys(currentRoadworks).length;
+            setStatus(`${count} roadwork(s) from cache`, "success");
+        } else {
+            refreshData();
+        }
+    } catch (_) {
         refreshData();
     }
     console.log("Roadwork init done");

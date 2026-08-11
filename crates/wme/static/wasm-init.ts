@@ -20,7 +20,10 @@
             if (method === 'get_services') {
                 result = wasm_bindgen.get_services();
             } else if (method === 'get_roadworks') {
-                result = await wasm_bindgen.get_roadworks(args[0]);
+                result = await wasm_bindgen.get_roadworks(args[0], args[1]);
+            } else if (method === 'clear_all_cache') {
+                await wasm_bindgen.clear_all_cache();
+                result = true;
             } else if (method === 'set_log_level') {
                 wasm_bindgen.set_log_level(args[0]);
                 result = true;
@@ -31,7 +34,23 @@
                 wasm_bindgen.set_opendata_custom_descriptors(args[0]);
                 result = true;
             } else if (method === 'get_opendata') {
-                result = await wasm_bindgen.get_opendata(args[0]);
+                result = await wasm_bindgen.get_opendata(args[0], args[1]);
+            } else if (method === 'get_opendata_cached') {
+                result = await wasm_bindgen.get_opendata_cached(args[0]);
+            } else if (method === 'store_opendata_data') {
+                await wasm_bindgen.store_opendata_data(args[0], args[1]);
+                result = true;
+            } else if (method === 'clear_roadworks_cache') {
+                await wasm_bindgen.clear_roadworks_cache(args[0]);
+                result = true;
+            } else if (method === 'clear_opendata_cache') {
+                await wasm_bindgen.clear_opendata_cache(args[0]);
+                result = true;
+            } else if (method === 'get_polygon_groups') {
+                result = await wasm_bindgen.get_polygon_groups();
+            } else if (method === 'save_polygon_groups') {
+                await wasm_bindgen.save_polygon_groups(args[0]);
+                result = true;
             } else {
                 throw new Error('Unknown method: ' + method);
             }

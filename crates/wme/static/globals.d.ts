@@ -11,11 +11,18 @@ declare global {
     const wasm_bindgen: {
         (init_input: unknown): Promise<unknown>;
         get_services(): unknown;
-        get_roadworks(descriptor: unknown): Promise<unknown>;
+        get_roadworks(descriptor: unknown, forceRefresh: unknown): Promise<unknown>;
+        clear_all_cache(): Promise<unknown>;
         set_log_level(level: unknown): void;
         set_custom_descriptors(descriptors: unknown): void;
         set_opendata_custom_descriptors(descriptors: unknown): void;
-        get_opendata(service: unknown): Promise<unknown>;
+        get_opendata(service: unknown, forceRefresh: unknown): Promise<unknown>;
+        get_opendata_cached(service: unknown): Promise<unknown>;
+        store_opendata_data(service: unknown, dataJson: unknown): Promise<unknown>;
+        clear_roadworks_cache(service: unknown): Promise<unknown>;
+        clear_opendata_cache(service: unknown): Promise<unknown>;
+        get_polygon_groups(): Promise<unknown>;
+        save_polygon_groups(payload: unknown): Promise<unknown>;
     };
 
     namespace chrome {

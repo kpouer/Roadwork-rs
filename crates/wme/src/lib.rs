@@ -14,6 +14,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
+use roadwork_core::model::opendata_data::OpendataData;
+use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
@@ -42,6 +44,52 @@ thread_local! {
         RefCell::new(HashMap::new());
     static OPENDATA_DESCRIPTORS: RefCell<HashMap<String, OpendataServiceDescriptor>> =
         RefCell::new(HashMap::new());
+}
+
+/// Maximum age of a cached roadworks snapshot before it is re-fetched (24h).
+#[cfg(target_arch = "wasm32")]
+const ROADWORK_CACHE_MAX_AGE_MS: u64 = 86_400_000;
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    /// Lazily-opened persistent cache. The store is taken out for the duration
+    /// of an operation (a `RefCell` borrow must never cross an `await`).
+    static STORE: RefCell<Option<roadwork_db::Store>> = const { RefCell::new(None) };
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn store_take() -> Result<roadwork_db::Store, JsValue> {
+    match STORE.with(|cell| cell.borrow_mut().take()) {
+        Some(store) => Ok(store),
+        None => roadwork_db::Store::open()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Cache open error: {e}"))),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn store_put_back(store: roadwork_db::Store) {
+    STORE.with(|cell| *cell.borrow_mut() = Some(store));
+}
+
+#[cfg(target_arch = "wasm32")]
+fn js_err(e: impl std::fmt::Display) -> JsValue {
+    JsValue::from_str(&e.to_string())
+}
+
+async fn fetch_roadworks_data(
+    service_name: &str,
+    descriptor: &ServiceDescriptor,
+) -> Result<RoadworkData, JsValue> {
+    roadwork_service::fetch_roadworks(service_name, descriptor)
+        .await
+        .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))
+}
+
+fn serialize_data<T: Serialize>(data: &T) -> Result<JsValue, JsValue> {
+    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    data.serialize(&serializer)
+        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
 }
 
 #[wasm_bindgen]
@@ -95,20 +143,58 @@ pub fn get_services() -> JsValue {
 }
 
 #[wasm_bindgen]
-pub async fn get_roadworks(service_name: &str) -> Result<JsValue, JsValue> {
-    info!("[wasm] get_roadworks");
+pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_roadworks force_refresh={force_refresh}");
     let descriptors = all_descriptors();
     let descriptor = descriptors
         .get(service_name)
         .ok_or_else(|| JsValue::from_str(&format!("Unknown service: {service_name}")))?;
 
-    let data = roadwork_service::fetch_roadworks(service_name, descriptor)
-        .await
-        .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
+    #[cfg(target_arch = "wasm32")]
+    let data = {
+        let mut store = store_take().await?;
+        let cached = if force_refresh {
+            None
+        } else {
+            store
+                .get_roadworks_cached(service_name, ROADWORK_CACHE_MAX_AGE_MS)
+                .await
+                .map_err(js_err)?
+        };
+        let data = match cached {
+            Some(data) => {
+                info!("[wasm] get_roadworks: cache hit");
+                data
+            }
+            None => {
+                let data = fetch_roadworks_data(service_name, descriptor).await?;
+                store
+                    .save_roadworks(service_name, &data)
+                    .await
+                    .map_err(js_err)?;
+                data
+            }
+        };
+        store_put_back(store);
+        data
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let data = fetch_roadworks_data(service_name, descriptor).await?;
+
     info!("[wasm] get_roadworks: data loaded {}", data.roadworks.len());
-    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
-    data.serialize(&serializer)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+    serialize_data(&data)
+}
+
+#[wasm_bindgen]
+pub async fn clear_all_cache() -> Result<(), JsValue> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut store = store_take().await?;
+        store.clear_all().await.map_err(js_err)?;
+        store_put_back(store);
+    }
+    Ok(())
 }
 
 #[wasm_bindgen]
@@ -140,22 +226,173 @@ pub fn set_opendata_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub async fn get_opendata(service_name: &str) -> Result<JsValue, JsValue> {
-    info!("[wasm] get_opendata");
+pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata force_refresh={force_refresh}");
     let descriptor = OPENDATA_DESCRIPTORS
         .with(|cell| cell.borrow().get(service_name).cloned())
         .ok_or_else(|| JsValue::from_str(&format!("Unknown opendata service: {service_name}")))?;
 
-    let service = OpendataService {
-        service_name: service_name.to_string(),
-        service_descriptor: descriptor,
+    #[cfg(target_arch = "wasm32")]
+    let data = {
+        let mut store = store_take().await?;
+        let has_url = descriptor
+            .metadata
+            .url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty());
+        let cached = store.get_opendata(service_name).await.map_err(js_err)?;
+        let data = match cached {
+            Some(data) if !force_refresh => {
+                info!("[wasm] get_opendata: cache hit");
+                data
+            }
+            _ if has_url => {
+                let service = OpendataService {
+                    service_name: service_name.to_string(),
+                    service_descriptor: descriptor,
+                };
+                let data = service
+                    .get_data()
+                    .await
+                    .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
+                store
+                    .save_opendata(service_name, &data)
+                    .await
+                    .map_err(js_err)?;
+                data
+            }
+            Some(data) => data,
+            None => {
+                return Err(JsValue::from_str(&format!(
+                    "No URL and no cached data for {service_name}"
+                )));
+            }
+        };
+        store_put_back(store);
+        data
     };
-    let data = service
-        .get_data()
-        .await
-        .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let data = {
+        let service = OpendataService {
+            service_name: service_name.to_string(),
+            service_descriptor: descriptor,
+        };
+        service
+            .get_data()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?
+    };
+
     info!("[wasm] get_opendata: data loaded {}", data.opendata.len());
-    let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
-    data.serialize(&serializer)
-        .map_err(|e| JsValue::from_str(&format!("Serialize error: {e}")))
+    serialize_data(&data)
+}
+
+#[wasm_bindgen]
+pub async fn get_opendata_cached(service_name: &str) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata_cached {service_name}");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let store = store_take().await?;
+        let cached = store.get_opendata(service_name).await.map_err(js_err)?;
+        store_put_back(store);
+        match cached {
+            Some(data) => serialize_data(&data),
+            None => Ok(JsValue::NULL),
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Ok(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub async fn store_opendata_data(service_name: &str, data_json: &str) -> Result<(), JsValue> {
+    info!("[wasm] store_opendata_data {service_name}");
+    let data: OpendataData = serde_json::from_str(data_json)
+        .map_err(|e| JsValue::from_str(&format!("Invalid opendata data: {e}")))?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut store = store_take().await?;
+        store
+            .save_opendata(service_name, &data)
+            .await
+            .map_err(js_err)?;
+        store_put_back(store);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (data, service_name);
+    }
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub async fn clear_roadworks_cache(service_name: &str) -> Result<(), JsValue> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut store = store_take().await?;
+        store.remove_roadworks(service_name).await.map_err(js_err)?;
+        store_put_back(store);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = service_name;
+    }
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub async fn clear_opendata_cache(service_name: &str) -> Result<(), JsValue> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut store = store_take().await?;
+        store.remove_opendata(service_name).await.map_err(js_err)?;
+        store_put_back(store);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = service_name;
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+const POLYGON_GROUPS_KEY: &str = "polygon_groups";
+
+#[wasm_bindgen]
+pub async fn get_polygon_groups() -> Result<JsValue, JsValue> {
+    info!("[wasm] get_polygon_groups");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let store = store_take().await?;
+        let raw = store.get_raw(POLYGON_GROUPS_KEY).await.map_err(js_err)?;
+        store_put_back(store);
+        match raw {
+            Some(raw) => js_sys::JSON::parse(&raw),
+            None => Ok(JsValue::NULL),
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Ok(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub async fn save_polygon_groups(payload: JsValue) -> Result<(), JsValue> {
+    let raw = js_sys::JSON::stringify(&payload)?
+        .as_string()
+        .ok_or_else(|| JsValue::from_str("Failed to stringify polygon groups"))?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut store = store_take().await?;
+        store
+            .put_raw(POLYGON_GROUPS_KEY, &raw)
+            .await
+            .map_err(js_err)?;
+        store_put_back(store);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = raw;
+    }
+    Ok(())
 }

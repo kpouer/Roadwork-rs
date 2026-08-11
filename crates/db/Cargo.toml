@@ -1,0 +1,32 @@
+[package]
+name = "roadwork-db"
+version = "0.1.0"
+edition = "2024"
+description = "Persistent cache for the WME extension (IndexedDB on wasm, SQLite on native for tests)"
+publish = false
+
+[dependencies]
+roadwork-core = { path = "../core", version = "0.1.0" }
+serde_json = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Event",
+    "DomException",
+    "DomStringList",
+    "IdbFactory",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbDatabase",
+    "IdbObjectStore",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbVersionChangeEvent",
+] }
