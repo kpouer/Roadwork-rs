@@ -117,75 +117,9 @@ fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) {
 }
 
 fn format_build_date() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    // days since epoch
-    let days = secs / 86400;
-    let time_secs = secs % 86400;
-    let h = time_secs / 3600;
-    let m = (time_secs % 3600) / 60;
-    let s = time_secs % 60;
-
-    // Simple date calculation (Zeller-like, valid from 2000-03-01)
-    let y = 2000i64;
-    let mut year = y;
-    let mut remaining = days as i64 - (date_to_days(y, 3, 1) as i64);
-    if remaining < 0 {
-        year = 1999;
-        remaining = days as i64 - (date_to_days(1999, 3, 1) as i64);
-    }
-    loop {
-        let days_in_year = if is_leap(year) { 366 } else { 365 };
-        if remaining < days_in_year {
-            break;
-        }
-        remaining -= days_in_year;
-        year += 1;
-    }
-    let month_days = if is_leap(year) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-    let mut month = 3usize;
-    let mut day = remaining;
-    for (i, &md) in month_days.iter().enumerate().cycle().skip(2) {
-        if day < md as i64 {
-            month = i + 1;
-            break;
-        }
-        day -= md as i64;
-    }
-
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-        year,
-        month,
-        day + 1,
-        h,
-        m,
-        s
-    )
-}
-
-fn is_leap(year: i64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-fn date_to_days(year: i64, month: u32, day: u32) -> u64 {
-    let mut y = year;
-    let mut m = month as i64;
-    if m <= 2 {
-        y -= 1;
-        m += 12;
-    }
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (m - 3) + 2) / 5 + day as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    (era * 146097 + doe) as u64
+    chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string()
 }
 
 fn main() {

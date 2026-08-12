@@ -4080,6 +4080,7 @@ dependencies = [
 name = "roadwork-wme"
 version = "0.3.0"
 dependencies = [
+ "chrono",
  "console_log",
  "image",
  "js-sys",

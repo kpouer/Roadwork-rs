@@ -95,3 +95,18 @@ pub fn save_opendata_cache(name: &str, data: &OpendataData) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = std::fs::write(OPENDATA_CACHE_FILE, json);
 }
+
+/// Removes `name` from the cached opendata.
+pub fn remove_opendata_cache(name: &str) {
+    let mut cache = load_opendata_cache();
+    cache.remove(name);
+    let Ok(json) = serde_json::to_string(&cache) else {
+        return;
+    };
+    #[cfg(target_arch = "wasm32")]
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(OPENDATA_CACHE_KEY, &json);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = std::fs::write(OPENDATA_CACHE_FILE, json);
+}

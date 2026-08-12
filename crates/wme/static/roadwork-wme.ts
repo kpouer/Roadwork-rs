@@ -30,6 +30,8 @@ window.addEventListener("message", (e) => {
         method("[Roadwork WASM]", ...e.data.args);
     } else if (e.data?.type === "ROADWORK_SAVE_OPENDATA_DESCRIPTOR") {
         saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor, e.data.oldName, e.data.data);
+    } else if (e.data?.type === "ROADWORK_DELETE_OPENDATA_SERVICE") {
+        removeOpendataService(e.data.name);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
         if (wasmIframe?.contentWindow && e.source === wasmIframe.contentWindow) {
             wasmIframe.contentWindow.postMessage({ type: "ROADWORK_WASM_ACK" }, "*");
@@ -121,6 +123,9 @@ let dataPanelEl = null;
 let dataToggleBtn = null;
 let dataTableBody = null;
 let dataSourceSelectEl = null;
+let dataUpdateBtn = null;
+let dataDeleteBtn = null;
+let dataStatusEl = null;
 let dataDropzoneEl = null;
 let viewportRefreshTimer = null;
 let viewportRefreshInFlight = false;
@@ -397,6 +402,16 @@ function setStatus(text: string, type?) {
     }
     statusEl.textContent = text;
     statusEl.className = "roadwork-status" + (type ? " " + type : "");
+}
+
+function setDataStatus(text: string, type?) {
+    setStatus(text, type);
+    if (dataStatusEl) {
+        dataStatusEl.textContent = text;
+        dataStatusEl.className = "roadwork-status" + (type ? " " + type : "");
+        dataStatusEl.classList.toggle("rw-hidden", !text);
+    }
+    console.info("[Roadwork]", text);
 }
 
 function updateLastRefreshDisplay() {
@@ -1883,22 +1898,22 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
 async function refreshOpendataService(name: string) {
     const svc = getOpendataServices()[name];
     if (!getOpendataDescriptorUrl(svc) && !(await loadOpendataCache(name))) {
-        setStatus(
+        setDataStatus(
             `Cannot refresh ${name}: the descriptor has no URL and no cached data. Edit the source and drop a data file to import its data.`,
             "error",
         );
         return;
     }
-    setStatus(`Loading opendata ${name}...`);
+    setDataStatus(`Loading opendata ${name}...`);
     try {
         const data = await fetchOpendataData(name, true);
         const count = Object.keys(data.opendata || {}).length;
-        setStatus(`${count} opendata item(s) loaded for ${name}`, "success");
+        setDataStatus(`${count} opendata item(s) loaded for ${name}`, "success");
         renderOpendataToMap();
         renderOpendataList();
         refreshOpendataTotals();
     } catch (e) {
-        setStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
+        setDataStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
     }
 }
 
@@ -1966,57 +1981,7 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
     }
 }
 
-async function handleOpendataJson(text: string) {
-    let descriptor;
-    try {
-        descriptor = JSON.parse(text);
-    } catch (e) {
-        setStatus("Invalid JSON: " + e.message, "error");
-        return;
-    }
-    const name = descriptor?.metadata?.name;
-    if (!name) {
-        setStatus('Invalid descriptor: missing "metadata.name"', "error");
-        return;
-    }
-    const services = getOpendataServices();
-    const existing = services[name] || {};
-    const svc: any = {
-        descriptor: JSON.stringify(descriptor, null, 2),
-        enabled: existing.enabled ?? true,
-        visible: existing.visible ?? true,
-    };
-    services[name] = svc;
-    settings.opendataServices = services;
-    saveSettings();
-    setStatus(`Opendata service "${name}" imported`, "success");
-    syncOpendataDescriptorsToWasm().catch(() => {});
-    const hasUrl =
-        typeof descriptor?.metadata?.url === "string" &&
-        descriptor.metadata.url.trim() !== "";
-    if (hasUrl) {
-        fetchOpendataData(name, true)
-            .then(() => renderOpendataToMap())
-            .catch((e) => {
-                setStatus(`Failed to fetch ${name}: ${e.message}`, "error");
-            });
-    } else {
-        const cached = await loadOpendataCache(name);
-        if (cached) {
-            currentOpendata[name] = cached;
-            renderOpendataToMap();
-        } else {
-            setStatus(
-                `Opendata service "${name}" has no URL - edit it and drop a data file to import its data`,
-                "info",
-            );
-        }
-    }
-    renderOpendataList();
-    refreshOpendataTotals();
-}
-
-function renderOpendataList() {
+async function renderOpendataList() {
     if (!opendataListEl) return;
     opendataListEl.replaceChildren();
     const services = getOpendataServices();
@@ -2247,6 +2212,9 @@ function updateDataPanel() {
         const titleEl = document.getElementById("rw-data-title");
         if (titleEl) titleEl.textContent = label;
         if (dataToggleBtn) dataToggleBtn.textContent = label;
+        const hasSource = !!dataSource;
+        if (dataUpdateBtn) dataUpdateBtn.disabled = !hasSource;
+        if (dataDeleteBtn) dataDeleteBtn.disabled = !hasSource;
     } catch (e) {
         console.warn("[Roadwork] Failed to render data panel:", e);
     }
@@ -2294,6 +2262,10 @@ function createDataPanel() {
     headerBtns.appendChild(refreshBtn);
     headerBtns.appendChild(closeBtn);
     header.appendChild(title);
+    const buildBadge = document.createElement("span");
+    buildBadge.style.cssText = "font-size:10px;color:#999;margin-left:8px;align-self:center;";
+    buildBadge.textContent = "build __BUILD_DATE__";
+    header.appendChild(buildBadge);
     header.appendChild(headerBtns);
 
     const tableWrap = document.createElement("div");
@@ -2329,11 +2301,33 @@ function createDataPanel() {
     });
     controls.appendChild(dataSourceSelectEl);
 
-    const importBtn = document.createElement("button");
-    importBtn.textContent = "Import";
-    importBtn.title = "Importer un descripteur de service opendata (JSON)";
-    importBtn.addEventListener("click", () => importInputEl.click());
-    controls.appendChild(importBtn);
+    dataUpdateBtn = document.createElement("button");
+    dataUpdateBtn.textContent = "Update";
+    dataUpdateBtn.title = "Recharger les données de la source sélectionnée";
+    dataUpdateBtn.disabled = true;
+    dataUpdateBtn.addEventListener("click", async () => {
+        if (!dataSource) return;
+        const original = dataUpdateBtn.textContent;
+        dataUpdateBtn.textContent = "Updating...";
+        try {
+            await refreshOpendataService(dataSource);
+        } finally {
+            dataUpdateBtn.textContent = original;
+        }
+    });
+    controls.appendChild(dataUpdateBtn);
+
+    dataDeleteBtn = document.createElement("button");
+    dataDeleteBtn.textContent = "Delete";
+    dataDeleteBtn.title = "Supprimer la source sélectionnée";
+    dataDeleteBtn.disabled = true;
+    dataDeleteBtn.addEventListener("click", () => {
+        if (!dataSource) return;
+        if (!confirm(`Supprimer la source \u00ab ${dataSource} \u00bb ?`)) return;
+        removeOpendataService(dataSource);
+        setDataStatus(`Source ${dataSource} supprim\u00e9e`, "success");
+    });
+    controls.appendChild(dataDeleteBtn);
 
     const createBtn = document.createElement("button");
     createBtn.textContent = "Create";
@@ -2343,27 +2337,15 @@ function createDataPanel() {
 
     dataPanelEl.appendChild(controls);
 
+    dataStatusEl = document.createElement("div");
+    dataStatusEl.className = "roadwork-status rw-hidden";
+    dataStatusEl.textContent = "";
+    dataPanelEl.appendChild(dataStatusEl);
+
     dataDropzoneEl = document.createElement("div");
     dataDropzoneEl.className = "rw-data-dropzone";
     dataDropzoneEl.textContent = "D\u00e9posez un fichier .json ici (descripteur ou donn\u00e9es)";
     dataPanelEl.appendChild(dataDropzoneEl);
-
-    const importInputEl = document.createElement("input");
-    importInputEl.type = "file";
-    importInputEl.id = "rw-opendata-import-input";
-    importInputEl.accept = ".json,application/json";
-    importInputEl.style.display = "none";
-    importInputEl.addEventListener("change", () => {
-        const file = importInputEl.files && importInputEl.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            handleOpendataJson(String(reader.result || ""));
-            importInputEl.value = "";
-        };
-        reader.readAsText(file);
-    });
-    dataPanelEl.appendChild(importInputEl);
 
     dataPanelEl.appendChild(tableWrap);
     document.body.appendChild(dataPanelEl);

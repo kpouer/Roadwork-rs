@@ -121,6 +121,7 @@ pub struct RoadworkApp {
     show_opendata_service_helper_dialog: bool,
     opendata_service_helper: OpendataServiceHelperDialog,
     show_opendata_panel: bool,
+    confirm_delete_opendata: Option<String>,
     opendata_data: Arc<Mutex<HashMap<String, OpendataData>>>,
     helper_only: bool,
 }
@@ -179,6 +180,7 @@ impl RoadworkApp {
             show_opendata_service_helper_dialog: params.open_opendata_service_helper,
             opendata_service_helper,
             show_opendata_panel: false,
+            confirm_delete_opendata: None,
             opendata_data: Arc::new(Mutex::new(crate::app_settings::load_opendata_cache())),
             helper_only,
         };
@@ -468,6 +470,18 @@ impl RoadworkApp {
         );
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(saved) = self.opendata_service_helper.take_saved() {
+            if !saved.original_name.is_empty() && saved.original_name != saved.name {
+                self.settings.opendata_services.remove(&saved.original_name);
+                self.opendata_data
+                    .lock()
+                    .unwrap()
+                    .remove(&saved.original_name);
+                if self.settings.selected_opendata_service.as_deref()
+                    == Some(saved.original_name.as_str())
+                {
+                    self.settings.selected_opendata_service = Some(saved.name.clone());
+                }
+            }
             self.settings
                 .opendata_services
                 .insert(saved.name.clone(), saved.descriptor);
@@ -485,6 +499,7 @@ impl RoadworkApp {
         if self.show_opendata_panel {
             self.show_opendata_panel(ui.ctx());
         }
+        self.show_opendata_delete_confirm(ui.ctx());
     }
 
     fn show_opendata_panel(&mut self, ctx: &Context) {
@@ -543,6 +558,29 @@ impl RoadworkApp {
                         self.load_opendata(&name);
                     }
                 }
+                ui.horizontal(|ui| {
+                    let has_selection = current.is_some();
+                    if ui
+                        .add_enabled(has_selection, Button::new("Edit"))
+                        .on_hover_text("Open the opendata service helper to edit this source")
+                        .clicked()
+                        && let Some(name) = &current
+                        && let Some(descriptor) = self.settings.opendata_services.get(name)
+                        && let Ok(json) = crate::gui::pretty_json_tabs(descriptor)
+                    {
+                        self.opendata_service_helper =
+                            OpendataServiceHelperDialog::new(Some(json), name.clone(), false);
+                        self.show_opendata_service_helper_dialog = true;
+                    }
+                    if ui
+                        .add_enabled(has_selection, Button::new("Delete"))
+                        .on_hover_text("Delete this opendata source")
+                        .clicked()
+                        && let Some(name) = &current
+                    {
+                        self.confirm_delete_opendata = Some(name.clone());
+                    }
+                });
                 ui.separator();
                 let selected_name = self.settings.selected_opendata_service.clone();
                 if let Some(name) = &selected_name {
@@ -611,6 +649,72 @@ impl RoadworkApp {
                 }
             });
         self.show_opendata_panel = open;
+    }
+
+    fn show_opendata_delete_confirm(&mut self, ctx: &Context) {
+        let Some(name) = self.confirm_delete_opendata.clone() else {
+            return;
+        };
+        let mut confirmed = false;
+        let mut cancelled = false;
+        egui::Window::new("Delete source")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!("Delete the opendata source \"{name}\"?"));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        cancelled = true;
+                    }
+                    if ui.button("Delete").clicked() {
+                        confirmed = true;
+                    }
+                });
+            });
+        if confirmed {
+            self.delete_opendata_service(&name);
+        }
+        if confirmed || cancelled {
+            self.confirm_delete_opendata = None;
+        }
+    }
+
+    fn delete_opendata_service(&mut self, name: &str) {
+        self.settings.opendata_services.remove(name);
+        crate::app_settings::remove_opendata_cache(name);
+        self.opendata_data.lock().unwrap().remove(name);
+        if self.settings.selected_opendata_service.as_deref() == Some(name) {
+            self.settings.selected_opendata_service = None;
+        }
+        crate::app_settings::save_settings(&self.settings);
+        #[cfg(target_arch = "wasm32")]
+        Self::notify_extension_delete(name);
+        self.toasts.success(format!("Source \"{name}\" deleted"));
+    }
+
+    /// Posts a `ROADWORK_DELETE_OPENDATA_SERVICE` message to the parent window so
+    /// the WME extension removes the source from its own settings.
+    #[cfg(target_arch = "wasm32")]
+    fn notify_extension_delete(name: &str) {
+        let object = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &object,
+            &wasm_bindgen::JsValue::from_str("type"),
+            &wasm_bindgen::JsValue::from_str("ROADWORK_DELETE_OPENDATA_SERVICE"),
+        )
+        .ok();
+        js_sys::Reflect::set(
+            &object,
+            &wasm_bindgen::JsValue::from_str("name"),
+            &wasm_bindgen::JsValue::from_str(name),
+        )
+        .ok();
+        if let Some(window) = web_sys::window()
+            && let Ok(Some(parent)) = window.parent()
+        {
+            let _ = parent.post_message(&object, "*");
+        }
     }
 
     fn draw_zoom_level(&mut self, ui: &mut Ui, response: Response) {

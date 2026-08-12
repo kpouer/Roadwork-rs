@@ -27,6 +27,7 @@ const PREVIEW_MAX_ELEMENTS: usize = 100;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct SavedOpendata {
     pub name: String,
+    pub original_name: String,
     pub descriptor: OpendataServiceDescriptor,
     pub data: Option<OpendataData>,
 }
@@ -1343,6 +1344,7 @@ impl OpendataServiceHelperDialog {
             .transpose()?;
         Ok(SavedOpendata {
             name: descriptor.metadata.name.clone(),
+            original_name: self.original_name.clone(),
             descriptor,
             data,
         })
