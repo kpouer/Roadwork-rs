@@ -3,7 +3,7 @@ use crate::now_millis;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpendataData {
     pub source: String,
     pub opendata: HashMap<String, Opendata>,

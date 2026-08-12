@@ -72,6 +72,7 @@ const STORAGE_KEY = "roadwork-wme-settings";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
 const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
+const DATA_SOURCE_KEY = "roadwork-wme-data-source";
 const MAX_WAIT = 120000;
 
 const STATUS_COLORS = {
@@ -95,6 +96,8 @@ let wmeSDK: WmeSDK = null;
 let settings = {...DEFAULTS};
 let currentRoadworks: any = {};
 let currentOpendata: Record<string, any> = {};
+let opendataTotals: Record<string, number> = {};
+let dataSource: string = "";
 let opendataFeatureIndex: Record<string, any> = {};
 let opendataListEl = null;
 let servicesData = [];
@@ -1668,6 +1671,29 @@ async function loadOpendataCache(name: string) {
     }
 }
 
+function loadDataSource() {
+    try {
+        const v = localStorage.getItem(DATA_SOURCE_KEY);
+        if (v !== null) dataSource = v;
+    } catch (_) {}
+}
+
+function saveDataSource() {
+    try {
+        localStorage.setItem(DATA_SOURCE_KEY, dataSource);
+    } catch (_) {}
+}
+
+async function refreshOpendataTotals() {
+    try {
+        const counts = await rpcCall("get_opendata_counts");
+        opendataTotals = counts && typeof counts === "object" ? counts : {};
+    } catch (_) {
+        opendataTotals = {};
+    }
+    updateDataPanel();
+}
+
 async function saveOpendataCache(name: string, data) {
     try {
         await rpcCall("store_opendata_data", [name, JSON.stringify(data)]);
@@ -1711,6 +1737,7 @@ async function refreshOpendata() {
     renderOpendataToMap();
     setStatus(`${count} opendata item(s) loaded`, "success");
     renderOpendataList();
+    refreshOpendataTotals();
 }
 
 async function loadAllOpendataCaches() {
@@ -1869,6 +1896,7 @@ async function refreshOpendataService(name: string) {
         setStatus(`${count} opendata item(s) loaded for ${name}`, "success");
         renderOpendataToMap();
         renderOpendataList();
+        refreshOpendataTotals();
     } catch (e) {
         setStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
     }
@@ -1884,6 +1912,7 @@ async function removeOpendataService(name: string) {
     renderOpendataToMap();
     renderOpendataList();
     syncOpendataDescriptorsToWasm().catch(() => {});
+    refreshOpendataTotals();
 }
 
 async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data) {
@@ -1926,6 +1955,7 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
             );
         }
         renderOpendataToMap();
+        refreshOpendataTotals();
     } catch (e) {
         setStatus(
             data
@@ -1983,6 +2013,7 @@ async function handleOpendataJson(text: string) {
         }
     }
     renderOpendataList();
+    refreshOpendataTotals();
 }
 
 function renderOpendataList() {
@@ -2138,60 +2169,66 @@ function updateDataPanel() {
         const services = getOpendataServices();
         const names = Object.keys(services).sort();
         if (dataSourceSelectEl) {
-            const current = dataSourceSelectEl.value;
             dataSourceSelectEl.replaceChildren();
-            const allOpt = document.createElement("option");
-            allOpt.value = "";
-            allOpt.textContent = "Toutes les sources";
-            dataSourceSelectEl.appendChild(allOpt);
+            const noneOpt = document.createElement("option");
+            noneOpt.value = "";
+            noneOpt.textContent = "Aucune source";
+            dataSourceSelectEl.appendChild(noneOpt);
             for (const name of names) {
                 const opt = document.createElement("option");
                 opt.value = name;
-                opt.textContent = name;
+                const total = opendataTotals[name];
+                opt.textContent = total !== undefined ? `${name} (${total})` : name;
                 dataSourceSelectEl.appendChild(opt);
             }
-            dataSourceSelectEl.value = current;
-        }
-        const filter = dataSourceSelectEl ? dataSourceSelectEl.value : "";
-        for (const name of names) {
-            if (filter && name !== filter) continue;
-            const data = currentOpendata[name];
-            if (!data || !data.opendata) continue;
-            for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
-                count++;
-                const tr = document.createElement("tr");
-                tr.title = id;
-
-                const tdSource = document.createElement("td");
-                tdSource.textContent = name;
-
-                const tdId = document.createElement("td");
-                tdId.textContent = id;
-
-                const tdDesc = document.createElement("td");
-                tdDesc.className = "rw-desc";
-                tdDesc.textContent = od.description || "";
-
-                const tdPos = document.createElement("td");
-                tdPos.style.fontFamily = "monospace";
-                tdPos.style.fontSize = "11px";
-                if (od.latitude && od.longitude) {
-                    tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
-                } else if (od.polygons && od.polygons.length > 0) {
-                    tdPos.textContent = "polygon";
-                } else {
-                    tdPos.textContent = "-";
-                }
-
-                tr.appendChild(tdSource);
-                tr.appendChild(tdId);
-                tr.appendChild(tdDesc);
-                tr.appendChild(tdPos);
-
-                tr.addEventListener("click", () => centerOnOpendataItem(od));
-
-                dataTableBody.appendChild(tr);
+            if (!names.includes(dataSource)) {
+                dataSource = "";
+                saveDataSource();
             }
+            dataSourceSelectEl.value = dataSource;
+        }
+        const filter = dataSource;
+        let total = 0;
+        if (filter) {
+            const data = currentOpendata[filter];
+            if (data && data.opendata) {
+                for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
+                    count++;
+                    const tr = document.createElement("tr");
+                    tr.title = id;
+
+                    const tdSource = document.createElement("td");
+                    tdSource.textContent = filter;
+
+                    const tdId = document.createElement("td");
+                    tdId.textContent = id;
+
+                    const tdDesc = document.createElement("td");
+                    tdDesc.className = "rw-desc";
+                    tdDesc.textContent = od.description || "";
+
+                    const tdPos = document.createElement("td");
+                    tdPos.style.fontFamily = "monospace";
+                    tdPos.style.fontSize = "11px";
+                    if (od.latitude && od.longitude) {
+                        tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
+                    } else if (od.polygons && od.polygons.length > 0) {
+                        tdPos.textContent = "polygon";
+                    } else {
+                        tdPos.textContent = "-";
+                    }
+
+                    tr.appendChild(tdSource);
+                    tr.appendChild(tdId);
+                    tr.appendChild(tdDesc);
+                    tr.appendChild(tdPos);
+
+                    tr.addEventListener("click", () => centerOnOpendataItem(od));
+
+                    dataTableBody.appendChild(tr);
+                }
+            }
+            total = opendataTotals[filter] ?? count;
         }
         if (count === 0) {
             const tr = document.createElement("tr");
@@ -2200,13 +2237,16 @@ function updateDataPanel() {
             td.style.textAlign = "center";
             td.style.color = "#999";
             td.style.padding = "16px";
-            td.textContent = "Aucune donn\u00e9e opendata charg\u00e9e";
+            td.textContent = dataSource
+                ? "Aucune donn\u00e9e opendata charg\u00e9e"
+                : "S\u00e9lectionnez une source";
             tr.appendChild(td);
             dataTableBody.appendChild(tr);
         }
+        const label = dataSource ? `Data (${count}/${total})` : "Data";
         const titleEl = document.getElementById("rw-data-title");
-        if (titleEl) titleEl.textContent = `Data (${count})`;
-        if (dataToggleBtn) dataToggleBtn.textContent = `Data (${count})`;
+        if (titleEl) titleEl.textContent = label;
+        if (dataToggleBtn) dataToggleBtn.textContent = label;
     } catch (e) {
         console.warn("[Roadwork] Failed to render data panel:", e);
     }
@@ -2282,7 +2322,11 @@ function createDataPanel() {
     dataSourceSelectEl = document.createElement("select");
     dataSourceSelectEl.id = "rw-data-source-select";
     dataSourceSelectEl.title = "Choisir la source de données à afficher";
-    dataSourceSelectEl.addEventListener("change", () => updateDataPanel());
+    dataSourceSelectEl.addEventListener("change", () => {
+        dataSource = dataSourceSelectEl.value;
+        saveDataSource();
+        updateDataPanel();
+    });
     controls.appendChild(dataSourceSelectEl);
 
     const importBtn = document.createElement("button");
@@ -2716,6 +2760,7 @@ async function init() {
     loadSettings();
     loadHideFinished();
     loadSortState();
+    loadDataSource();
     await syncCustomDescriptorsToWasm(false).catch((e) => {
         console.warn("[Roadwork] Failed to sync custom descriptors:", e);
     });
@@ -2896,6 +2941,7 @@ async function init() {
     });
     await loadAllOpendataCaches();
     renderOpendataToMap();
+    refreshOpendataTotals();
 
     const restored = await loadPolygonGroups();
     const hasRestored = Object.keys(restored).length > 0;

@@ -260,6 +260,22 @@ impl Store {
         collect_opendata(service, rows)
     }
 
+    /// Returns the number of cached opendata items per service.
+    pub fn opendata_counts(&self) -> Result<HashMap<String, i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT service, COUNT(*) FROM data GROUP BY service")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut counts = HashMap::new();
+        for row in rows {
+            let (service, count) = row?;
+            counts.insert(service, count);
+        }
+        Ok(counts)
+    }
+
     /// Removes every cached row for `service` (roadworks, opendata, cache).
     pub fn remove(&mut self, service: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
@@ -525,6 +541,9 @@ mod tests {
                 opendata.opendata["od-1"].polygons.as_ref().unwrap()[0].xpoints,
                 vec![2.2, 2.3]
             );
+
+            let counts = store.opendata_counts().unwrap();
+            assert_eq!(counts.get("France-Paris"), Some(&1));
         }
         // Re-open from disk: persistence across connections.
         {

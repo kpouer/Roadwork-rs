@@ -22,6 +22,15 @@ const IMPORT_FRAME_BUDGET: usize = 1024;
 /// always built from the first `PREVIEW_MAX_ELEMENTS` of the data array.
 const PREVIEW_MAX_ELEMENTS: usize = 100;
 
+/// Payload produced by the native "Save" button, persisted into the local
+/// settings by the caller.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct SavedOpendata {
+    pub name: String,
+    pub descriptor: OpendataServiceDescriptor,
+    pub data: Option<OpendataData>,
+}
+
 #[derive(Clone)]
 enum FetchState {
     Connecting,
@@ -64,6 +73,8 @@ pub(crate) struct OpendataServiceHelperDialog {
     import_runner: Option<ImportRunner>,
     memo: ElementMemo,
     memo_key: MemoKey,
+    #[cfg(not(target_arch = "wasm32"))]
+    saved: Option<SavedOpendata>,
 }
 
 struct DropScan {
@@ -479,6 +490,24 @@ impl OpendataServiceHelperDialog {
                 match self.save_to_extension() {
                     Ok(name) => {
                         toasts.success(format!("Service \"{name}\" saved to extension"));
+                    }
+                    Err(e) => {
+                        toasts.error(format!("Save failed: {e}"));
+                    }
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui
+                .add_enabled(
+                    !self.descriptor_json.trim().is_empty(),
+                    egui::Button::new("Save"),
+                )
+                .on_hover_text("Save the descriptor and the opendata into the local settings")
+                .clicked()
+            {
+                match self.prepare_save() {
+                    Ok(saved) => {
+                        self.saved = Some(saved);
                     }
                     Err(e) => {
                         toasts.error(format!("Save failed: {e}"));
@@ -1299,6 +1328,29 @@ impl OpendataServiceHelperDialog {
             .post_message(&object, "*")
             .map_err(|e| format!("{e:?}"))?;
         Ok(name)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn prepare_save(&self) -> Result<SavedOpendata, String> {
+        let descriptor: OpendataServiceDescriptor =
+            serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
+        let data = self
+            .parsed_opendata
+            .as_ref()
+            .map(|value| {
+                serde_json::from_value::<OpendataData>(value.clone()).map_err(|e| e.to_string())
+            })
+            .transpose()?;
+        Ok(SavedOpendata {
+            name: descriptor.metadata.name.clone(),
+            descriptor,
+            data,
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn take_saved(&mut self) -> Option<SavedOpendata> {
+        self.saved.take()
     }
 
     fn show_validation_report(&self, ui: &mut Ui, report: &[PathValidation]) {

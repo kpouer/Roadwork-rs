@@ -310,6 +310,20 @@ pub async fn get_opendata_cached(service_name: &str) -> Result<JsValue, JsValue>
 }
 
 #[wasm_bindgen]
+pub async fn get_opendata_counts() -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata_counts");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let store = store_take().await?;
+        let counts = store.opendata_counts().map_err(js_err)?;
+        store_put_back(store);
+        serialize_data(&counts)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    serialize_data(&HashMap::<String, i64>::new())
+}
+
+#[wasm_bindgen]
 pub async fn get_roadworks_in_bbox(
     service_name: &str,
     lat_min: f64,

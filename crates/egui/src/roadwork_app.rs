@@ -14,11 +14,14 @@ use egui::text::LayoutJob;
 use egui::{Button, Context, Label, Response, RichText, Ui};
 use egui_notify::Toasts;
 use log::info;
+use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::metadata::Metadata;
+use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::settings::Settings;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use walkers::{HttpTiles, Map, MapMemory, Projector};
 
@@ -117,6 +120,8 @@ pub struct RoadworkApp {
     service_helper: ServiceHelperDialog,
     show_opendata_service_helper_dialog: bool,
     opendata_service_helper: OpendataServiceHelperDialog,
+    show_opendata_panel: bool,
+    opendata_data: Arc<Mutex<HashMap<String, OpendataData>>>,
     helper_only: bool,
 }
 
@@ -173,6 +178,8 @@ impl RoadworkApp {
             service_helper,
             show_opendata_service_helper_dialog: params.open_opendata_service_helper,
             opendata_service_helper,
+            show_opendata_panel: false,
+            opendata_data: Arc::new(Mutex::new(crate::app_settings::load_opendata_cache())),
             helper_only,
         };
 
@@ -205,6 +212,40 @@ impl RoadworkApp {
                     *roadwork_data.lock().unwrap() = Some(data);
                 }
                 Err(e) => log::error!("Failed to fetch roadworks for {service}: {e}"),
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn load_opendata(&self, name: &str) {
+        let Some(descriptor) = self.settings.opendata_services.get(name).cloned() else {
+            return;
+        };
+        let has_url = descriptor
+            .metadata
+            .url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty());
+        let name = name.to_string();
+        if !has_url {
+            if let Some(data) = crate::app_settings::load_opendata_cache().remove(&name) {
+                self.opendata_data.lock().unwrap().insert(name, data);
+            }
+            return;
+        }
+        let opendata_data = Arc::clone(&self.opendata_data);
+        let ctx = self.ctx.clone();
+        spawn_task(async move {
+            let service = OpendataService {
+                service_name: name.clone(),
+                service_descriptor: descriptor,
+            };
+            match service.get_data().await {
+                Ok(data) => {
+                    crate::app_settings::save_opendata_cache(&name, &data);
+                    opendata_data.lock().unwrap().insert(name.clone(), data);
+                }
+                Err(e) => log::error!("Failed to fetch opendata {name}: {e}"),
             }
             ctx.request_repaint();
         });
@@ -375,6 +416,9 @@ impl RoadworkApp {
                 if ui.button("Opendata service helper").clicked() {
                     self.show_opendata_service_helper_dialog = true;
                 }
+                if ui.button("Opendata").clicked() {
+                    self.show_opendata_panel = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let size = egui::vec2(18.0, 18.0);
                     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -422,6 +466,151 @@ impl RoadworkApp {
             &mut self.toasts,
             false,
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(saved) = self.opendata_service_helper.take_saved() {
+            self.settings
+                .opendata_services
+                .insert(saved.name.clone(), saved.descriptor);
+            crate::app_settings::save_settings(&self.settings);
+            if let Some(data) = saved.data {
+                crate::app_settings::save_opendata_cache(&saved.name, &data);
+                self.opendata_data
+                    .lock()
+                    .unwrap()
+                    .insert(saved.name.clone(), data);
+            }
+            self.toasts
+                .success(format!("Service \"{}\" saved", saved.name));
+        }
+        if self.show_opendata_panel {
+            self.show_opendata_panel(ui.ctx());
+        }
+    }
+
+    fn show_opendata_panel(&mut self, ctx: &Context) {
+        let screen = ctx.content_rect().size();
+        let default_size = egui::vec2(
+            (screen.x * 0.45).clamp(360.0, 700.0),
+            (screen.y * 0.8).clamp(300.0, 650.0),
+        );
+        let mut open = self.show_opendata_panel;
+        egui::Window::new("Opendata")
+            .open(&mut open)
+            .resizable(true)
+            .default_size(default_size)
+            .show(ctx, |ui| {
+                let mut names: Vec<String> =
+                    self.settings.opendata_services.keys().cloned().collect();
+                names.sort();
+                let current = self.settings.selected_opendata_service.clone();
+                let selected_text = current
+                    .clone()
+                    .unwrap_or_else(|| "Aucune source".to_string());
+                let mut selected = current.clone();
+                let mut changed: Option<Option<String>> = None;
+                egui::ComboBox::from_label("")
+                    .selected_text(&selected_text)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_value(&mut selected, None::<String>, "Aucune source")
+                            .changed()
+                        {
+                            changed = Some(None);
+                        }
+                        for name in &names {
+                            let total = self
+                                .opendata_data
+                                .lock()
+                                .unwrap()
+                                .get(name)
+                                .map(|data| data.opendata.len());
+                            let label = match total {
+                                Some(total) => format!("{name} ({total})"),
+                                None => name.clone(),
+                            };
+                            if ui
+                                .selectable_value(&mut selected, Some(name.clone()), label)
+                                .changed()
+                            {
+                                changed = Some(Some(name.clone()));
+                            }
+                        }
+                    });
+                if let Some(selection) = changed {
+                    self.settings.selected_opendata_service = selection.clone();
+                    crate::app_settings::save_settings(&self.settings);
+                    if let Some(name) = selection {
+                        self.load_opendata(&name);
+                    }
+                }
+                ui.separator();
+                let selected_name = self.settings.selected_opendata_service.clone();
+                if let Some(name) = &selected_name {
+                    let loaded = self
+                        .opendata_data
+                        .lock()
+                        .unwrap()
+                        .get(name)
+                        .map(|data| data.opendata.len());
+                    match loaded {
+                        Some(total) => {
+                            ui.label(RichText::new(format!("Data ({total}/{total})")).strong());
+                            ui.separator();
+                            egui::ScrollArea::vertical()
+                                .id_salt("opendata_list_scroll")
+                                .show(ui, |ui| {
+                                    let mut items: Vec<_> = {
+                                        let guard = self.opendata_data.lock().unwrap();
+                                        guard
+                                            .get(name)
+                                            .map(|data| data.opendata.values().cloned().collect())
+                                            .unwrap_or_default()
+                                    };
+                                    items.sort_by(|a, b| a.id.cmp(&b.id));
+                                    egui::Grid::new("opendata_grid")
+                                        .striped(true)
+                                        .spacing([12.0, 4.0])
+                                        .show(ui, |ui| {
+                                            ui.label(RichText::new("ID").strong());
+                                            ui.label(RichText::new("Description").strong());
+                                            ui.label(RichText::new("Position").strong());
+                                            ui.end_row();
+                                            for item in items {
+                                                ui.label(&item.id);
+                                                ui.label(
+                                                    item.description.clone().unwrap_or_default(),
+                                                );
+                                                if item.latitude != 0.0 && item.longitude != 0.0 {
+                                                    ui.label(format!(
+                                                        "{:.5}, {:.5}",
+                                                        item.latitude, item.longitude
+                                                    ));
+                                                } else if item
+                                                    .polygons
+                                                    .as_ref()
+                                                    .is_some_and(|p| !p.is_empty())
+                                                {
+                                                    ui.label("polygon");
+                                                } else {
+                                                    ui.label("-");
+                                                }
+                                                ui.end_row();
+                                            }
+                                        });
+                                });
+                        }
+                        None => {
+                            ui.label("Aucune donn\u{00e9}e opendata charg\u{00e9}e");
+                            if ui.button("Reload").clicked() {
+                                self.load_opendata(name);
+                            }
+                        }
+                    }
+                } else {
+                    ui.label("S\u{00e9}lectionnez une source");
+                }
+            });
+        self.show_opendata_panel = open;
     }
 
     fn draw_zoom_level(&mut self, ui: &mut Ui, response: Response) {

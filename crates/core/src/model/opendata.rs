@@ -1,7 +1,7 @@
 use crate::model::wkt::polygon::Polygon;
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize)]
 pub struct Opendata {
     pub id: String,
     pub latitude: f64,

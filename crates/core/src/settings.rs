@@ -1,5 +1,7 @@
 use crate::opendata::json::model::lat_lng::LatLng;
+use crate::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 const DEFAULT_OPENDATA_SERVICE: &str = "France-Paris";
 
@@ -26,6 +28,12 @@ pub struct Settings {
 
     #[serde(rename = "mapZoom", default)]
     pub map_zoom: Option<f64>,
+
+    #[serde(rename = "opendataServices", default)]
+    pub opendata_services: HashMap<String, OpendataServiceDescriptor>,
+
+    #[serde(rename = "selectedOpendataService", default)]
+    pub selected_opendata_service: Option<String>,
 }
 
 impl Default for Settings {
@@ -40,6 +48,8 @@ impl Default for Settings {
             hide_expired: false,
             map_center: None,
             map_zoom: None,
+            opendata_services: HashMap::new(),
+            selected_opendata_service: None,
         }
     }
 }
