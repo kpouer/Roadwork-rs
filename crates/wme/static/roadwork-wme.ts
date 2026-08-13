@@ -6,7 +6,7 @@ let rpcId = 0;
 const rpcPending = new Map();
 let helperAcked = false;
 
-window.addEventListener("message", (e) => {
+window.addEventListener("message", async (e) => {
     if (e.data?.type === "ROADWORK_OPEN_HELPER_ACK") {
         helperAcked = true;
         setStatus("Descriptor helper opened", "success");
@@ -29,7 +29,18 @@ window.addEventListener("message", (e) => {
         const method = e.data.level === "error" ? console.error : e.data.level === "warn" ? console.warn : console.log;
         method("[Roadwork WASM]", ...e.data.args);
     } else if (e.data?.type === "ROADWORK_SAVE_OPENDATA_DESCRIPTOR") {
-        saveOpendataDescriptorFromHelper(e.data.name, e.data.descriptor, e.data.oldName, e.data.data);
+        const savedName = await saveOpendataDescriptorFromHelper(
+            e.data.name,
+            e.data.descriptor,
+            e.data.oldName,
+            e.data.data,
+        );
+        if (savedName) {
+            dataSource = savedName;
+            saveDataSource();
+            updateDataPanel();
+        }
+        window.postMessage({ type: "ROADWORK_CLOSE_HELPER" }, "*");
     } else if (e.data?.type === "ROADWORK_DELETE_OPENDATA_SERVICE") {
         removeOpendataService(e.data.name);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
@@ -1931,7 +1942,7 @@ async function removeOpendataService(name: string) {
 }
 
 async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data) {
-    if (!name || !descriptor) return;
+    if (!name || !descriptor) return undefined;
     try {
         const parsed = JSON.parse(descriptor);
         const svcName = parsed?.metadata?.name;
@@ -1979,6 +1990,7 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
             "error",
         );
     }
+    return name;
 }
 
 async function renderOpendataList() {

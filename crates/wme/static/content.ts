@@ -157,6 +157,11 @@
             openAppOverlay();
             return;
         }
+        if (e.data?.type === 'ROADWORK_CLOSE_HELPER') {
+            console.log('[Roadwork] content script closing helper');
+            closeHelper();
+            return;
+        }
         if (e.data?.type !== 'ROADWORK_OPEN_HELPER') return;
         console.log('[Roadwork] content script opening helper for', e.data?.service);
         if (!helperOverlay) {
