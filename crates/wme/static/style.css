@@ -66,6 +66,21 @@
     background: #3a7bc8;
 }
 
+.roadwork-btn:disabled {
+    background: #e6e8ea;
+    border-color: #c9cdd1;
+    color: #8a9096;
+    cursor: default;
+}
+
+.roadwork-btn:disabled:hover,
+.roadwork-btn:disabled:active {
+    background: #e6e8ea;
+    border-color: #c9cdd1;
+    color: #8a9096;
+    cursor: default;
+}
+
 .roadwork-btn-secondary {
     background: #fff;
     color: #4a90d9;
@@ -181,6 +196,21 @@
 
 .rw-floating-controls button:hover {
     background: #eee;
+}
+
+.rw-floating-controls button:disabled {
+    background: #eceff1;
+    border-color: #d0d5dd;
+    color: #9aa3ad;
+    cursor: default;
+}
+
+.rw-floating-controls button:disabled:hover,
+.rw-floating-controls button:disabled:active {
+    background: #eceff1;
+    border-color: #d0d5dd;
+    color: #9aa3ad;
+    cursor: default;
 }
 
 .rw-floating-status {
