@@ -286,11 +286,6 @@ fn main() {
     );
     fs::copy(ts_out_dir.join("content.js"), out_dir.join("content.js"))
         .expect("Failed to copy content.js");
-    fs::copy(
-        ts_out_dir.join("background.js"),
-        out_dir.join("background.js"),
-    )
-    .expect("Failed to copy background.js");
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))
         .expect("Failed to copy style.css");
     fs::copy(

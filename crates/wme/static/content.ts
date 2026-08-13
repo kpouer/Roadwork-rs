@@ -17,6 +17,50 @@
     let helperIframe: HTMLIFrameElement | null = null;
     let pendingHelperData: string | null = null;
 
+    let appOverlay: HTMLDivElement | null = null;
+    let appIframe: HTMLIFrameElement | null = null;
+
+    function openAppOverlay() {
+        if (!appOverlay) {
+            appOverlay = document.createElement('div');
+            appOverlay.className = 'rw-app-overlay rw-app-hidden';
+
+            const header = document.createElement('div');
+            header.className = 'rw-helper-header';
+
+            const title = document.createElement('h4');
+            title.textContent = 'Roadwork';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'rw-helper-close';
+            closeBtn.textContent = '\u00d7';
+            closeBtn.title = 'Close';
+            closeBtn.addEventListener('click', closeAppOverlay);
+
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+
+            appIframe = document.createElement('iframe');
+            appIframe.className = 'rw-app-iframe';
+            appIframe.setAttribute('allow', 'clipboard-read; clipboard-write');
+
+            appOverlay.appendChild(header);
+            appOverlay.appendChild(appIframe);
+            document.body.appendChild(appOverlay);
+        }
+        appIframe.src = chrome.runtime.getURL('app/index.html');
+        appOverlay.classList.remove('rw-app-hidden');
+    }
+
+    function closeAppOverlay() {
+        if (appOverlay) {
+            appOverlay.classList.add('rw-app-hidden');
+        }
+        if (appIframe) {
+            appIframe.src = 'about:blank';
+        }
+    }
+
     function closeHelper() {
         if (helperIframe) helperIframe.src = 'about:blank';
         if (helperOverlay) helperOverlay.classList.add('rw-helper-hidden');
@@ -108,6 +152,11 @@
     }
 
     window.addEventListener('message', (e) => {
+        if (e.data?.type === 'ROADWORK_OPEN_APP') {
+            console.log('[Roadwork] content script opening app overlay');
+            openAppOverlay();
+            return;
+        }
         if (e.data?.type !== 'ROADWORK_OPEN_HELPER') return;
         console.log('[Roadwork] content script opening helper for', e.data?.service);
         if (!helperOverlay) {

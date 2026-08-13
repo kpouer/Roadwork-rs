@@ -2708,6 +2708,16 @@ async function buildPanel(tabPane: Element) {
     versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
     panelEl.appendChild(versionLine);
 
+    const launchBtn = document.createElement("button");
+    launchBtn.className = "roadwork-btn";
+    launchBtn.textContent = "Lancer l'appli";
+    launchBtn.title = "Ouvrir l'appli Roadwork";
+    launchBtn.addEventListener("click", () => {
+        console.log("[Roadwork] launching app overlay");
+        window.postMessage({ type: "ROADWORK_OPEN_APP" }, "*");
+    });
+    panelEl.appendChild(launchBtn);
+
     const logLevelDiv = document.createElement("div");
     logLevelDiv.className = "roadwork-field";
 
