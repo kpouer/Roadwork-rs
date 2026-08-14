@@ -6,7 +6,8 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Metadata {
-    pub country: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
     pub center: LatLng,
     #[serde(rename = "sourceUrl")]
     #[serde(skip_serializing_if = "Option::is_none")]

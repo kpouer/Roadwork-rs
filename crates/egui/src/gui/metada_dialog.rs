@@ -26,7 +26,9 @@ impl<'a> MetadataDialog<'a> {
                     .spacing([6.0, 4.0])
                     .show(ui, |ui| {
                         Self::add_row(ui, "Name:", &self.metadata.name);
-                        Self::add_row(ui, "Country:", &self.metadata.country);
+                        if let Some(country) = &self.metadata.country {
+                            Self::add_row(ui, "Country:", country);
+                        }
 
                         if let Some(p) = &self.metadata.producer {
                             Self::add_row(ui, "Producer:", p);

@@ -111,8 +111,14 @@ pub(crate) fn show(
     };
 
     ui.heading("Metadata");
-    changed |= text_row(ui, "Country", &mut descriptor.metadata.country, None, None);
     changed |= text_row(ui, "Name", &mut descriptor.metadata.name, None, None);
+    changed |= center_row(
+        ui,
+        &mut descriptor.metadata.center,
+        center_picker,
+        center_picker_open,
+    );
+    changed |= optional_text_row(ui, "Country", &mut descriptor.metadata.country, None, None);
     changed |= optional_text_row(
         ui,
         "Producer",
@@ -143,12 +149,6 @@ pub(crate) fn show(
     );
     changed |= optional_text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
     changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
-    changed |= center_row(
-        ui,
-        &mut descriptor.metadata.center,
-        center_picker,
-        center_picker_open,
-    );
 
     ui.add_space(8.0);
     ui.heading("Fields");
