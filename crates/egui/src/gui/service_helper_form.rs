@@ -1,10 +1,10 @@
+use super::center_picker_dialog::CenterPickerDialog;
+use crate::gui::metadata_form::MetadataForm;
 use egui::{DragValue, Grid, RichText, TextEdit, Ui};
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::parser::Parser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
-
-use super::center_picker_dialog::CenterPickerDialog;
 
 pub(crate) const LABEL_WIDTH: f32 = 150.0;
 
@@ -98,7 +98,6 @@ pub(crate) fn show(
     array_paths: &[(String, usize)],
     path_candidates: &PathCandidates,
 ) -> bool {
-    let mut changed = false;
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: None,
@@ -110,45 +109,8 @@ pub(crate) fn show(
         hint: scalar_wand.hint,
     };
 
-    ui.heading("Metadata");
-    changed |= text_row(ui, "Name", &mut descriptor.metadata.name, None, None);
-    changed |= center_row(
-        ui,
-        &mut descriptor.metadata.center,
-        center_picker,
-        center_picker_open,
-    );
-    changed |= optional_text_row(ui, "Country", &mut descriptor.metadata.country, None, None);
-    changed |= optional_text_row(
-        ui,
-        "Producer",
-        &mut descriptor.metadata.producer,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Licence name",
-        &mut descriptor.metadata.licence_name,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Licence URL",
-        &mut descriptor.metadata.licence_url,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Source URL",
-        &mut descriptor.metadata.source_url,
-        None,
-        None,
-    );
-    changed |= optional_text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
-    changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
+    let mut changed =
+        MetadataForm::new(&mut descriptor.metadata).show(ui, center_picker, center_picker_open);
 
     ui.add_space(8.0);
     ui.heading("Fields");
