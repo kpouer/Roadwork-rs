@@ -1,6 +1,7 @@
 pub mod about_dialog;
 pub mod center_picker_dialog;
 pub mod metada_dialog;
+mod metadata_form;
 pub mod opendata_service_helper_dialog;
 pub mod opendata_service_helper_form;
 pub mod roadwork_marker;

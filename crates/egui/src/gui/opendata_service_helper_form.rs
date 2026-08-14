@@ -1,13 +1,11 @@
-use egui::{Color32, RichText, Ui};
-use roadwork_core::opendata::json::model::metadata::Metadata;
-use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
-
 use super::center_picker_dialog::CenterPickerDialog;
 pub use super::service_helper_form::PathCandidates;
 use super::service_helper_form::{
-    LABEL_WIDTH, Wand, center_row, optional_text_row, roadwork_array_row, text_row,
-    url_params_grid, validated,
+    LABEL_WIDTH, Wand, optional_text_row, roadwork_array_row, text_row, url_params_grid, validated,
 };
+use crate::gui::metadata_form::MetadataForm;
+use egui::{Color32, RichText, Ui};
+use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FieldsValidation {
@@ -54,7 +52,6 @@ pub(crate) fn show(
     array_paths: &[(String, usize)],
     path_candidates: &PathCandidates,
 ) -> bool {
-    let mut changed = false;
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: None,
@@ -66,13 +63,11 @@ pub(crate) fn show(
         hint: scalar_wand.hint,
     };
 
-    changed |= show_metadata_section(
-        ui,
-        &mut descriptor.metadata,
-        url_params,
-        center_picker,
-        center_picker_open,
-    );
+    let mut changed =
+        MetadataForm::new(&mut descriptor.metadata).show(ui, center_picker, center_picker_open);
+    ui.add_space(8.0);
+    ui.heading("URL params");
+    changed |= url_params_grid(ui, url_params);
 
     ui.add_space(8.0);
     ui.heading("Fields");
@@ -154,33 +149,6 @@ pub(crate) fn show(
     changed
 }
 
-pub(crate) fn show_metadata_section(
-    ui: &mut Ui,
-    metadata: &mut Metadata,
-    url_params: &mut Vec<(String, String)>,
-    center_picker: &mut CenterPickerDialog,
-    center_picker_open: &mut bool,
-) -> bool {
-    let mut changed = false;
-    ui.heading("Metadata");
-    changed |= text_row(ui, "Name", &mut metadata.name, None, None);
-    changed |= center_row(ui, &mut metadata.center, center_picker, center_picker_open);
-    changed |= optional_text_row(ui, "Country", &mut metadata.country, None, None);
-    changed |= optional_text_row(ui, "Producer", &mut metadata.producer, None, None);
-    changed |= optional_text_row(ui, "Licence name", &mut metadata.licence_name, None, None);
-    changed |= optional_text_row(ui, "Licence URL", &mut metadata.licence_url, None, None);
-    changed |= optional_text_row(ui, "Source URL", &mut metadata.source_url, None, None);
-    changed |= optional_text_row(ui, "URL", &mut metadata.url, None, None);
-    changed |= optional_text_row(ui, "Locale", &mut metadata.locale, None, None);
-    changed |= color_row(ui, &mut metadata.color);
-
-    ui.add_space(8.0);
-    ui.heading("URL params");
-    changed |= url_params_grid(ui, url_params);
-
-    changed
-}
-
 const DEFAULT_COLOR: Color32 = Color32::from_rgb(0x0d, 0x94, 0x88);
 
 fn hex_to_color32(hex: &str) -> Option<Color32> {
@@ -198,7 +166,7 @@ fn color32_to_hex(color: Color32) -> String {
     format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b())
 }
 
-fn color_row(ui: &mut Ui, color: &mut Option<String>) -> bool {
+pub(crate) fn color_row(ui: &mut Ui, color: &mut Option<String>) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         ui.add_sized(
