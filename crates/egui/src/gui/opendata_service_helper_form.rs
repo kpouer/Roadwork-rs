@@ -1,4 +1,5 @@
 use egui::{Color32, RichText, Ui};
+use roadwork_core::opendata::json::model::metadata::Metadata;
 use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 
 use super::center_picker_dialog::CenterPickerDialog;
@@ -67,7 +68,7 @@ pub(crate) fn show(
 
     changed |= show_metadata_section(
         ui,
-        descriptor,
+        &mut descriptor.metadata,
         url_params,
         center_picker,
         center_picker_open,
@@ -155,52 +156,23 @@ pub(crate) fn show(
 
 pub(crate) fn show_metadata_section(
     ui: &mut Ui,
-    descriptor: &mut OpendataServiceDescriptor,
+    metadata: &mut Metadata,
     url_params: &mut Vec<(String, String)>,
     center_picker: &mut CenterPickerDialog,
     center_picker_open: &mut bool,
 ) -> bool {
     let mut changed = false;
     ui.heading("Metadata");
-    changed |= text_row(ui, "Name", &mut descriptor.metadata.name, None, None);
-    changed |= center_row(
-        ui,
-        &mut descriptor.metadata.center,
-        center_picker,
-        center_picker_open,
-    );
-    changed |= optional_text_row(ui, "Country", &mut descriptor.metadata.country, None, None);
-    changed |= optional_text_row(
-        ui,
-        "Producer",
-        &mut descriptor.metadata.producer,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Licence name",
-        &mut descriptor.metadata.licence_name,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Licence URL",
-        &mut descriptor.metadata.licence_url,
-        None,
-        None,
-    );
-    changed |= optional_text_row(
-        ui,
-        "Source URL",
-        &mut descriptor.metadata.source_url,
-        None,
-        None,
-    );
-    changed |= optional_text_row(ui, "URL", &mut descriptor.metadata.url, None, None);
-    changed |= optional_text_row(ui, "Locale", &mut descriptor.metadata.locale, None, None);
-    changed |= color_row(ui, &mut descriptor.metadata.color);
+    changed |= text_row(ui, "Name", &mut metadata.name, None, None);
+    changed |= center_row(ui, &mut metadata.center, center_picker, center_picker_open);
+    changed |= optional_text_row(ui, "Country", &mut metadata.country, None, None);
+    changed |= optional_text_row(ui, "Producer", &mut metadata.producer, None, None);
+    changed |= optional_text_row(ui, "Licence name", &mut metadata.licence_name, None, None);
+    changed |= optional_text_row(ui, "Licence URL", &mut metadata.licence_url, None, None);
+    changed |= optional_text_row(ui, "Source URL", &mut metadata.source_url, None, None);
+    changed |= optional_text_row(ui, "URL", &mut metadata.url, None, None);
+    changed |= optional_text_row(ui, "Locale", &mut metadata.locale, None, None);
+    changed |= color_row(ui, &mut metadata.color);
 
     ui.add_space(8.0);
     ui.heading("URL params");
