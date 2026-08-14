@@ -45,23 +45,6 @@ pub struct PathCandidates {
     pub arrays: Vec<(String, usize)>,
 }
 
-/// Memoized extraction of the selected data-array element, recomputed only when
-/// the dataArray path, the fetched document or the selected index changes.
-#[derive(Default, Clone)]
-pub(crate) struct ElementMemo {
-    pub element: Option<serde_json::Value>,
-    pub candidates: PathCandidates,
-    pub array_valid: bool,
-}
-
-/// Cheap identity of the inputs [`ElementMemo`] was built from.
-#[derive(Default)]
-pub(crate) struct MemoKey {
-    pub data_array: String,
-    pub doc: Option<std::sync::Arc<serde_json::Value>>,
-    pub index: usize,
-}
-
 pub(crate) struct Wand<'a> {
     pub(crate) scalars: &'a [(String, String)],
     pub(crate) arrays: Option<&'a [(String, usize)]>,

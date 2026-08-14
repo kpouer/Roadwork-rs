@@ -1,6 +1,5 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::opendata_service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
-use super::service_helper_form::{ElementMemo, MemoKey};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::json_tools::{JsonScan, JsonTools};
@@ -72,8 +71,6 @@ pub(crate) struct OpendataServiceHelperDialog {
     processing: Arc<Mutex<ImportProgress>>,
     importing: bool,
     import_runner: Option<ImportRunner>,
-    memo: ElementMemo,
-    memo_key: MemoKey,
     #[cfg(not(target_arch = "wasm32"))]
     saved: Option<SavedOpendata>,
 }
