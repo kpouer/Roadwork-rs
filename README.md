@@ -1,5 +1,5 @@
 # Roadwork
-A desktop app to monitor roadwork opendata services
+A web app to monitor roadwork opendata services, running inside a Chrome extension (userscript) for the Waze Map Editor
 
 ## Introduction
 

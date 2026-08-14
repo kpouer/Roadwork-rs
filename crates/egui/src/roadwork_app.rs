@@ -34,7 +34,6 @@ pub struct StartupParams {
     pub opendata_descriptor: Option<String>,
 }
 
-#[cfg(target_arch = "wasm32")]
 pub(crate) fn spawn_task<F>(future: F)
 where
     F: std::future::Future<Output = ()> + 'static,
@@ -42,20 +41,17 @@ where
     wasm_bindgen_futures::spawn_local(future);
 }
 
-#[cfg(target_arch = "wasm32")]
 thread_local! {
     static PENDING_OPENDATA_DATA: std::cell::RefCell<Option<String>> =
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(target_arch = "wasm32")]
 pub(crate) fn take_pending_opendata_data() -> Option<String> {
     PENDING_OPENDATA_DATA.with(|cell| cell.borrow_mut().take())
 }
 
 /// Registers a `message` listener that receives `ROADWORK_HELPER_DATA` posted by the
 /// WME extension content script, storing the data for the opendata helper dialog.
-#[cfg(target_arch = "wasm32")]
 pub fn setup_helper_data_listener() {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::Closure;
@@ -90,14 +86,6 @@ pub fn setup_helper_data_listener() {
         .add_event_listener_with_callback("message", closure.as_ref().unchecked_ref())
         .expect("Failed to add message listener");
     closure.forget();
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn spawn_task<F>(future: F)
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    std::thread::spawn(move || pollster::block_on(future));
 }
 
 pub struct RoadworkApp {
@@ -468,34 +456,6 @@ impl RoadworkApp {
             &mut self.toasts,
             false,
         );
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(saved) = self.opendata_service_helper.take_saved() {
-            if !saved.original_name.is_empty() && saved.original_name != saved.name {
-                self.settings.opendata_services.remove(&saved.original_name);
-                self.opendata_data
-                    .lock()
-                    .unwrap()
-                    .remove(&saved.original_name);
-                if self.settings.selected_opendata_service.as_deref()
-                    == Some(saved.original_name.as_str())
-                {
-                    self.settings.selected_opendata_service = Some(saved.name.clone());
-                }
-            }
-            self.settings
-                .opendata_services
-                .insert(saved.name.clone(), saved.descriptor);
-            crate::app_settings::save_settings(&self.settings);
-            if let Some(data) = saved.data {
-                crate::app_settings::save_opendata_cache(&saved.name, &data);
-                self.opendata_data
-                    .lock()
-                    .unwrap()
-                    .insert(saved.name.clone(), data);
-            }
-            self.toasts
-                .success(format!("Service \"{}\" saved", saved.name));
-        }
         if self.show_opendata_panel {
             self.show_opendata_panel(ui.ctx());
         }
@@ -688,14 +648,12 @@ impl RoadworkApp {
             self.settings.selected_opendata_service = None;
         }
         crate::app_settings::save_settings(&self.settings);
-        #[cfg(target_arch = "wasm32")]
         Self::notify_extension_delete(name);
         self.toasts.success(format!("Source \"{name}\" deleted"));
     }
 
     /// Posts a `ROADWORK_DELETE_OPENDATA_SERVICE` message to the parent window so
     /// the WME extension removes the source from its own settings.
-    #[cfg(target_arch = "wasm32")]
     fn notify_extension_delete(name: &str) {
         let object = js_sys::Object::new();
         js_sys::Reflect::set(

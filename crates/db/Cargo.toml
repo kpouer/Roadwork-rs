@@ -2,13 +2,11 @@
 name = "roadwork-db"
 version = "0.1.0"
 edition = "2024"
-description = "Persistent cache for the WME extension, backed by SQLite (bundled on native, OPFS on wasm32)"
+description = "Persistent cache for the WME extension, backed by SQLite (OPFS via sqlite-wasm-rs on wasm32)"
 publish = false
 
 [dependencies]
 roadwork-core = { path = "../core", version = "0.1.0" }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
 sqlite-wasm-vfs = "0.2"

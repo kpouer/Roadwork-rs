@@ -47,17 +47,14 @@ thread_local! {
 }
 
 /// Maximum age of a cached roadworks snapshot before it is re-fetched (24h).
-#[cfg(target_arch = "wasm32")]
 const ROADWORK_CACHE_MAX_AGE_MS: u64 = 86_400_000;
 
-#[cfg(target_arch = "wasm32")]
 thread_local! {
     /// Lazily-opened persistent cache. The store is taken out for the duration
     /// of an operation (a `RefCell` borrow must never cross an `await`).
     static STORE: RefCell<Option<roadwork_db::Store>> = const { RefCell::new(None) };
 }
 
-#[cfg(target_arch = "wasm32")]
 async fn store_take() -> Result<roadwork_db::Store, JsValue> {
     match STORE.with(|cell| cell.borrow_mut().take()) {
         Some(store) => Ok(store),
@@ -67,14 +64,12 @@ async fn store_take() -> Result<roadwork_db::Store, JsValue> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
 fn store_put_back(store: roadwork_db::Store) {
     STORE.with(|cell| *cell.borrow_mut() = Some(store));
 }
 
-/// Opens the persistent store (installs the OPFS VFS on wasm32). Called by the
-/// worker at startup so the first cache access does not block on I/O.
-#[cfg(target_arch = "wasm32")]
+/// Opens the persistent store (installs the OPFS VFS). Called by the worker at
+/// startup so the first cache access does not block on I/O.
 #[wasm_bindgen]
 pub async fn open_store() -> Result<(), JsValue> {
     info!("[wasm] open_store");
@@ -83,7 +78,6 @@ pub async fn open_store() -> Result<(), JsValue> {
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
 fn js_err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
@@ -161,7 +155,6 @@ pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<Js
         .get(service_name)
         .ok_or_else(|| JsValue::from_str(&format!("Unknown service: {service_name}")))?;
 
-    #[cfg(target_arch = "wasm32")]
     let data = {
         let mut store = store_take().await?;
         let cached = if force_refresh {
@@ -186,21 +179,15 @@ pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<Js
         data
     };
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let data = fetch_roadworks_data(service_name, descriptor).await?;
-
     info!("[wasm] get_roadworks: data loaded {}", data.roadworks.len());
     serialize_data(&data)
 }
 
 #[wasm_bindgen]
 pub async fn clear_all_cache() -> Result<(), JsValue> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut store = store_take().await?;
-        store.clear_all().map_err(js_err)?;
-        store_put_back(store);
-    }
+    let mut store = store_take().await?;
+    store.clear_all().map_err(js_err)?;
+    store_put_back(store);
     Ok(())
 }
 
@@ -239,7 +226,6 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
         .with(|cell| cell.borrow().get(service_name).cloned())
         .ok_or_else(|| JsValue::from_str(&format!("Unknown opendata service: {service_name}")))?;
 
-    #[cfg(target_arch = "wasm32")]
     let data = {
         let mut store = store_take().await?;
         let has_url = descriptor
@@ -276,18 +262,6 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
         data
     };
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let data = {
-        let service = OpendataService {
-            service_name: service_name.to_string(),
-            service_descriptor: descriptor,
-        };
-        service
-            .get_data()
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Fetch error: {e}")))?
-    };
-
     info!("[wasm] get_opendata: data loaded {}", data.opendata.len());
     serialize_data(&data)
 }
@@ -295,32 +269,22 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
 #[wasm_bindgen]
 pub async fn get_opendata_cached(service_name: &str) -> Result<JsValue, JsValue> {
     info!("[wasm] get_opendata_cached {service_name}");
-    #[cfg(target_arch = "wasm32")]
-    {
-        let store = store_take().await?;
-        let cached = store.get_opendata(service_name).map_err(js_err)?;
-        store_put_back(store);
-        match cached {
-            Some(data) => serialize_data(&data),
-            None => Ok(JsValue::NULL),
-        }
+    let store = store_take().await?;
+    let cached = store.get_opendata(service_name).map_err(js_err)?;
+    store_put_back(store);
+    match cached {
+        Some(data) => serialize_data(&data),
+        None => Ok(JsValue::NULL),
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    Ok(JsValue::NULL)
 }
 
 #[wasm_bindgen]
 pub async fn get_opendata_counts() -> Result<JsValue, JsValue> {
     info!("[wasm] get_opendata_counts");
-    #[cfg(target_arch = "wasm32")]
-    {
-        let store = store_take().await?;
-        let counts = store.opendata_counts().map_err(js_err)?;
-        store_put_back(store);
-        serialize_data(&counts)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    serialize_data(&HashMap::<String, i64>::new())
+    let store = store_take().await?;
+    let counts = store.opendata_counts().map_err(js_err)?;
+    store_put_back(store);
+    serialize_data(&counts)
 }
 
 #[wasm_bindgen]
@@ -332,22 +296,14 @@ pub async fn get_roadworks_in_bbox(
     lon_max: f64,
 ) -> Result<JsValue, JsValue> {
     info!("[wasm] get_roadworks_in_bbox {service_name}");
-    #[cfg(target_arch = "wasm32")]
-    {
-        let store = store_take().await?;
-        let result = store
-            .get_roadworks_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
-            .map_err(js_err)?;
-        store_put_back(store);
-        match result {
-            Some(data) => serialize_data(&data),
-            None => Ok(JsValue::NULL),
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (service_name, lat_min, lon_min, lat_max, lon_max);
-        Ok(JsValue::NULL)
+    let store = store_take().await?;
+    let result = store
+        .get_roadworks_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
+        .map_err(js_err)?;
+    store_put_back(store);
+    match result {
+        Some(data) => serialize_data(&data),
+        None => Ok(JsValue::NULL),
     }
 }
 
@@ -360,22 +316,14 @@ pub async fn get_opendata_in_bbox(
     lon_max: f64,
 ) -> Result<JsValue, JsValue> {
     info!("[wasm] get_opendata_in_bbox {service_name}");
-    #[cfg(target_arch = "wasm32")]
-    {
-        let store = store_take().await?;
-        let result = store
-            .get_opendata_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
-            .map_err(js_err)?;
-        store_put_back(store);
-        match result {
-            Some(data) => serialize_data(&data),
-            None => Ok(JsValue::NULL),
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (service_name, lat_min, lon_min, lat_max, lon_max);
-        Ok(JsValue::NULL)
+    let store = store_take().await?;
+    let result = store
+        .get_opendata_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
+        .map_err(js_err)?;
+    store_put_back(store);
+    match result {
+        Some(data) => serialize_data(&data),
+        None => Ok(JsValue::NULL),
     }
 }
 
@@ -384,67 +332,40 @@ pub async fn store_opendata_data(service_name: &str, data_json: &str) -> Result<
     info!("[wasm] store_opendata_data {service_name}");
     let data: OpendataData = serde_json::from_str(data_json)
         .map_err(|e| JsValue::from_str(&format!("Invalid opendata data: {e}")))?;
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut store = store_take().await?;
-        store.save_opendata(service_name, &data).map_err(js_err)?;
-        store_put_back(store);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (data, service_name);
-    }
+    let mut store = store_take().await?;
+    store.save_opendata(service_name, &data).map_err(js_err)?;
+    store_put_back(store);
     Ok(())
 }
 
 #[wasm_bindgen]
 pub async fn clear_roadworks_cache(service_name: &str) -> Result<(), JsValue> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut store = store_take().await?;
-        store.remove_roadworks(service_name).map_err(js_err)?;
-        store_put_back(store);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = service_name;
-    }
+    let mut store = store_take().await?;
+    store.remove_roadworks(service_name).map_err(js_err)?;
+    store_put_back(store);
     Ok(())
 }
 
 #[wasm_bindgen]
 pub async fn clear_opendata_cache(service_name: &str) -> Result<(), JsValue> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut store = store_take().await?;
-        store.remove_opendata(service_name).map_err(js_err)?;
-        store_put_back(store);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = service_name;
-    }
+    let mut store = store_take().await?;
+    store.remove_opendata(service_name).map_err(js_err)?;
+    store_put_back(store);
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
 const POLYGON_GROUPS_KEY: &str = "polygon_groups";
 
 #[wasm_bindgen]
 pub async fn get_polygon_groups() -> Result<JsValue, JsValue> {
     info!("[wasm] get_polygon_groups");
-    #[cfg(target_arch = "wasm32")]
-    {
-        let store = store_take().await?;
-        let raw = store.get_raw(POLYGON_GROUPS_KEY).map_err(js_err)?;
-        store_put_back(store);
-        match raw {
-            Some(raw) => js_sys::JSON::parse(&raw),
-            None => Ok(JsValue::NULL),
-        }
+    let store = store_take().await?;
+    let raw = store.get_raw(POLYGON_GROUPS_KEY).map_err(js_err)?;
+    store_put_back(store);
+    match raw {
+        Some(raw) => js_sys::JSON::parse(&raw),
+        None => Ok(JsValue::NULL),
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    Ok(JsValue::NULL)
 }
 
 #[wasm_bindgen]
@@ -452,15 +373,8 @@ pub async fn save_polygon_groups(payload: JsValue) -> Result<(), JsValue> {
     let raw = js_sys::JSON::stringify(&payload)?
         .as_string()
         .ok_or_else(|| JsValue::from_str("Failed to stringify polygon groups"))?;
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut store = store_take().await?;
-        store.put_raw(POLYGON_GROUPS_KEY, &raw).map_err(js_err)?;
-        store_put_back(store);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = raw;
-    }
+    let mut store = store_take().await?;
+    store.put_raw(POLYGON_GROUPS_KEY, &raw).map_err(js_err)?;
+    store_put_back(store);
     Ok(())
 }

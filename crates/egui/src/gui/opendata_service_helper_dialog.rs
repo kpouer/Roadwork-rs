@@ -21,16 +21,6 @@ const IMPORT_FRAME_BUDGET: usize = 1024;
 /// always built from the first `PREVIEW_MAX_ELEMENTS` of the data array.
 const PREVIEW_MAX_ELEMENTS: usize = 100;
 
-/// Payload produced by the native "Save" button, persisted into the local
-/// settings by the caller.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) struct SavedOpendata {
-    pub name: String,
-    pub original_name: String,
-    pub descriptor: OpendataServiceDescriptor,
-    pub data: Option<OpendataData>,
-}
-
 #[derive(Clone)]
 enum FetchState {
     Connecting,
@@ -71,8 +61,6 @@ pub(crate) struct OpendataServiceHelperDialog {
     processing: Arc<Mutex<ImportProgress>>,
     importing: bool,
     import_runner: Option<ImportRunner>,
-    #[cfg(not(target_arch = "wasm32"))]
-    saved: Option<SavedOpendata>,
 }
 
 struct DropScan {
@@ -523,7 +511,6 @@ impl OpendataServiceHelperDialog {
                 self.validate_all(toasts);
             }
             ui.separator();
-            #[cfg(target_arch = "wasm32")]
             let can_save = {
                 let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
                 !self.descriptor_json.trim().is_empty()
@@ -531,7 +518,6 @@ impl OpendataServiceHelperDialog {
                     && self.has_name()
                     && !self.importing
             };
-            #[cfg(target_arch = "wasm32")]
             if ui
                 .add_enabled(can_save, egui::Button::new("Save to extension"))
                 .on_hover_text(
@@ -544,30 +530,6 @@ impl OpendataServiceHelperDialog {
                 match self.save_to_extension() {
                     Ok(name) => {
                         toasts.success(format!("Service \"{name}\" saved to extension"));
-                    }
-                    Err(e) => {
-                        toasts.error(format!("Save failed: {e}"));
-                    }
-                }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            let can_save = {
-                let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
-                !self.descriptor_json.trim().is_empty()
-                    && has_data
-                    && self.has_name()
-                    && !self.importing
-            };
-            #[cfg(not(target_arch = "wasm32"))]
-            if ui
-                .add_enabled(can_save, egui::Button::new("Save"))
-                .on_hover_text("Save the descriptor and the opendata into the local settings")
-                .on_disabled_hover_text("A service name and imported data are required")
-                .clicked()
-            {
-                match self.prepare_save() {
-                    Ok(saved) => {
-                        self.saved = Some(saved);
                     }
                     Err(e) => {
                         toasts.error(format!("Save failed: {e}"));
@@ -1054,7 +1016,6 @@ impl OpendataServiceHelperDialog {
         *self.processing.lock().unwrap() = ImportProgress::default();
     }
 
-    #[cfg(target_arch = "wasm32")]
     fn set_opendata_data(&mut self, json: String) {
         let value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
         self.set_opendata_data_value(value);
@@ -1234,38 +1195,31 @@ impl OpendataServiceHelperDialog {
     /// Applies data posted by the extension content script (`ROADWORK_HELPER_DATA`)
     /// once it arrives. Returns `true` when data has been consumed.
     fn apply_pending_data(&mut self) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let Some(json) = crate::roadwork_app::take_pending_opendata_data() else {
-                return false;
-            };
-            if is_opendata_data(&json) {
-                self.raw_json.clear();
-                self.parsed_json = None;
-                self.array_paths = Vec::new();
-                self.cancel_import();
-                self.set_opendata_data(json);
-            } else {
-                self.raw_json = serde_json::from_str::<serde_json::Value>(&json)
-                    .map(|value| super::pretty_json_tabs(&value).unwrap_or(json.clone()))
-                    .unwrap_or(json);
-                self.parsed_json = None;
-                self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
-                self.cancel_import();
-                self.parsed_opendata = None;
-                self.opendata_bytes = 0;
-                self.opendata_count = 0;
-            }
-            self.result_json.clear();
-            self.error = None;
-            self.dirty = true;
-            self.validation_report = None;
-            true
+        let Some(json) = crate::roadwork_app::take_pending_opendata_data() else {
+            return false;
+        };
+        if is_opendata_data(&json) {
+            self.raw_json.clear();
+            self.parsed_json = None;
+            self.array_paths = Vec::new();
+            self.cancel_import();
+            self.set_opendata_data(json);
+        } else {
+            self.raw_json = serde_json::from_str::<serde_json::Value>(&json)
+                .map(|value| super::pretty_json_tabs(&value).unwrap_or(json.clone()))
+                .unwrap_or(json);
+            self.parsed_json = None;
+            self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
+            self.cancel_import();
+            self.parsed_opendata = None;
+            self.opendata_bytes = 0;
+            self.opendata_count = 0;
         }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            false
-        }
+        self.result_json.clear();
+        self.error = None;
+        self.dirty = true;
+        self.validation_report = None;
+        true
     }
 
     fn fetch(&mut self, ctx: Context) {
@@ -1336,7 +1290,6 @@ impl OpendataServiceHelperDialog {
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
     fn save_to_extension(&self) -> Result<String, String> {
         let descriptor: OpendataServiceDescriptor =
             serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
@@ -1387,33 +1340,6 @@ impl OpendataServiceHelperDialog {
             .post_message(&object, "*")
             .map_err(|e| format!("{e:?}"))?;
         Ok(name)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn prepare_save(&self) -> Result<SavedOpendata, String> {
-        let descriptor: OpendataServiceDescriptor =
-            serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
-        if descriptor.metadata.name.trim().is_empty() {
-            return Err("A service name is required".to_string());
-        }
-        let data = self
-            .parsed_opendata
-            .as_ref()
-            .map(|value| {
-                serde_json::from_value::<OpendataData>(value.clone()).map_err(|e| e.to_string())
-            })
-            .transpose()?;
-        Ok(SavedOpendata {
-            name: descriptor.metadata.name.clone(),
-            original_name: self.original_name.clone(),
-            descriptor,
-            data,
-        })
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn take_saved(&mut self) -> Option<SavedOpendata> {
-        self.saved.take()
     }
 
     fn show_validation_report(&self, ui: &mut Ui, report: &[PathValidation]) {
@@ -1694,7 +1620,6 @@ fn format_bytes(bytes: usize) -> String {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
 fn is_opendata_data(json: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(json)
         .ok()

@@ -1,6 +1,3 @@
-[workspace.dependencies]
-sqlx = "0.8"
-
 [workspace]
 resolver = "3"
 members = [

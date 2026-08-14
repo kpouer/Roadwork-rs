@@ -21,23 +21,3 @@ impl LatLng {
         lon: LON_PARIS,
     };
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_lat_lng() {
-        let lat_lng = LatLng::default();
-        assert_eq!(lat_lng.lat, LAT_PARIS);
-        assert_eq!(lat_lng.lon, LON_PARIS);
-    }
-
-    #[test]
-    fn test_deserialize_lat_lng() {
-        let json = r#"{"lat": 48.85337, "lon": 2.34847}"#;
-        let lat_lng: LatLng = serde_json::from_str(json).unwrap();
-        assert_eq!(lat_lng.lat, LAT_PARIS);
-        assert_eq!(lat_lng.lon, LON_PARIS);
-    }
-}

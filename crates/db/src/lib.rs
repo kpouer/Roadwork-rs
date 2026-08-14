@@ -1,13 +1,11 @@
 //! Persistence/caching for the WME extension, backed by SQLite.
 //!
-//! On native this is backed by bundled SQLite (used for tests only). On wasm32
-//! the same `rusqlite` code runs against `sqlite-wasm-rs`, persisting to the
+//! The `rusqlite` code runs against `sqlite-wasm-rs`, persisting to the
 //! Origin Private File System (OPFS) through the `sahpool` VFS
 //! (`sqlite-wasm-vfs`). OPFS requires a dedicated worker at runtime, so the
 //! wasm module runs inside the extension's `wasm-worker.js`.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use roadwork_core::model::opendata::Opendata;
 use roadwork_core::model::opendata_data::OpendataData;
@@ -77,8 +75,9 @@ pub struct Store {
 }
 
 impl Store {
-    /// Opens the store. On wasm32 this installs the OPFS `sahpool` VFS first
-    /// (a dedicated worker is required at runtime); on native it opens a file.
+    /// Opens the store, installing the OPFS `sahpool` VFS first (a dedicated
+    /// worker is required at runtime). The VFS install is gated on wasm32 only
+    /// because the `WasmOsCallback` FFI type does not exist on other targets.
     pub async fn open() -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
@@ -89,12 +88,7 @@ impl Store {
             .await
             .map_err(|e| Error::Vfs(e.to_string()))?;
         }
-        Self::open_path("roadwork.db")
-    }
-
-    /// Opens the store on a real file (native builds / tests).
-    pub fn open_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut conn = Connection::open(path)?;
+        let mut conn = Connection::open("roadwork.db")?;
         init_schema(&mut conn)?;
         Ok(Self { conn })
     }
@@ -450,202 +444,4 @@ CREATE TABLE IF NOT EXISTS kv (
 fn init_schema(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(&format!("PRAGMA foreign_keys = ON;\n{DDL}"))?;
     Ok(())
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
-    use super::*;
-
-    fn sample_roadworks(service: &str) -> RoadworkData {
-        let mut roadworks = HashMap::new();
-        roadworks.insert(
-            "id-1".to_string(),
-            Roadwork {
-                opendata: Opendata {
-                    id: "id-1".to_string(),
-                    latitude: 48.85,
-                    longitude: 2.35,
-                    polygons: None,
-                    description: Some("Work".to_string()),
-                },
-                start: 0,
-                end: 0,
-                road: None,
-                location_details: None,
-                impact_circulation_detail: None,
-                sync_data: Default::default(),
-                url: String::new(),
-            },
-        );
-        RoadworkData {
-            source: service.to_string(),
-            roadworks,
-            created: now_millis(),
-        }
-    }
-
-    fn sample_opendata(service: &str) -> OpendataData {
-        let mut items = HashMap::new();
-        items.insert(
-            "od-1".to_string(),
-            Opendata {
-                id: "od-1".to_string(),
-                latitude: 48.8,
-                longitude: 2.3,
-                polygons: Some(vec![Polygon {
-                    xpoints: vec![2.2, 2.3],
-                    ypoints: vec![48.7, 48.8],
-                }]),
-                description: Some("Item".to_string()),
-            },
-        );
-        OpendataData {
-            source: service.to_string(),
-            opendata: items,
-            created: now_millis(),
-        }
-    }
-
-    #[test]
-    fn roundtrips_roadworks_and_opendata() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!(
-            "roadwork-db-test-roundtrips-{}.db",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
-        {
-            let mut store = Store::open_path(&path).unwrap();
-            store
-                .save_roadworks("France-Paris", &sample_roadworks("France-Paris"))
-                .unwrap();
-            store
-                .save_opendata("France-Paris", &sample_opendata("France-Paris"))
-                .unwrap();
-
-            let roadworks = store.get_roadworks("France-Paris").unwrap().unwrap();
-            assert_eq!(roadworks.roadworks.len(), 1);
-            assert_eq!(
-                roadworks.roadworks["id-1"].opendata.description.as_deref(),
-                Some("Work")
-            );
-
-            let cached = store
-                .get_roadworks_cached("France-Paris", 86_400_000)
-                .unwrap();
-            assert!(cached.is_some());
-
-            let opendata = store.get_opendata("France-Paris").unwrap().unwrap();
-            assert_eq!(opendata.opendata.len(), 1);
-            assert_eq!(
-                opendata.opendata["od-1"].polygons.as_ref().unwrap()[0].xpoints,
-                vec![2.2, 2.3]
-            );
-
-            let counts = store.opendata_counts().unwrap();
-            assert_eq!(counts.get("France-Paris"), Some(&1));
-        }
-        // Re-open from disk: persistence across connections.
-        {
-            let store = Store::open_path(&path).unwrap();
-            assert!(store.get_roadworks("France-Paris").unwrap().is_some());
-            assert!(store.get_opendata("France-Paris").unwrap().is_some());
-        }
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn expiry_and_removal() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("roadwork-db-test-exp-{}.db", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        let mut store = Store::open_path(&path).unwrap();
-        store.save_roadworks("A", &sample_roadworks("A")).unwrap();
-        // TTL of 0 → always stale.
-        assert!(store.get_roadworks_cached("A", 0).unwrap().is_none());
-        // Uncached service → none.
-        assert!(store.get_roadworks("Z").unwrap().is_none());
-        store.remove("A").unwrap();
-        assert!(store.get_roadworks("A").unwrap().is_none());
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn bbox_query() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("roadwork-db-test-bbox-{}.db", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        let mut store = Store::open_path(&path).unwrap();
-        store
-            .save_roadworks("France-Paris", &sample_roadworks("France-Paris"))
-            .unwrap();
-        store
-            .save_opendata("France-Paris", &sample_opendata("France-Paris"))
-            .unwrap();
-
-        // Roadwork point is (48.85, 2.35); opendata point is (48.8, 2.3).
-        let inside = store
-            .get_roadworks_in_bbox("France-Paris", 48.0, 2.0, 49.0, 3.0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(inside.roadworks.len(), 1);
-        assert!(inside.roadworks.contains_key("id-1"));
-
-        let opendata = store
-            .get_opendata_in_bbox("France-Paris", 48.0, 2.0, 49.0, 3.0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(opendata.opendata.len(), 1);
-        assert!(opendata.opendata.contains_key("od-1"));
-
-        // Outside the rectangle.
-        assert!(
-            store
-                .get_roadworks_in_bbox("France-Paris", 40.0, 1.0, 41.0, 2.0)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            store
-                .get_opendata_in_bbox("France-Paris", 40.0, 1.0, 41.0, 2.0)
-                .unwrap()
-                .is_none()
-        );
-
-        // Reversed bound order yields the same result.
-        let reversed = store
-            .get_roadworks_in_bbox("France-Paris", 49.0, 3.0, 48.0, 2.0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(reversed.roadworks.len(), 1);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn typed_removal_and_kv() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("roadwork-db-test-kv-{}.db", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        let mut store = Store::open_path(&path).unwrap();
-        store.save_roadworks("A", &sample_roadworks("A")).unwrap();
-        store.save_opendata("A", &sample_opendata("A")).unwrap();
-
-        // Removing roadworks leaves opendata intact.
-        store.remove_roadworks("A").unwrap();
-        assert!(store.get_roadworks("A").unwrap().is_none());
-        assert!(store.get_opendata("A").unwrap().is_some());
-
-        // kv roundtrip.
-        assert!(store.get_raw("k").unwrap().is_none());
-        store.put_raw("k", "v").unwrap();
-        assert_eq!(store.get_raw("k").unwrap().as_deref(), Some("v"));
-        store.put_raw("k", "v2").unwrap();
-        assert_eq!(store.get_raw("k").unwrap().as_deref(), Some("v2"));
-
-        // clear_all wipes everything including kv.
-        store.clear_all().unwrap();
-        assert!(store.get_opendata("A").unwrap().is_none());
-        assert!(store.get_raw("k").unwrap().is_none());
-        let _ = std::fs::remove_file(&path);
-    }
 }

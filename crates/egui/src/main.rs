@@ -1,27 +1,8 @@
 use roadwork_egui::roadwork_app::{RoadworkApp, StartupParams};
 
-#[cfg(target_arch = "wasm32")]
 use eframe::wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
 use log::LevelFilter;
 
-#[cfg(not(target_arch = "wasm32"))]
-fn main() -> eframe::Result {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Roadwork",
-        options,
-        Box::new(|cc| {
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(RoadworkApp::new(
-                cc.egui_ctx.clone(),
-                StartupParams::default(),
-            )))
-        }),
-    )
-}
-
-#[cfg(target_arch = "wasm32")]
 fn main() {
     eframe::WebLogger::init(LevelFilter::Info).ok();
     install_panic_hook();
@@ -63,7 +44,6 @@ fn main() {
 /// silent freeze and the root cause is visible without digging through the
 /// console. Only `eframe`'s console logger is not enough: panics in the app
 /// would otherwise just print an opaque wasm `RuntimeError: unreachable`.
-#[cfg(target_arch = "wasm32")]
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
@@ -97,7 +77,6 @@ fn install_panic_hook() {
     }));
 }
 
-#[cfg(target_arch = "wasm32")]
 fn read_startup_params() -> StartupParams {
     let mut params = StartupParams::default();
     let search = web_sys::window()
@@ -129,7 +108,6 @@ fn read_startup_params() -> StartupParams {
     params
 }
 
-#[cfg(target_arch = "wasm32")]
 fn decode_url(value: &str) -> String {
     let value = value.replace('+', "%20");
     js_sys::decode_uri_component(&value)
