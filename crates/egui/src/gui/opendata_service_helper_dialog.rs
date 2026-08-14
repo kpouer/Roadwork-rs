@@ -110,11 +110,10 @@ struct ImportPayload {
 struct ImportRunner {
     ods: OpendataService,
     value: Arc<serde_json::Value>,
-    elements: Option<Vec<serde_json::Value>>,
     total: usize,
-    limit: usize,
     index: usize,
     items: Vec<Opendata>,
+    array_pointer: Option<String>,
 }
 
 impl ImportRunner {
@@ -122,11 +121,10 @@ impl ImportRunner {
         Self {
             ods,
             value,
-            elements: None,
             total: 0,
-            limit: 0,
             index: 0,
             items: Vec::new(),
+            array_pointer: None,
         }
     }
 
@@ -152,7 +150,7 @@ impl ImportRunner {
     }
 
     fn poll_inner(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) -> bool {
-        if self.elements.is_none() {
+        if self.array_pointer.is_none() {
             if self.ods.service_descriptor.data_array.trim().is_empty() {
                 let message = "Unable to parse the data: the descriptor has no dataArray path — \
                                fill it in the descriptor form before importing."
@@ -162,28 +160,52 @@ impl ImportRunner {
                 ctx.request_repaint();
                 return true;
             }
-            match self.ods.roadwork_array(&self.value) {
-                Ok(array) => {
-                    self.total = array.len();
-                    self.limit = self.total.min(PREVIEW_MAX_ELEMENTS);
-                    self.elements = Some(array.into_iter().take(self.limit).cloned().collect());
-                }
-                Err(e) => {
-                    log::error!("Unable to query the data array: {e}");
-                    state.lock().unwrap().error = Some(format!("Unable to parse the data: {e}"));
-                    ctx.request_repaint();
-                    return true;
-                }
+            self.array_pointer = data_array_pointer(&self.ods.service_descriptor.data_array);
+            match self.array_pointer.as_ref() {
+                Some(pointer) => match self.value.pointer(pointer).and_then(|node| node.as_array())
+                {
+                    Some(array) => self.total = array.len(),
+                    None => {
+                        let message = format!(
+                            "Unable to parse the data: no array found at {}",
+                            self.ods.service_descriptor.data_array
+                        );
+                        log::error!("{message}");
+                        state.lock().unwrap().error = Some(message);
+                        ctx.request_repaint();
+                        return true;
+                    }
+                },
+                None => match self.ods.roadwork_array(&self.value) {
+                    Ok(array) => self.total = array.len(),
+                    Err(e) => {
+                        log::error!("Unable to query the data array: {e}");
+                        state.lock().unwrap().error =
+                            Some(format!("Unable to parse the data: {e}"));
+                        ctx.request_repaint();
+                        return true;
+                    }
+                },
             }
             if self.total == 0 {
                 self.finalize(state, ctx);
                 return true;
             }
-            self.set_progress(state, ctx, format!("Building… 0/{}", self.limit), 0.0);
+            self.set_progress(state, ctx, format!("Building… 0/{}", self.total), 0.0);
         }
-        let end = (self.index + IMPORT_FRAME_BUDGET).min(self.limit);
-        if let Some(elements) = self.elements.as_ref() {
-            for node in &elements[self.index..end] {
+        let end = (self.index + IMPORT_FRAME_BUDGET).min(self.total);
+        if let Some(pointer) = self.array_pointer.as_ref() {
+            if let Some(array) = self.value.pointer(pointer).and_then(|node| node.as_array()) {
+                for node in &array[self.index..end] {
+                    if let Ok(item) = self.ods.build_opendata(node)
+                        && OpendataService::is_valid(&item)
+                    {
+                        self.items.push(item);
+                    }
+                }
+            }
+        } else if let Ok(array) = self.ods.roadwork_array(&self.value) {
+            for node in &array[self.index..end] {
                 if let Ok(item) = self.ods.build_opendata(node)
                     && OpendataService::is_valid(&item)
                 {
@@ -192,12 +214,12 @@ impl ImportRunner {
             }
         }
         self.index = end;
-        if self.index < self.limit {
+        if self.index < self.total {
             self.set_progress(
                 state,
                 ctx,
-                format!("Building… {}/{}", self.index, self.limit),
-                self.index as f32 / self.limit as f32,
+                format!("Building… {}/{}", self.index, self.total),
+                self.index as f32 / self.total as f32,
             );
             ctx.request_repaint();
             return false;
@@ -222,9 +244,7 @@ impl ImportRunner {
     fn finalize(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) {
         let data = OpendataData::new(&self.ods.service_name, std::mem::take(&mut self.items));
         let result_json = self
-            .elements
-            .as_ref()
-            .and_then(|elements| elements.first())
+            .first_element()
             .map(|element| super::pretty_json_tabs(element).unwrap_or_default())
             .unwrap_or_else(|| "[]".to_string());
         state.lock().unwrap().result = Some(ImportPayload {
@@ -239,6 +259,38 @@ impl ImportRunner {
         state.progress = 1.0;
         ctx.request_repaint();
     }
+
+    fn first_element(&self) -> Option<&serde_json::Value> {
+        if let Some(pointer) = self.array_pointer.as_ref() {
+            return self
+                .value
+                .pointer(pointer)
+                .and_then(|node| node.as_array())
+                .and_then(|array| array.first());
+        }
+        self.ods
+            .roadwork_array(&self.value)
+            .ok()?
+            .into_iter()
+            .next()
+    }
+}
+
+/// Converts an opendata `data_array` path (`$.a.b[*]`) into a JSON Pointer
+/// (`/a/b`) when the path is simple (a single trailing `[*]` over dotted keys
+/// without brackets in the base). Returns `None` for exotic paths, in which
+/// case the import falls back to jsonpath querying per chunk.
+fn data_array_pointer(path: &str) -> Option<String> {
+    let base = path.trim().strip_suffix("[*]")?;
+    if base.is_empty() || base.contains('[') || base.contains(']') {
+        return None;
+    }
+    let base = base.strip_prefix("$.").unwrap_or(base);
+    let base = base.strip_prefix('$').unwrap_or(base);
+    if base.is_empty() {
+        return None;
+    }
+    Some(format!("/{}", base.replace('.', "/")))
 }
 
 /// Columns shown in the opendata preview table. `id` is always present
@@ -477,7 +529,10 @@ impl OpendataServiceHelperDialog {
             #[cfg(target_arch = "wasm32")]
             let can_save = {
                 let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
-                !self.descriptor_json.trim().is_empty() && has_data
+                !self.descriptor_json.trim().is_empty()
+                    && has_data
+                    && self.has_name()
+                    && !self.importing
             };
             #[cfg(target_arch = "wasm32")]
             if ui
@@ -486,6 +541,7 @@ impl OpendataServiceHelperDialog {
                     "Save the descriptor and the opendata into the Roadwork WME extension \
                      and enable the service",
                 )
+                .on_disabled_hover_text("A service name and imported data are required")
                 .clicked()
             {
                 match self.save_to_extension() {
@@ -498,12 +554,18 @@ impl OpendataServiceHelperDialog {
                 }
             }
             #[cfg(not(target_arch = "wasm32"))]
+            let can_save = {
+                let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
+                !self.descriptor_json.trim().is_empty()
+                    && has_data
+                    && self.has_name()
+                    && !self.importing
+            };
+            #[cfg(not(target_arch = "wasm32"))]
             if ui
-                .add_enabled(
-                    !self.descriptor_json.trim().is_empty(),
-                    egui::Button::new("Save"),
-                )
+                .add_enabled(can_save, egui::Button::new("Save"))
                 .on_hover_text("Save the descriptor and the opendata into the local settings")
+                .on_disabled_hover_text("A service name and imported data are required")
                 .clicked()
             {
                 match self.prepare_save() {
@@ -568,20 +630,11 @@ impl OpendataServiceHelperDialog {
                     ui.label(RichText::new("Sample data").strong());
                     if self.opendata_count > 0 {
                         ui.separator();
-                        if self.element_count > PREVIEW_MAX_ELEMENTS {
-                            ui.label(format!(
-                                "first {} of {} items · {}",
-                                self.opendata_count,
-                                self.element_count,
-                                format_bytes(self.opendata_bytes)
-                            ));
-                        } else {
-                            ui.label(format!(
-                                "{} items · {}",
-                                self.opendata_count,
-                                format_bytes(self.opendata_bytes)
-                            ));
-                        }
+                        ui.label(format!(
+                            "{} items · {}",
+                            self.opendata_count,
+                            format_bytes(self.opendata_bytes)
+                        ));
                     }
                 });
                 if let Some(report) = &self.validation_report {
@@ -799,22 +852,12 @@ impl OpendataServiceHelperDialog {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
 
-            ui.label(RichText::new("Fetched JSON").strong());
-            egui::ScrollArea::vertical()
-                .id_salt("opendata_raw_json_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let editable = self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES;
-                    if !editable {
-                        ui.colored_label(
-                            ui.visuals().error_fg_color,
-                            format!(
-                                "Document too large to edit ({}) — no preview available",
-                                format_bytes(self.raw_json.len())
-                            ),
-                        );
-                    }
-                    if editable {
+            if self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES {
+                ui.label(RichText::new("Fetched JSON").strong());
+                egui::ScrollArea::vertical()
+                    .id_salt("opendata_raw_json_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                         let response = ui.add(
                             egui::TextEdit::multiline(&mut self.raw_json)
                                 .code_editor()
@@ -826,9 +869,13 @@ impl OpendataServiceHelperDialog {
                         if response.changed() {
                             self.parsed_json = None;
                             self.validation_report = None;
+                            self.parsed_opendata = None;
+                            self.opendata_bytes = 0;
+                            self.opendata_count = 0;
+                            self.dirty = true;
                         }
-                    }
-                });
+                    });
+            }
         });
     }
 
@@ -852,6 +899,9 @@ impl OpendataServiceHelperDialog {
             center_picker,
             center_picker_open,
             url,
+            importing,
+            import_runner,
+            processing,
             ..
         } = self;
         egui::ScrollArea::vertical()
@@ -884,6 +934,9 @@ impl OpendataServiceHelperDialog {
                         *dirty = true;
                         *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                         *url = descriptor.metadata.url.clone().unwrap_or_default();
+                        *importing = false;
+                        *import_runner = None;
+                        *processing.lock().unwrap() = ImportProgress::default();
                         self.parsed_opendata = None;
                         self.opendata_bytes = 0;
                         self.opendata_count = 0;
@@ -925,6 +978,7 @@ impl OpendataServiceHelperDialog {
             self.error = None;
             self.dirty = true;
             self.validation_report = None;
+            self.cancel_import();
             self.parsed_opendata = None;
             self.opendata_bytes = 0;
             self.opendata_count = 0;
@@ -947,6 +1001,7 @@ impl OpendataServiceHelperDialog {
                 self.error = None;
                 self.dirty = true;
                 self.validation_report = None;
+                self.cancel_import();
                 self.parsed_opendata = None;
                 self.opendata_bytes = 0;
                 self.opendata_count = 0;
@@ -1080,6 +1135,7 @@ impl OpendataServiceHelperDialog {
                     self.error = None;
                     self.dirty = true;
                     self.validation_report = None;
+                    self.cancel_import();
                     self.set_opendata_data_value(value);
                     toasts.success(format!("Data imported from {file_name}"));
                 } else {
@@ -1190,6 +1246,7 @@ impl OpendataServiceHelperDialog {
                 self.raw_json.clear();
                 self.parsed_json = None;
                 self.array_paths = Vec::new();
+                self.cancel_import();
                 self.set_opendata_data(json);
             } else {
                 self.raw_json = serde_json::from_str::<serde_json::Value>(&json)
@@ -1197,6 +1254,7 @@ impl OpendataServiceHelperDialog {
                     .unwrap_or(json);
                 self.parsed_json = None;
                 self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
+                self.cancel_import();
                 self.parsed_opendata = None;
                 self.opendata_bytes = 0;
                 self.opendata_count = 0;
@@ -1286,6 +1344,9 @@ impl OpendataServiceHelperDialog {
         let descriptor: OpendataServiceDescriptor =
             serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
         let name = descriptor.metadata.name.clone();
+        if name.trim().is_empty() {
+            return Err("A service name is required".to_string());
+        }
         let object = js_sys::Object::new();
         js_sys::Reflect::set(
             &object,
@@ -1335,6 +1396,9 @@ impl OpendataServiceHelperDialog {
     fn prepare_save(&self) -> Result<SavedOpendata, String> {
         let descriptor: OpendataServiceDescriptor =
             serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
+        if descriptor.metadata.name.trim().is_empty() {
+            return Err("A service name is required".to_string());
+        }
         let data = self
             .parsed_opendata
             .as_ref()
@@ -1515,29 +1579,22 @@ impl OpendataServiceHelperDialog {
                 if self.parsed_json.is_none() {
                     self.parsed_json = serde_json::from_str(&self.raw_json).ok().map(Arc::new);
                 }
-                let data = if let Some(value) = self.parsed_json.as_deref() {
+                if let Some(value) = self.parsed_json.as_deref() {
                     self.element_count = ods.element_count_value(value);
-                    ods.parse_value_preview(value, PREVIEW_MAX_ELEMENTS).ok()
                 } else {
                     self.element_count = 0;
-                    None
-                };
+                }
                 if self.element_count == 0 {
                     self.current_index = 0;
                 } else {
                     self.current_index = self.current_index.min(self.element_count - 1);
                 }
                 self.update_result_json();
-                self.parsed_opendata = data
-                    .as_ref()
-                    .and_then(|data| serde_json::to_value(data).ok());
-                self.opendata_bytes = self
-                    .parsed_opendata
-                    .as_ref()
-                    .and_then(|value| serde_json::to_string(value).ok())
-                    .map(|json| json.len())
-                    .unwrap_or(0);
-                self.opendata_count = data.as_ref().map(|data| data.opendata.len()).unwrap_or(0);
+                self.cancel_import();
+                self.parsed_opendata = None;
+                self.opendata_bytes = 0;
+                self.opendata_count = 0;
+                self.ensure_build_started();
             }
             None => {
                 self.element_count = 0;
@@ -1545,6 +1602,45 @@ impl OpendataServiceHelperDialog {
                 self.result_json = "No descriptor".to_string();
             }
         }
+    }
+
+    /// Starts the cooperative import on the current raw JSON when the descriptor
+    /// and data array are ready and nothing is already importing or fully built.
+    fn ensure_build_started(&mut self) {
+        if self.importing || self.import_runner.is_some() {
+            return;
+        }
+        if self.parsed_opendata.is_some() {
+            return;
+        }
+        if self.raw_json.trim().is_empty() || self.element_count == 0 {
+            return;
+        }
+        let Some(value) = self.parsed_json.clone() else {
+            return;
+        };
+        let Some(descriptor) = &self.descriptor else {
+            return;
+        };
+        if descriptor.data_array.trim().is_empty() {
+            return;
+        }
+        self.importing = self.start_import_processing(value);
+    }
+
+    /// Stops a running import (data or descriptor changed, so any in-flight
+    /// result would be stale) and clears its shared progress state.
+    fn cancel_import(&mut self) {
+        self.importing = false;
+        self.import_runner = None;
+        *self.processing.lock().unwrap() = ImportProgress::default();
+    }
+
+    fn has_name(&self) -> bool {
+        self.descriptor
+            .as_ref()
+            .map(|descriptor| !descriptor.metadata.name.trim().is_empty())
+            .unwrap_or(false)
     }
 
     fn update_result_json(&mut self) {

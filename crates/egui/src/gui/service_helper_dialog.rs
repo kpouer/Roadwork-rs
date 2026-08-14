@@ -265,22 +265,12 @@ impl ServiceHelperDialog {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
 
-            ui.label(RichText::new("Fetched JSON").strong());
-            egui::ScrollArea::vertical()
-                .id_salt("raw_json_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let editable = self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES;
-                    if !editable {
-                        ui.colored_label(
-                            ui.visuals().error_fg_color,
-                            format!(
-                                "Document too large to edit ({}) — no preview available",
-                                format_bytes(self.raw_json.len())
-                            ),
-                        );
-                    }
-                    if editable {
+            if self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES {
+                ui.label(RichText::new("Fetched JSON").strong());
+                egui::ScrollArea::vertical()
+                    .id_salt("raw_json_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                         let response = ui.add(
                             egui::TextEdit::multiline(&mut self.raw_json)
                                 .code_editor()
@@ -292,8 +282,8 @@ impl ServiceHelperDialog {
                         if response.changed() {
                             self.validation_report = None;
                         }
-                    }
-                });
+                    });
+            }
         });
     }
 

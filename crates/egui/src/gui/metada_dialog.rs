@@ -25,16 +25,16 @@ impl<'a> MetadataDialog<'a> {
                     .num_columns(2)
                     .spacing([6.0, 4.0])
                     .show(ui, |ui| {
-                        Self::add_row(ui, "Name:", self.metadata.name());
-                        Self::add_row(ui, "Country:", self.metadata.country());
+                        Self::add_row(ui, "Name:", &self.metadata.name);
+                        Self::add_row(ui, "Country:", &self.metadata.country);
 
-                        if let Some(p) = self.metadata.producer() {
+                        if let Some(p) = &self.metadata.producer {
                             Self::add_row(ui, "Producer:", p);
                         }
 
-                        if let Some(lic) = self.metadata.licence_name() {
+                        if let Some(lic) = &self.metadata.licence_name {
                             ui.label(RichText::new("License:").strong());
-                            if let Some(url) = self.metadata.licence_url() {
+                            if let Some(url) = &self.metadata.licence_url {
                                 ui.vertical(|ui| {
                                     ui.add(Label::new(lic).wrap_mode(TextWrapMode::Wrap));
                                     if Self::show_link(ui, url).clicked() {
@@ -47,14 +47,14 @@ impl<'a> MetadataDialog<'a> {
                             ui.end_row();
                         }
 
-                        if let Some(source_url) = self.metadata.source_url() {
+                        if let Some(source_url) = &self.metadata.source_url {
                             Self::add_row_link(ui, "Source URL:", source_url);
                         }
-                        if let Some(url) = self.metadata.url() {
+                        if let Some(url) = &self.metadata.url {
                             Self::add_row_link(ui, "API URL:", url);
                         }
 
-                        if let Some(locale) = self.metadata.locale_str() {
+                        if let Some(locale) = &self.metadata.locale {
                             Self::add_row(ui, "Locale:", locale);
                         }
 

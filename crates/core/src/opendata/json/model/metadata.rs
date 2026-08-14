@@ -37,29 +37,4 @@ impl Metadata {
             .map(|locale| Tz::from_str(locale).unwrap_or(Tz::Europe__Paris))
             .unwrap_or(Tz::Europe__Paris)
     }
-
-    pub fn country(&self) -> &str {
-        &self.country
-    }
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-    pub fn producer(&self) -> Option<&str> {
-        self.producer.as_deref()
-    }
-    pub fn licence_name(&self) -> Option<&str> {
-        self.licence_name.as_deref()
-    }
-    pub fn licence_url(&self) -> Option<&str> {
-        self.licence_url.as_deref()
-    }
-    pub fn source_url(&self) -> Option<&str> {
-        self.source_url.as_deref()
-    }
-    pub fn url(&self) -> Option<&str> {
-        self.url.as_deref()
-    }
-    pub fn locale_str(&self) -> Option<&str> {
-        self.locale.as_deref()
-    }
 }
