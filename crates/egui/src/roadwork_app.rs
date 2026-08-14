@@ -1,7 +1,6 @@
 use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::metada_dialog::MetadataDialog;
-use crate::gui::opendata_service_helper_dialog::OpendataServiceHelperDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::service_helper_dialog::ServiceHelperDialog;
 use crate::gui::settings_dialog::SettingsDialog;
@@ -106,8 +105,6 @@ pub struct RoadworkApp {
     show_info_dialog: bool,
     show_service_helper_dialog: bool,
     service_helper: ServiceHelperDialog,
-    show_opendata_service_helper_dialog: bool,
-    opendata_service_helper: OpendataServiceHelperDialog,
     show_opendata_panel: bool,
     confirm_delete_opendata: Option<String>,
     opendata_data: Arc<Mutex<HashMap<String, OpendataData>>>,
@@ -139,12 +136,18 @@ impl RoadworkApp {
             .find(|s| s.name == selected_service)
             .map(|s| s.center)
             .unwrap_or_default();
-        let service_helper = ServiceHelperDialog::new(&selected_service);
-        let opendata_service_helper = OpendataServiceHelperDialog::new(
-            params.opendata_descriptor.clone(),
-            original_name,
-            creating,
-        );
+        let service_helper = if params.opendata_descriptor.is_some()
+            || params.create_opendata_service
+            || params.open_opendata_service_helper
+        {
+            ServiceHelperDialog::for_custom(
+                params.opendata_descriptor.clone(),
+                original_name,
+                creating,
+            )
+        } else {
+            ServiceHelperDialog::for_builtin(&selected_service)
+        };
         let helper_only = params.open_service_helper || params.open_opendata_service_helper;
 
         let app = Self {
@@ -163,10 +166,9 @@ impl RoadworkApp {
             show_about_dialog: false,
             show_settings_dialog: false,
             show_info_dialog: false,
-            show_service_helper_dialog: params.open_service_helper,
+            show_service_helper_dialog: params.open_service_helper
+                || params.open_opendata_service_helper,
             service_helper,
-            show_opendata_service_helper_dialog: params.open_opendata_service_helper,
-            opendata_service_helper,
             show_opendata_panel: false,
             confirm_delete_opendata: None,
             opendata_data: Arc::new(Mutex::new(crate::app_settings::load_opendata_cache())),
@@ -403,9 +405,6 @@ impl RoadworkApp {
                 if ui.button("Service helper").clicked() {
                     self.show_service_helper_dialog = true;
                 }
-                if ui.button("Opendata service helper").clicked() {
-                    self.show_opendata_service_helper_dialog = true;
-                }
                 if ui.button("Opendata").clicked() {
                     self.show_opendata_panel = true;
                 }
@@ -446,15 +445,9 @@ impl RoadworkApp {
         self.service_helper.show(
             ui,
             &mut self.show_service_helper_dialog,
-            &self.selected_service,
             &mut self.toasts,
             false,
-        );
-        self.opendata_service_helper.show(
-            ui,
-            &mut self.show_opendata_service_helper_dialog,
-            &mut self.toasts,
-            false,
+            &self.settings.opendata_services,
         );
         if self.show_opendata_panel {
             self.show_opendata_panel(ui.ctx());
@@ -528,9 +521,9 @@ impl RoadworkApp {
                         && let Some(descriptor) = self.settings.opendata_services.get(name)
                         && let Ok(json) = crate::gui::pretty_json_tabs(descriptor)
                     {
-                        self.opendata_service_helper =
-                            OpendataServiceHelperDialog::new(Some(json), name.clone(), false);
-                        self.show_opendata_service_helper_dialog = true;
+                        self.service_helper =
+                            ServiceHelperDialog::for_custom(Some(json), name.clone(), false);
+                        self.show_service_helper_dialog = true;
                     }
                     if ui
                         .add_enabled(has_selection, Button::new("Delete"))
@@ -708,9 +701,9 @@ impl RoadworkApp {
 impl App for RoadworkApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let dropped_files: Vec<egui::DroppedFile> = ui.ctx().input(|i| i.raw.dropped_files.clone());
-        if !dropped_files.is_empty() && !self.show_opendata_service_helper_dialog {
+        if !dropped_files.is_empty() && !self.show_service_helper_dialog {
             self.toasts
-                .info("Drop a data file to import it, after opening the opendata service helper");
+                .info("Drop a data file to import it, after opening the service helper");
         }
 
         if self.helper_only {
@@ -719,16 +712,9 @@ impl App for RoadworkApp {
                     self.service_helper.show(
                         ui,
                         &mut self.show_service_helper_dialog,
-                        &self.selected_service,
                         &mut self.toasts,
                         true,
-                    );
-                } else if self.show_opendata_service_helper_dialog {
-                    self.opendata_service_helper.show(
-                        ui,
-                        &mut self.show_opendata_service_helper_dialog,
-                        &mut self.toasts,
-                        true,
+                        &self.settings.opendata_services,
                     );
                 }
             });
