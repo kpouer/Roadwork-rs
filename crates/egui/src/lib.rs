@@ -4,6 +4,7 @@ mod convert;
 mod gui;
 mod open_url;
 pub mod roadwork_app;
+mod tools;
 mod waze_livemap;
 
 pub use roadwork_core::MyError;

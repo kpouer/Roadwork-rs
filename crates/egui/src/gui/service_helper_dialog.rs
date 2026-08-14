@@ -1,5 +1,6 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
+use crate::tools::{format_bytes, url_params_to_vec};
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::date_parser::DateParser;
@@ -717,26 +718,5 @@ impl ServiceHelperDialog {
             }
             Err(e) => self.result_json = format!("Parse error: {e}"),
         }
-    }
-}
-
-fn url_params_to_vec(params: &Option<HashMap<String, String>>) -> Vec<(String, String)> {
-    let mut vec: Vec<(String, String)> = params
-        .iter()
-        .flat_map(|map| map.iter())
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    vec.sort_by(|a, b| a.0.cmp(&b.0));
-    vec
-}
-
-fn format_bytes(bytes: usize) -> String {
-    const KB: f64 = 1024.0;
-    if bytes < KB as usize {
-        format!("{bytes} B")
-    } else if (bytes as f64) < KB * KB {
-        format!("{:.1} KB", bytes as f64 / KB)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (KB * KB))
     }
 }
