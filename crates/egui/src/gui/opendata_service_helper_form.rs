@@ -5,7 +5,7 @@ use super::service_helper_form::{
 };
 use crate::gui::metadata_form::MetadataForm;
 use egui::Ui;
-use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
+use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FieldsValidation {
@@ -43,7 +43,7 @@ impl FieldsValidation {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn show(
     ui: &mut Ui,
-    descriptor: &mut OpendataServiceDescriptor,
+    descriptor: &mut ServiceDescriptor,
     url_params: &mut Vec<(String, String)>,
     center_picker: &mut CenterPickerDialog,
     center_picker_open: &mut bool,

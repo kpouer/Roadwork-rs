@@ -17,7 +17,6 @@ use wasm_bindgen::prelude::*;
 use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
-use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 
@@ -42,7 +41,7 @@ pub fn set_log_level(level: &str) {
 thread_local! {
     static CUSTOM_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
         RefCell::new(HashMap::new());
-    static OPENDATA_DESCRIPTORS: RefCell<HashMap<String, OpendataServiceDescriptor>> =
+    static OPENDATA_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
         RefCell::new(HashMap::new());
 }
 
@@ -201,7 +200,7 @@ pub fn set_opendata_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
     );
     let mut map = HashMap::new();
     for (name, json) in pairs {
-        match serde_json::from_str::<OpendataServiceDescriptor>(&json) {
+        match serde_json::from_str::<ServiceDescriptor>(&json) {
             Ok(descriptor) => {
                 map.insert(name, descriptor);
             }

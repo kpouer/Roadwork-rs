@@ -6,7 +6,7 @@ use egui_notify::Toasts;
 use roadwork_core::json_tools::{JsonScan, JsonTools};
 use roadwork_core::model::opendata::Opendata;
 use roadwork_core::model::opendata_data::OpendataData;
-use roadwork_core::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
+use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
 use std::collections::HashMap;
@@ -31,7 +31,7 @@ enum FetchState {
 
 #[derive(Default)]
 pub(crate) struct OpendataServiceHelperDialog {
-    descriptor: Option<OpendataServiceDescriptor>,
+    descriptor: Option<ServiceDescriptor>,
     descriptor_json: String,
     form_mode: bool,
     is_new: bool,
@@ -290,8 +290,8 @@ struct TableColumns {
     description: bool,
 }
 
-impl From<&OpendataServiceDescriptor> for TableColumns {
-    fn from(descriptor: &OpendataServiceDescriptor) -> Self {
+impl From<&ServiceDescriptor> for TableColumns {
+    fn from(descriptor: &ServiceDescriptor) -> Self {
         Self {
             id: true,
             latitude: descriptor.latitude.is_some(),
@@ -316,7 +316,7 @@ impl PreviewRow {
     /// shows values even before the item has a valid location.
     fn from_raw(
         ods: &OpendataService,
-        descriptor: &OpendataServiceDescriptor,
+        descriptor: &ServiceDescriptor,
         element: &serde_json::Value,
     ) -> Self {
         let fetched = |path: &Option<String>| {
@@ -740,7 +740,7 @@ impl OpendataServiceHelperDialog {
             });
     }
 
-    fn preview_rows(&self, descriptor: &OpendataServiceDescriptor) -> Vec<PreviewRow> {
+    fn preview_rows(&self, descriptor: &ServiceDescriptor) -> Vec<PreviewRow> {
         if let Some(value) = self.parsed_json.as_deref() {
             let ods = OpendataService::from(descriptor);
             ods.roadwork_array(value)
@@ -941,7 +941,7 @@ impl OpendataServiceHelperDialog {
         if self.descriptor_json.trim().is_empty() {
             return false;
         }
-        match serde_json::from_str::<OpendataServiceDescriptor>(&self.descriptor_json) {
+        match serde_json::from_str::<ServiceDescriptor>(&self.descriptor_json) {
             Ok(descriptor) => {
                 self.url = descriptor.metadata.url.clone().unwrap_or_default();
                 self.url_params = url_params_to_vec(&descriptor.metadata.url_params);
@@ -982,7 +982,7 @@ impl OpendataServiceHelperDialog {
     }
 
     fn reset(&mut self) {
-        let descriptor = OpendataServiceDescriptor::default();
+        let descriptor = ServiceDescriptor::default();
         self.descriptor = Some(descriptor);
         self.url.clear();
         self.url_params.clear();
@@ -1284,7 +1284,7 @@ impl OpendataServiceHelperDialog {
     }
 
     fn save_to_extension(&self) -> Result<String, String> {
-        let descriptor: OpendataServiceDescriptor =
+        let descriptor: ServiceDescriptor =
             serde_json::from_str(&self.descriptor_json).map_err(|e| e.to_string())?;
         let name = descriptor.metadata.name.clone();
         if name.trim().is_empty() {

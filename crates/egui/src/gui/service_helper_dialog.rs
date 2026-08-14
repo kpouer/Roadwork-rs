@@ -5,8 +5,8 @@ use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
+use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
-use roadwork_core::opendata::json::roadwork_service::RoadworkService;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -439,7 +439,7 @@ impl ServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = RoadworkService {
+                let ods = OpendataService {
                     service_name: "Service helper".to_string(),
                     service_descriptor: descriptor.clone(),
                 };
@@ -458,11 +458,11 @@ impl ServiceHelperDialog {
             self.error = Some("Fetch the JSON first".to_string());
             return;
         }
-        let ods = RoadworkService {
+        let ods = OpendataService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
-        let report = ods.validate(&self.raw_json);
+        let report = ods.validate_roadworks(&self.raw_json);
         let valid = report
             .iter()
             .filter(|validation| validation.is_valid())
@@ -541,7 +541,7 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValues::default();
         }
-        let ods = RoadworkService {
+        let ods = OpendataService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
@@ -579,7 +579,7 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return PathCandidates::default();
         }
-        let ods = RoadworkService {
+        let ods = OpendataService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
@@ -599,7 +599,7 @@ impl ServiceHelperDialog {
         if self.raw_json.trim().is_empty() {
             return FieldsValidation::valid();
         }
-        let ods = RoadworkService {
+        let ods = OpendataService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };
@@ -670,11 +670,11 @@ impl ServiceHelperDialog {
         }
         match &self.descriptor {
             Some(descriptor) => {
-                let ods = RoadworkService {
+                let ods = OpendataService {
                     service_name: "Service helper".to_string(),
                     service_descriptor: descriptor.clone(),
                 };
-                self.roadwork_count = ods.roadwork_count(&self.raw_json);
+                self.roadwork_count = ods.element_count(&self.raw_json);
                 if self.roadwork_count == 0 {
                     self.current_index = 0;
                 } else {
@@ -703,7 +703,7 @@ impl ServiceHelperDialog {
             self.result_json.clear();
             return;
         }
-        let ods = RoadworkService {
+        let ods = OpendataService {
             service_name: "Service helper".to_string(),
             service_descriptor: descriptor.clone(),
         };

@@ -2,7 +2,7 @@ use crate::opendata::json::model::date_parser::DateParser;
 use crate::opendata::json::model::metadata::Metadata;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ServiceDescriptor {
     pub metadata: Metadata,
     pub id: String,

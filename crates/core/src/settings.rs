@@ -1,5 +1,5 @@
 use crate::opendata::json::model::lat_lng::LatLng;
-use crate::opendata::json::model::opendata_service_descriptor::OpendataServiceDescriptor;
+use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -30,7 +30,7 @@ pub struct Settings {
     pub map_zoom: Option<f64>,
 
     #[serde(rename = "opendataServices", default)]
-    pub opendata_services: HashMap<String, OpendataServiceDescriptor>,
+    pub opendata_services: HashMap<String, ServiceDescriptor>,
 
     #[serde(rename = "selectedOpendataService", default)]
     pub selected_opendata_service: Option<String>,
