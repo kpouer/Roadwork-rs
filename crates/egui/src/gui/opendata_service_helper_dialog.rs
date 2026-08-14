@@ -301,8 +301,8 @@ struct TableColumns {
     description: bool,
 }
 
-impl TableColumns {
-    fn from_descriptor(descriptor: &OpendataServiceDescriptor) -> Self {
+impl From<&OpendataServiceDescriptor> for TableColumns {
+    fn from(descriptor: &OpendataServiceDescriptor) -> Self {
         Self {
             id: true,
             latitude: descriptor.latitude.is_some(),
@@ -692,7 +692,7 @@ impl OpendataServiceHelperDialog {
         let Some(descriptor) = &self.descriptor else {
             return;
         };
-        let columns = TableColumns::from_descriptor(descriptor);
+        let columns = TableColumns::from(descriptor);
         let rows = self.preview_rows(descriptor);
         let mut table = egui_extras::TableBuilder::new(ui)
             .striped(true)
