@@ -15,7 +15,6 @@ pub struct Roadwork {
     pub impact_circulation_detail: Option<String>,
     #[serde(rename = "syncData")]
     pub sync_data: SyncData,
-    pub url: String,
 }
 
 impl Roadwork {

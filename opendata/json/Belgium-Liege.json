@@ -21,7 +21,6 @@
   "locationDetails": "$.fields.precision_localisation",
   "impactCirculationDetail": "$.fields.impact_circulation_detail",
   "description": "$.fields.description",
-  "url": "$.fields.url",
   "from": {
     "path": "$.fields.start_date",
     "parsers": [

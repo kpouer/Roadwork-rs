@@ -80,7 +80,6 @@ A descriptor contains a first object called **metadata** that contains all infor
 | impactCirculationDetail | no        | @.fields.impact_circulation_detail | The path for circulation impact                 |
 | description             | no        | @.fields.description               | The path of the description                     |
 | locationDetails         | no        | @.fields.precision_localisation    | The path for more location information          |
-| url                     | no        | https://xxxx                       | An url for that exact roadwork item             |
 | from                    | yes       | A date parser structure            |                                                 |
 | to                      | yes       | A date parser structure            |                                                 |
 

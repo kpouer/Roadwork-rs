@@ -508,6 +508,13 @@ impl ServiceHelperDialog {
         matches!(self.mode, HelperMode::Builtin { .. })
     }
 
+    /// The helper edits either a built-in roadwork service (full Roadwork model:
+    /// road, locationDetails, impactCirculationDetail, dates) or a plain opendata
+    /// source (only id/latitude/longitude/polygon/description).
+    fn is_opendata_mode(&self) -> bool {
+        !self.is_builtin()
+    }
+
     fn creating(&self) -> bool {
         matches!(self.mode, HelperMode::Custom { creating: true, .. })
     }
@@ -645,6 +652,13 @@ impl ServiceHelperDialog {
         );
         ui.horizontal(|ui| {
             self.show_source_combo(ui, custom_services);
+            ui.separator();
+            let (mode_text, mode_color) = if self.is_builtin() {
+                ("Mode: Roadwork", ui.visuals().hyperlink_color)
+            } else {
+                ("Mode: Opendata", ui.visuals().warn_fg_color)
+            };
+            ui.label(RichText::new(mode_text).strong().color(mode_color));
             ui.separator();
             ui.checkbox(&mut self.form_mode, "Form mode");
             ui.separator();
@@ -1010,6 +1024,7 @@ impl ServiceHelperDialog {
         let field_validation = self.field_validation();
         let field_values = self.field_values();
         let path_candidates = self.path_candidates();
+        let opendata_mode = self.is_opendata_mode();
         let Self {
             descriptor,
             descriptor_json,
@@ -1038,6 +1053,7 @@ impl ServiceHelperDialog {
                         &field_values,
                         &self.array_paths,
                         &path_candidates,
+                        opendata_mode,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -1619,7 +1635,6 @@ impl ServiceHelperDialog {
             description: optional_path(&descriptor.description),
             location_details: optional_path(&descriptor.location_details),
             impact_circulation_detail: optional_path(&descriptor.impact_circulation_detail),
-            url: optional_path(&descriptor.url),
             from_path: date_path(&descriptor.from),
             to_path: date_path(&descriptor.to),
         }

@@ -37,6 +37,5 @@
       "resetHour" : true
     } ]
   },
-  "dataArray" : "$.results",
-  "url" : "$.documents"
+  "dataArray" : "$.results"
 }

@@ -18,7 +18,6 @@
   "road": "$.street",
   "description": "$.info",
   "impactCirculationDetail": "$.veh_imp",
-  "url": "$.properties.shorturl",
   "from": {
     "path": "$.start_dt",
     "parsers": [

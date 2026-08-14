@@ -21,7 +21,6 @@
   "locationDetails": "$.fields.commune",
   "impactCirculationDetail": "$.fields.mode_d_exploitation",
   "description": "$.fields.nature_des_travaux",
-  "url": "$.fields.url",
   "from": {
     "path": "$.fields.date_debut",
     "parsers": [

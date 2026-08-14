@@ -261,10 +261,6 @@ impl RoadworkApp {
         job
     }
 
-    fn open_url(url: &str) {
-        crate::open_url::open_url(url);
-    }
-
     fn show_left_panel(&mut self, ui: &mut Ui) {
         let selected_id = self.selected_roadwork.clone();
         let sync_config = crate::app_settings::sync_config(&self.settings);
@@ -336,13 +332,6 @@ impl RoadworkApp {
                         if let Some(text) = &roadwork.opendata.description {
                             ui.label(RichText::new("Description:").strong());
                             ui.label(Self::get_multiline_text(text));
-                        }
-
-                        if ui
-                            .add_enabled(!roadwork.url.is_empty(), Button::new("Open URL"))
-                            .clicked()
-                        {
-                            Self::open_url(&roadwork.url);
                         }
 
                         status_changed = StatusPanel::new(roadwork).show(ui);

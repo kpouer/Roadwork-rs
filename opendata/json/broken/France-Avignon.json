@@ -19,7 +19,6 @@
   "longitude": "$.geometry.coordinates[0][0][0][0]",
   "road": "$.properties.localisations",
   "impactCirculationDetail": "$.properties.mesures",
-  "url": "$.properties.shorturl",
   "from": {
     "path": "$.properties.arretedebut",
     "parsers": [

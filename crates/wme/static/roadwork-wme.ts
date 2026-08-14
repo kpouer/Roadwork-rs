@@ -1127,9 +1127,6 @@ function buildPopupContent(rw) {
     if (impact) {
         html += `<p style="margin:4px 0;color:#b45309;">Impact: ${impact}</p>`;
     }
-    if (rw.url) {
-        html += `<a href="${rw.url}" target="_blank" style="color:#4a90d9;">Source</a>`;
-    }
     html += `</div>`;
     return html;
 }
@@ -1268,15 +1265,6 @@ function showDetailPanel(rw) {
         val.style.color = "#b45309";
         val.textContent = impact;
         addField("Impact circulation", val);
-    }
-
-    if (rw.url) {
-        const a = document.createElement("a");
-        a.href = rw.url;
-        a.target = "_blank";
-        a.style.color = "#4a90d9";
-        a.textContent = "Voir la source";
-        addField("Source", a);
     }
 
     detailOverlayEl.classList.remove("rw-hidden");

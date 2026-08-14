@@ -34,7 +34,6 @@ pub(crate) struct FieldsValues {
     pub description: Option<String>,
     pub location_details: Option<String>,
     pub impact_circulation_detail: Option<String>,
-    pub url: Option<String>,
     pub from_path: Option<String>,
     pub to_path: Option<String>,
 }
@@ -80,6 +79,7 @@ pub(crate) fn show(
     values: &FieldsValues,
     array_paths: &[(String, usize)],
     path_candidates: &PathCandidates,
+    opendata_mode: bool,
 ) -> bool {
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
@@ -156,21 +156,53 @@ pub(crate) fn show(
         },
         values.polygon.as_deref(),
     );
-    changed |= validated(
-        ui,
-        validation.road,
-        "road must point to a scalar value in the fetched JSON",
-        |ui, tooltip| {
-            optional_text_row(
-                ui,
-                "road",
-                &mut descriptor.road,
-                tooltip,
-                Some(&scalar_wand),
-            )
-        },
-        values.road.as_deref(),
-    );
+    if !opendata_mode {
+        changed |= validated(
+            ui,
+            validation.road,
+            "road must point to a scalar value in the fetched JSON",
+            |ui, tooltip| {
+                optional_text_row(
+                    ui,
+                    "road",
+                    &mut descriptor.road,
+                    tooltip,
+                    Some(&scalar_wand),
+                )
+            },
+            values.road.as_deref(),
+        );
+        changed |= validated(
+            ui,
+            validation.location_details,
+            "locationDetails must point to a scalar value in the fetched JSON",
+            |ui, tooltip| {
+                optional_text_row(
+                    ui,
+                    "locationDetails",
+                    &mut descriptor.location_details,
+                    tooltip,
+                    Some(&scalar_wand),
+                )
+            },
+            values.location_details.as_deref(),
+        );
+        changed |= validated(
+            ui,
+            validation.impact_circulation_detail,
+            "impactCirculationDetail must point to a scalar value in the fetched JSON",
+            |ui, tooltip| {
+                optional_text_row(
+                    ui,
+                    "impactCirculationDetail",
+                    &mut descriptor.impact_circulation_detail,
+                    tooltip,
+                    Some(&scalar_wand),
+                )
+            },
+            values.impact_circulation_detail.as_deref(),
+        );
+    }
     changed |= validated(
         ui,
         validation.description,
@@ -186,54 +218,25 @@ pub(crate) fn show(
         },
         values.description.as_deref(),
     );
-    changed |= validated(
-        ui,
-        validation.location_details,
-        "locationDetails must point to a scalar value in the fetched JSON",
-        |ui, tooltip| {
-            optional_text_row(
-                ui,
-                "locationDetails",
-                &mut descriptor.location_details,
-                tooltip,
-                Some(&scalar_wand),
-            )
-        },
-        values.location_details.as_deref(),
-    );
-    changed |= validated(
-        ui,
-        validation.impact_circulation_detail,
-        "impactCirculationDetail must point to a scalar value in the fetched JSON",
-        |ui, tooltip| {
-            optional_text_row(
-                ui,
-                "impactCirculationDetail",
-                &mut descriptor.impact_circulation_detail,
-                tooltip,
-                Some(&scalar_wand),
-            )
-        },
-        values.impact_circulation_detail.as_deref(),
-    );
-    changed |= optional_text_row(ui, "url", &mut descriptor.url, values.url.as_deref(), None);
 
-    ui.add_space(8.0);
-    ui.heading("Dates");
-    changed |= date_section(
-        ui,
-        "from",
-        &mut descriptor.from,
-        validation.from_path,
-        values.from_path.as_deref(),
-    );
-    changed |= date_section(
-        ui,
-        "to",
-        &mut descriptor.to,
-        validation.to_path,
-        values.to_path.as_deref(),
-    );
+    if !opendata_mode {
+        ui.add_space(8.0);
+        ui.heading("Dates");
+        changed |= date_section(
+            ui,
+            "from",
+            &mut descriptor.from,
+            validation.from_path,
+            values.from_path.as_deref(),
+        );
+        changed |= date_section(
+            ui,
+            "to",
+            &mut descriptor.to,
+            validation.to_path,
+            values.to_path.as_deref(),
+        );
+    }
 
     ui.add_space(8.0);
     ui.heading("URL params");

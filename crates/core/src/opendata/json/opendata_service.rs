@@ -191,7 +191,6 @@ impl OpendataService {
         report.extend(
             [
                 self.optional_scalar_report(&elements, "road", descriptor.road.as_ref()),
-                self.optional_scalar_report(&elements, "url", descriptor.url.as_ref()),
                 self.optional_scalar_report(
                     &elements,
                     "locationDetails",
@@ -602,9 +601,6 @@ impl OpendataService {
             .to
             .map(|date| date.timestamp_millis())
             .unwrap_or(0);
-        if let Some(url) = &self.service_descriptor.url {
-            roadwork_builder.url = node.get_path(url)?;
-        }
         Ok(roadwork_builder)
     }
 
@@ -622,9 +618,6 @@ impl OpendataService {
                 .to
                 .map(|date| date.timestamp_millis())
                 .unwrap_or(0);
-        }
-        if let Some(url) = &self.service_descriptor.url {
-            roadwork_builder.url = node.get_path(url).unwrap_or_default();
         }
         roadwork_builder
     }
