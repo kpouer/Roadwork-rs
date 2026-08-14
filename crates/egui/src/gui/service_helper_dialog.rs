@@ -26,10 +26,6 @@ const PREVIEW_MAX_ELEMENTS: usize = 100;
 /// Maximum characters rendered in a single table cell.
 const MAX_CELL_CHARS: usize = 512;
 
-/// Above this size, raw JSON editors are not shown at all to avoid
-/// laying out a huge document overflowing egui.
-const MAX_EDITABLE_JSON_BYTES: usize = 4 * 1024 * 1024;
-
 /// The source the helper dialog is currently working on.
 ///
 /// Built-in sources are the services embedded in the extension: they are
@@ -952,11 +948,7 @@ impl ServiceHelperDialog {
             Some(FetchState::Downloading) => (true, "Getting data…".to_string()),
             _ => (false, String::new()),
         };
-        let mut json_layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            super::layout_json_text(ui, text, wrap_width)
-        };
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.label(RichText::new("URL").strong());
             ui.horizontal(|ui| {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.url)
@@ -989,29 +981,11 @@ impl ServiceHelperDialog {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
 
-            if self.raw_json.len() <= MAX_EDITABLE_JSON_BYTES {
-                ui.label(RichText::new("Fetched JSON").strong());
-                egui::ScrollArea::vertical()
-                    .id_salt("helper_raw_json_scroll")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let response = ui.add(
-                            egui::TextEdit::multiline(&mut self.raw_json)
-                                .code_editor()
-                                .interactive(true)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(15)
-                                .layouter(&mut json_layouter),
-                        );
-                        if response.changed() {
-                            self.parsed_json = None;
-                            self.validation_report = None;
-                            self.parsed_opendata = None;
-                            self.opendata_bytes = 0;
-                            self.opendata_count = 0;
-                            self.dirty = true;
-                        }
-                    });
+            if !self.raw_json.is_empty() {
+                ui.label(format!(
+                    "Fetched JSON · {}",
+                    format_bytes(self.raw_json.len())
+                ));
             }
         });
     }
