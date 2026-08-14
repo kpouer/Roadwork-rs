@@ -481,10 +481,6 @@ impl OpendataServiceHelperDialog {
     }
 
     fn show_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
-        self.show_helper_content(ui, toasts);
-    }
-
-    fn show_helper_content(&mut self, ui: &mut Ui, toasts: &mut Toasts) {
         let fetching = matches!(
             &*self.fetch_state.lock().unwrap(),
             Some(FetchState::Connecting) | Some(FetchState::Downloading)
