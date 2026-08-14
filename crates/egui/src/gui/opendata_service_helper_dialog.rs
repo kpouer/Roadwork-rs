@@ -839,11 +839,7 @@ impl OpendataServiceHelperDialog {
     }
 
     fn url_is_valid(&self) -> bool {
-        Self::is_valid_http_url(&self.url)
-    }
-
-    fn is_valid_http_url(url: &str) -> bool {
-        url.starts_with("http://") || url.starts_with("https://")
+        self.url.starts_with("http://") || self.url.starts_with("https://")
     }
 
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
