@@ -2302,7 +2302,7 @@ function createDataPanel() {
     controls.appendChild(dataSourceSelectEl);
 
     dataUpdateBtn = document.createElement("button");
-    dataUpdateBtn.textContent = "Update";
+    dataUpdateBtn.textContent = "Refresh";
     dataUpdateBtn.title = "Recharger les données de la source sélectionnée";
     dataUpdateBtn.disabled = true;
     dataUpdateBtn.addEventListener("click", async () => {
