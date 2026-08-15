@@ -61,6 +61,30 @@ pub struct DbTableData {
     pub total: i64,
 }
 
+/// A table and its row count, for the DB explorer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TableInfo {
+    pub name: String,
+    pub count: i64,
+}
+
+/// A per-service element count, for the DB explorer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ServiceCount {
+    pub service: String,
+    pub count: i64,
+}
+
+/// A summary of the whole database for the DB explorer: table row counts, the
+/// total size, and per-service counts for roadworks and opendata.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DbOverview {
+    pub tables: Vec<TableInfo>,
+    pub size_bytes: i64,
+    pub roadwork_by_service: Vec<ServiceCount>,
+    pub opendata_by_service: Vec<ServiceCount>,
+}
+
 /// What kind of snapshot a `cache` row describes.
 #[derive(Debug, Clone, Copy)]
 pub enum CacheType {
@@ -331,6 +355,33 @@ impl Store {
         Ok(counts)
     }
 
+    /// Returns the number of cached roadworks per service, sorted by service.
+    pub fn roadwork_counts(&self) -> Result<Vec<ServiceCount>> {
+        self.service_counts("SELECT service, COUNT(*) FROM roadwork GROUP BY service")
+    }
+
+    /// Returns the number of cached opendata items per service, sorted by
+    /// service.
+    pub fn opendata_counts_list(&self) -> Result<Vec<ServiceCount>> {
+        self.service_counts("SELECT service, COUNT(*) FROM data GROUP BY service")
+    }
+
+    /// Runs a `GROUP BY service` count query, sorting the result by service.
+    fn service_counts(&self, sql: &str) -> Result<Vec<ServiceCount>> {
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ServiceCount {
+                service: row.get::<_, String>(0)?,
+                count: row.get::<_, i64>(1)?,
+            })
+        })?;
+        let mut counts: Vec<ServiceCount> = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)?;
+        counts.sort_by(|a, b| a.service.cmp(&b.service));
+        Ok(counts)
+    }
+
     /// Removes every cached row for `service` (roadworks, opendata, cache).
     pub fn remove(&mut self, service: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
@@ -405,6 +456,31 @@ impl Store {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Error::from)
+    }
+
+    /// Returns a summary of the whole database for the DB explorer: table row
+    /// counts, total size, and per-service counts for roadworks and opendata.
+    pub fn overview(&self) -> Result<DbOverview> {
+        let tables = self
+            .list_tables()?
+            .into_iter()
+            .map(|name| {
+                let count = self.table_count(&name)?;
+                Ok(TableInfo { name, count })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let page_count: i64 = self
+            .conn
+            .query_row("PRAGMA page_count", [], |row| row.get(0))?;
+        let page_size: i64 = self
+            .conn
+            .query_row("PRAGMA page_size", [], |row| row.get(0))?;
+        Ok(DbOverview {
+            tables,
+            size_bytes: page_count.saturating_mul(page_size),
+            roadwork_by_service: self.roadwork_counts()?,
+            opendata_by_service: self.opendata_counts_list()?,
+        })
     }
 
     /// Returns the columns of `table`, in definition order.

@@ -386,14 +386,15 @@ pub async fn save_polygon_groups(payload: JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
-/// Lists the application tables for the DB explorer.
+/// Returns a summary of the database for the DB explorer: table row counts,
+/// total size, and per-service counts for roadworks and opendata.
 #[wasm_bindgen]
-pub async fn get_db_tables() -> Result<JsValue, JsValue> {
-    info!("[wasm] get_db_tables");
+pub async fn get_db_overview() -> Result<JsValue, JsValue> {
+    info!("[wasm] get_db_overview");
     let store = store_take().await?;
-    let tables = store.list_tables().map_err(js_err)?;
+    let overview = store.overview().map_err(js_err)?;
     store_put_back(store);
-    serialize_data(&tables)
+    serialize_data(&overview)
 }
 
 /// Reads a paginated page of `table` for the DB explorer.

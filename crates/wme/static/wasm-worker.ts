@@ -67,8 +67,8 @@ scope.onmessage = async (e: MessageEvent) => {
         } else if (method === 'save_polygon_groups') {
             await wasm_bindgen.save_polygon_groups(args[0]);
             result = true;
-        } else if (method === 'get_db_tables') {
-            result = await wasm_bindgen.get_db_tables();
+        } else if (method === 'get_db_overview') {
+            result = await wasm_bindgen.get_db_overview();
         } else if (method === 'get_db_table') {
             result = await wasm_bindgen.get_db_table(args[0], args[1], args[2]);
         } else if (method === 'delete_db_row') {

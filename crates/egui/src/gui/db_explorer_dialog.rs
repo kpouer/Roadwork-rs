@@ -54,15 +54,41 @@ struct DbTableData {
     total: i64,
 }
 
+/// Mirrors `roadwork_db::TableInfo`.
+#[derive(Debug, Clone, Deserialize)]
+struct TableInfo {
+    name: String,
+    count: i64,
+}
+
+/// Mirrors `roadwork_db::ServiceCount`.
+#[derive(Debug, Clone, Deserialize)]
+struct ServiceCount {
+    service: String,
+    count: i64,
+}
+
+/// Mirrors `roadwork_db::DbOverview`.
+#[derive(Debug, Clone, Deserialize)]
+struct DbOverview {
+    tables: Vec<TableInfo>,
+    size_bytes: i64,
+    roadwork_by_service: Vec<ServiceCount>,
+    opendata_by_service: Vec<ServiceCount>,
+}
+
 #[derive(Default)]
 struct ExplorerState {
-    tables: Vec<String>,
+    tables: Vec<TableInfo>,
     selected: Option<String>,
     columns: Vec<ColumnInfo>,
     rows: Vec<Vec<Cell>>,
     total: i64,
     page: i64,
     page_size: i64,
+    db_size: Option<i64>,
+    roadwork_counts: Vec<ServiceCount>,
+    opendata_counts: Vec<ServiceCount>,
     loading_tables: bool,
     loading_data: bool,
     error: Option<String>,
@@ -206,6 +232,10 @@ impl DbExplorerDialog {
                 ui.separator();
                 ui.colored_label(egui::Color32::RED, error);
             }
+            if let Some(size) = st.db_size {
+                ui.separator();
+                ui.label(format!("Base : {}", format_bytes(size)));
+            }
             if st.loading_tables || st.loading_data {
                 ui.spinner();
             }
@@ -237,18 +267,44 @@ impl DbExplorerDialog {
                 } else {
                     ui.label("Aucune table");
                 }
-                return;
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt("db_explorer_tables_scroll")
+                    .show(ui, |ui| {
+                        for table in st.tables.clone() {
+                            let selected = st.selected.as_deref() == Some(table.name.as_str());
+                            let label = format!("{} ({})", table.name, table.count);
+                            if ui.selectable_label(selected, label).clicked() {
+                                st.selected = Some(table.name.clone());
+                                st.page = 0;
+                                st.error = None;
+                                pending_select = Some(table.name);
+                            }
+                        }
+                    });
             }
+            let roadwork_counts = st.roadwork_counts.clone();
+            let opendata_counts = st.opendata_counts.clone();
+            ui.separator();
             egui::ScrollArea::vertical()
-                .id_salt("db_explorer_tables_scroll")
+                .id_salt("db_explorer_counts_scroll")
+                .max_height(200.0)
                 .show(ui, |ui| {
-                    for table in st.tables.clone() {
-                        let selected = st.selected.as_deref() == Some(table.as_str());
-                        if ui.selectable_label(selected, &table).clicked() {
-                            st.selected = Some(table.clone());
-                            st.page = 0;
-                            st.error = None;
-                            pending_select = Some(table);
+                    ui.label(RichText::new("Roadworks").strong());
+                    if roadwork_counts.is_empty() {
+                        ui.label("Aucun");
+                    } else {
+                        for sc in &roadwork_counts {
+                            ui.label(format!("{} : {}", sc.service, sc.count));
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Opendata").strong());
+                    if opendata_counts.is_empty() {
+                        ui.label("Aucun");
+                    } else {
+                        for sc in &opendata_counts {
+                            ui.label(format!("{} : {}", sc.service, sc.count));
                         }
                     }
                 });
@@ -498,6 +554,7 @@ impl DbExplorerDialog {
         if let Some(table) = table_name {
             self.load_data(ctx, &table);
         }
+        self.load_tables(ctx);
     }
 
     fn load_tables(&mut self, ctx: &Context) {
@@ -509,19 +566,22 @@ impl DbExplorerDialog {
         let state = Arc::clone(&self.state);
         let ctx = ctx.clone();
         spawn_task(async move {
-            let result = rpc_json::<Vec<String>>("get_db_tables", vec![]).await;
+            let result = rpc_json::<DbOverview>("get_db_overview", vec![]).await;
             {
                 let mut st = state.lock().unwrap();
                 st.loading_tables = false;
                 match result {
-                    Ok(tables) => {
-                        st.tables = tables;
+                    Ok(overview) => {
+                        st.tables = overview.tables;
+                        st.db_size = Some(overview.size_bytes);
+                        st.roadwork_counts = overview.roadwork_by_service;
+                        st.opendata_counts = overview.opendata_by_service;
                         let keep = st
                             .selected
                             .as_ref()
-                            .filter(|s| st.tables.iter().any(|t| t == *s))
+                            .filter(|s| st.tables.iter().any(|t| &t.name == *s))
                             .cloned();
-                        st.selected = keep.or_else(|| st.tables.first().cloned());
+                        st.selected = keep.or_else(|| st.tables.first().map(|t| t.name.clone()));
                     }
                     Err(e) => {
                         st.error = Some(e);
@@ -612,4 +672,17 @@ fn truncate(s: &str, max_chars: usize) -> String {
     }
     let prefix: String = s.chars().take(max_chars).collect();
     format!("{prefix}…")
+}
+
+/// Formats a byte count in French units (o, Ko, Mo).
+fn format_bytes(bytes: i64) -> String {
+    let bytes = bytes.max(0) as f64;
+    const KIB: f64 = 1024.0;
+    if bytes < KIB {
+        format!("{bytes:.0} o")
+    } else if bytes < KIB * KIB {
+        format!("{:.1} Ko", bytes / KIB)
+    } else {
+        format!("{:.1} Mo", bytes / (KIB * KIB))
+    }
 }
