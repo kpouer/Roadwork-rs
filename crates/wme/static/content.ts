@@ -20,7 +20,7 @@
     let appOverlay: HTMLDivElement | null = null;
     let appIframe: HTMLIFrameElement | null = null;
 
-    function openAppOverlay() {
+    function openAppOverlay(params?: URLSearchParams) {
         if (!appOverlay) {
             appOverlay = document.createElement('div');
             appOverlay.className = 'rw-app-overlay rw-app-hidden';
@@ -48,7 +48,10 @@
             appOverlay.appendChild(appIframe);
             document.body.appendChild(appOverlay);
         }
-        appIframe.src = chrome.runtime.getURL('app/index.html');
+        const noHeader = params?.get('dbExplorer') === '1';
+        appOverlay.classList.toggle('rw-app-no-header', noHeader);
+        const query = params && params.toString() ? '?' + params.toString() : '';
+        appIframe.src = chrome.runtime.getURL('app/index.html') + query;
         appOverlay.classList.remove('rw-app-hidden');
     }
 
@@ -154,7 +157,16 @@
     window.addEventListener('message', (e) => {
         if (e.data?.type === 'ROADWORK_OPEN_APP') {
             console.log('[Roadwork] content script opening app overlay');
-            openAppOverlay();
+            const params = new URLSearchParams();
+            if (e.data.dbExplorer) {
+                params.set('dbExplorer', '1');
+            }
+            openAppOverlay(params);
+            return;
+        }
+        if (e.data?.type === 'ROADWORK_CLOSE_APP') {
+            console.log('[Roadwork] content script closing app overlay');
+            closeAppOverlay();
             return;
         }
         if (e.data?.type === 'ROADWORK_CLOSE_HELPER') {

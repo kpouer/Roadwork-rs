@@ -1,5 +1,6 @@
 use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
+use crate::gui::db_explorer_dialog::DbExplorerDialog;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::service_helper_dialog::ServiceHelperDialog;
@@ -31,6 +32,7 @@ pub struct StartupParams {
     pub open_opendata_service_helper: bool,
     pub create_opendata_service: bool,
     pub opendata_descriptor: Option<String>,
+    pub db_explorer_only: bool,
 }
 
 pub(crate) fn spawn_task<F>(future: F)
@@ -260,6 +262,9 @@ pub struct RoadworkApp {
     confirm_delete_opendata: Option<String>,
     opendata_data: Arc<Mutex<HashMap<String, OpendataData>>>,
     helper_only: bool,
+    db_explorer_only: bool,
+    show_db_explorer: bool,
+    db_explorer: DbExplorerDialog,
 }
 
 impl RoadworkApp {
@@ -324,9 +329,12 @@ impl RoadworkApp {
             confirm_delete_opendata: None,
             opendata_data: Arc::new(Mutex::new(crate::app_settings::load_opendata_cache())),
             helper_only,
+            db_explorer_only: params.db_explorer_only,
+            show_db_explorer: false,
+            db_explorer: DbExplorerDialog::default(),
         };
 
-        if !helper_only {
+        if !helper_only && !params.db_explorer_only {
             app.load_data();
         }
         app
@@ -548,6 +556,9 @@ impl RoadworkApp {
                 if ui.button("Opendata").clicked() {
                     self.show_opendata_panel = true;
                 }
+                if ui.button("Explore DB").clicked() {
+                    self.show_db_explorer = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let size = egui::vec2(18.0, 18.0);
                     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -581,6 +592,9 @@ impl RoadworkApp {
 
         if self.show_settings_dialog {
             SettingsDialog::new(&mut self.show_settings_dialog, &mut self.settings).show(ui.ctx());
+        }
+        if self.show_db_explorer {
+            self.db_explorer.show(ui.ctx(), &mut self.show_db_explorer);
         }
         self.service_helper.show(
             ui,
@@ -846,7 +860,11 @@ impl App for RoadworkApp {
                 .info("Drop a data file to import it, after opening the service helper");
         }
 
-        if self.helper_only {
+        if self.db_explorer_only {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                self.db_explorer.show_fullscreen(ui);
+            });
+        } else if self.helper_only {
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 if self.show_service_helper_dialog {
                     self.service_helper.show(

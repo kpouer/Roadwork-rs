@@ -27,6 +27,9 @@ declare global {
         clear_opendata_cache(service: unknown): Promise<unknown>;
         get_polygon_groups(): Promise<unknown>;
         save_polygon_groups(payload: unknown): Promise<unknown>;
+        get_db_tables(): Promise<unknown>;
+        get_db_table(table: unknown, offset: unknown, limit: unknown): Promise<unknown>;
+        delete_db_row(table: unknown, keysJson: unknown): Promise<unknown>;
     };
 
     namespace chrome {

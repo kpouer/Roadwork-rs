@@ -16,6 +16,51 @@ use roadwork_core::now_millis;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+/// Describes a table column for the DB explorer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub primary_key: bool,
+}
+
+/// A single cell value in a DB explorer row.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum Cell {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Text(String),
+    Blob(Vec<u8>),
+}
+
+impl Cell {
+    /// Renders the cell for display in the UI.
+    pub fn display(&self) -> String {
+        match self {
+            Cell::Null => String::new(),
+            Cell::Integer(i) => i.to_string(),
+            Cell::Real(f) => {
+                if f.fract() == 0.0 {
+                    format!("{f:.1}")
+                } else {
+                    f.to_string()
+                }
+            }
+            Cell::Text(s) => s.clone(),
+            Cell::Blob(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+        }
+    }
+}
+
+/// The result of a paginated table read for the DB explorer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DbTableData {
+    pub columns: Vec<ColumnInfo>,
+    pub rows: Vec<Vec<Cell>>,
+    pub total: i64,
+}
+
 /// What kind of snapshot a `cache` row describes.
 #[derive(Debug, Clone, Copy)]
 pub enum CacheType {
@@ -37,6 +82,7 @@ pub enum Error {
     Sqlite(rusqlite::Error),
     Json(serde_json::Error),
     Vfs(String),
+    Other(String),
 }
 
 impl std::fmt::Display for Error {
@@ -45,6 +91,7 @@ impl std::fmt::Display for Error {
             Error::Sqlite(e) => write!(f, "sqlite: {e}"),
             Error::Json(e) => write!(f, "json: {e}"),
             Error::Vfs(e) => write!(f, "vfs: {e}"),
+            Error::Other(e) => write!(f, "{e}"),
         }
     }
 }
@@ -349,6 +396,114 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+
+    /// Lists the application tables (excluding the `sqlite_*` internals).
+    pub fn list_tables(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
+    /// Returns the columns of `table`, in definition order.
+    pub fn table_columns(&self, table: &str) -> Result<Vec<ColumnInfo>> {
+        self.ensure_table(table)?;
+        let mut stmt = self
+            .conn
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ColumnInfo {
+                name: row.get::<_, String>(1)?,
+                primary_key: row.get::<_, i64>(5)? > 0,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
+    /// Returns the number of rows in `table`.
+    pub fn table_count(&self, table: &str) -> Result<i64> {
+        self.ensure_table(table)?;
+        self.conn
+            .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |row| {
+                row.get(0)
+            })
+            .map_err(Error::from)
+    }
+
+    /// Reads a page of `table` ordered by `rowid`, returning columns, rows and
+    /// the total number of rows.
+    pub fn table_rows(&self, table: &str, offset: i64, limit: i64) -> Result<DbTableData> {
+        self.ensure_table(table)?;
+        let columns = self.table_columns(table)?;
+        let total = self.table_count(table)?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2"
+        ))?;
+        let rows = stmt
+            .query_map(params![limit, offset], |row| {
+                let mut cells = Vec::with_capacity(columns.len());
+                for i in 0..columns.len() {
+                    let value: rusqlite::types::Value = row.get(i)?;
+                    cells.push(cell_from_value(value));
+                }
+                Ok(cells)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)?;
+        Ok(DbTableData {
+            columns,
+            rows,
+            total,
+        })
+    }
+
+    /// Deletes the row of `table` identified by `keys` (column/value pairs).
+    ///
+    /// Deleting a row of the `cache` table also removes the linked cached rows
+    /// for the same service (`roadwork` when type is `roadwork`, `data` when
+    /// type is `opendata`), in the same transaction. Returns the number of
+    /// deleted `table` rows.
+    pub fn delete_table_row(
+        &mut self,
+        table: &str,
+        keys: &[(String, serde_json::Value)],
+    ) -> Result<usize> {
+        self.ensure_table(table)?;
+        if keys.is_empty() {
+            return Err(Error::Other("No key given for row deletion".to_string()));
+        }
+        let tx = self.conn.transaction()?;
+        let where_clause = keys
+            .iter()
+            .map(|(column, _)| format!("\"{column}\" = ?"))
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        let sql = format!("DELETE FROM \"{table}\" WHERE {where_clause}");
+        let values: Vec<rusqlite::types::Value> = keys
+            .iter()
+            .map(|(_, value)| value_from_json(value))
+            .collect();
+        let deleted = tx.execute(&sql, rusqlite::params_from_iter(values))?;
+        if table == "cache" && deleted > 0 {
+            delete_linked_cache_rows(&tx, keys)?;
+        }
+        tx.commit()?;
+        Ok(deleted)
+    }
+
+    /// Ensures `table` is one of the application tables, guarding the generic
+    /// SQL builders against arbitrary identifiers.
+    fn ensure_table(&self, table: &str) -> Result<()> {
+        let tables = self.list_tables()?;
+        if tables.iter().any(|t| t == table) {
+            Ok(())
+        } else {
+            Err(Error::Other(format!("Unknown table: {table}")))
+        }
+    }
 }
 
 fn upsert_fetched_at(
@@ -368,6 +523,63 @@ fn upsert_fetched_at(
 /// Returns `(min, max)` for a pair of bounds, ordering them.
 fn ordered(a: f64, b: f64) -> (f64, f64) {
     if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Converts a rusqlite value into an explorer [`Cell`].
+fn cell_from_value(value: rusqlite::types::Value) -> Cell {
+    match value {
+        rusqlite::types::Value::Null => Cell::Null,
+        rusqlite::types::Value::Integer(i) => Cell::Integer(i),
+        rusqlite::types::Value::Real(f) => Cell::Real(f),
+        rusqlite::types::Value::Text(s) => Cell::Text(s),
+        rusqlite::types::Value::Blob(bytes) => Cell::Blob(bytes),
+    }
+}
+
+/// Converts a JSON key value into a bindable rusqlite value.
+fn value_from_json(value: &serde_json::Value) -> rusqlite::types::Value {
+    match value {
+        serde_json::Value::Null => rusqlite::types::Value::Null,
+        serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+        serde_json::Value::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .map(rusqlite::types::Value::Integer)
+            .or_else(|| {
+                n.as_u64()
+                    .map(|u| rusqlite::types::Value::Integer(u as i64))
+            })
+            .or_else(|| n.as_f64().map(rusqlite::types::Value::Real))
+            .unwrap_or(rusqlite::types::Value::Null),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => rusqlite::types::Value::Null,
+    }
+}
+
+/// Removes the cached rows linked to a deleted `cache` row, given its keys.
+fn delete_linked_cache_rows(
+    tx: &rusqlite::Transaction<'_>,
+    keys: &[(String, serde_json::Value)],
+) -> Result<()> {
+    let service = keys
+        .iter()
+        .find(|(column, _)| column == "service")
+        .and_then(|(_, value)| value.as_str())
+        .ok_or_else(|| Error::Other("cache row has no service key".to_string()))?;
+    let cache_type = keys
+        .iter()
+        .find(|(column, _)| column == "type")
+        .and_then(|(_, value)| value.as_str())
+        .ok_or_else(|| Error::Other("cache row has no type key".to_string()))?;
+    match cache_type {
+        "roadwork" => {
+            tx.execute("DELETE FROM roadwork WHERE service = ?1", params![service])?;
+        }
+        "opendata" => {
+            tx.execute("DELETE FROM data WHERE service = ?1", params![service])?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Assembles the roadwork rows into a `RoadworkData`, or `None` when empty.

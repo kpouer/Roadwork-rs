@@ -4021,6 +4021,7 @@ version = "0.1.0"
 dependencies = [
  "roadwork-core",
  "rusqlite",
+ "serde",
  "serde_json",
  "sqlite-wasm-vfs",
 ]

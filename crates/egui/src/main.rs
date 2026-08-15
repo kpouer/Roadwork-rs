@@ -103,6 +103,9 @@ fn read_startup_params() -> StartupParams {
             "descriptor" if !value.is_empty() => {
                 params.opendata_descriptor = Some(decode_url(value));
             }
+            "dbExplorer" if value == "1" => {
+                params.db_explorer_only = true;
+            }
             _ => {}
         }
     }

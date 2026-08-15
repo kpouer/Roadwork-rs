@@ -385,3 +385,39 @@ pub async fn save_polygon_groups(payload: JsValue) -> Result<(), JsValue> {
     store_put_back(store);
     Ok(())
 }
+
+/// Lists the application tables for the DB explorer.
+#[wasm_bindgen]
+pub async fn get_db_tables() -> Result<JsValue, JsValue> {
+    info!("[wasm] get_db_tables");
+    let store = store_take().await?;
+    let tables = store.list_tables().map_err(js_err)?;
+    store_put_back(store);
+    serialize_data(&tables)
+}
+
+/// Reads a paginated page of `table` for the DB explorer.
+#[wasm_bindgen]
+pub async fn get_db_table(table: &str, offset: u32, limit: u32) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_db_table {table} offset={offset} limit={limit}");
+    let store = store_take().await?;
+    let data = store
+        .table_rows(table, offset as i64, limit as i64)
+        .map_err(js_err)?;
+    store_put_back(store);
+    serialize_data(&data)
+}
+
+/// Deletes a row of `table`, identified by `keys_json` (a JSON array of
+/// `[column, value]` pairs). Deleting a `cache` row also removes the linked
+/// cached rows for the same service.
+#[wasm_bindgen]
+pub async fn delete_db_row(table: &str, keys_json: &str) -> Result<usize, JsValue> {
+    info!("[wasm] delete_db_row {table}");
+    let keys: Vec<(String, serde_json::Value)> = serde_json::from_str(keys_json)
+        .map_err(|e| JsValue::from_str(&format!("Invalid delete keys: {e}")))?;
+    let mut store = store_take().await?;
+    let deleted = store.delete_table_row(table, &keys).map_err(js_err)?;
+    store_put_back(store);
+    Ok(deleted)
+}

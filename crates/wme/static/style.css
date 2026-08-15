@@ -463,6 +463,10 @@
     display: none;
 }
 
+.rw-app-overlay.rw-app-no-header .rw-helper-header {
+    display: none;
+}
+
 .rw-app-iframe {
     flex: 1;
     width: 100%;

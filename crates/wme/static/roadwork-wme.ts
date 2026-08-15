@@ -56,6 +56,18 @@ window.addEventListener("message", async (e) => {
         if (wasmIframe?.contentWindow && e.source === wasmIframe.contentWindow) {
             wasmIframe.contentWindow.postMessage({ type: "ROADWORK_WASM_ACK" }, "*");
         }
+    } else if (e.data?.type === "ROADWORK_APP_RPC") {
+        const { id, method, args } = e.data;
+        const source = e.source as Window | null;
+        try {
+            const result = await rpcCall(method, args || []);
+            source?.postMessage({ type: "ROADWORK_APP_RPC_RESULT", id, result }, "*");
+        } catch (err) {
+            source?.postMessage(
+                { type: "ROADWORK_APP_RPC_ERROR", id, error: String(err) },
+                "*"
+            );
+        }
     }
 });
 
@@ -2799,6 +2811,16 @@ async function buildPanel(tabPane: Element) {
         window.postMessage({ type: "ROADWORK_OPEN_APP" }, "*");
     });
     panelEl.appendChild(launchBtn);
+
+    const exploreBtn = document.createElement("button");
+    exploreBtn.className = "roadwork-btn";
+    exploreBtn.textContent = "Explore DB";
+    exploreBtn.title = "Explorer la base de données locale";
+    exploreBtn.addEventListener("click", () => {
+        console.log("[Roadwork] opening DB explorer");
+        window.postMessage({ type: "ROADWORK_OPEN_APP", dbExplorer: true }, "*");
+    });
+    panelEl.appendChild(exploreBtn);
 
     const logLevelDiv = document.createElement("div");
     logLevelDiv.className = "roadwork-field";
