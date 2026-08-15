@@ -2287,6 +2287,7 @@ async function refreshDataPanelFromViewport() {
         console.warn("[Roadwork] Failed to refresh data panel from viewport:", e);
     }
     renderOpendataToMap();
+    updateDataPanel();
 }
 
 function createDataPanel() {
