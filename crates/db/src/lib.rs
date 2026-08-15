@@ -356,14 +356,28 @@ impl Store {
     }
 
     /// Returns the number of cached roadworks per service, sorted by service.
+    /// Every service with a `cache` snapshot appears, even with zero items.
     pub fn roadwork_counts(&self) -> Result<Vec<ServiceCount>> {
-        self.service_counts("SELECT service, COUNT(*) FROM roadwork GROUP BY service")
+        self.service_counts(
+            "SELECT c.service, COUNT(r.service)
+             FROM cache c
+             LEFT JOIN roadwork r ON r.service = c.service
+             WHERE c.type = 'roadwork'
+             GROUP BY c.service",
+        )
     }
 
     /// Returns the number of cached opendata items per service, sorted by
-    /// service.
+    /// service. Every service with a `cache` snapshot appears, even with zero
+    /// items.
     pub fn opendata_counts_list(&self) -> Result<Vec<ServiceCount>> {
-        self.service_counts("SELECT service, COUNT(*) FROM data GROUP BY service")
+        self.service_counts(
+            "SELECT c.service, COUNT(d.service)
+             FROM cache c
+             LEFT JOIN data d ON d.service = c.service
+             WHERE c.type = 'opendata'
+             GROUP BY c.service",
+        )
     }
 
     /// Runs a `GROUP BY service` count query, sorting the result by service.
