@@ -117,34 +117,34 @@ impl OpendataService {
 
         let count = elements.len();
 
-        let id_failures = self.path_failures(&elements, |element| {
-            self.path_matches_in(element, &descriptor.id, json_tools::is_scalar)
-        });
-        report.push(PathValidation::new(
-            "id",
-            &descriptor.id,
-            true,
-            "scalar",
-            id_failures,
-            count,
-            None,
-        ));
+        if let Some(id) = descriptor.id.as_deref() {
+            let id_failures = self.path_failures(&elements, |element| {
+                self.path_matches_in(element, id, json_tools::is_scalar)
+            });
+            report.push(PathValidation::new(
+                "id",
+                id,
+                false,
+                "scalar",
+                id_failures,
+                count,
+                None,
+            ));
+        }
 
         let duplicate_failures = self.duplicate_id_failures(&elements);
-        report.push(PathValidation::new(
-            "id unique",
-            &descriptor.id,
-            true,
-            "unique",
-            duplicate_failures,
-            count,
-            None,
-        ));
+        if !duplicate_failures.is_empty() {
+            warn!(
+                "{} duplicate id(s), duplicates will get an auto-incremented id",
+                duplicate_failures.len()
+            );
+        }
 
         report.extend(
             [
                 self.optional_scalar_report(&elements, "latitude", descriptor.latitude.as_ref()),
                 self.optional_scalar_report(&elements, "longitude", descriptor.longitude.as_ref()),
+                self.optional_scalar_report(&elements, "reference", descriptor.reference.as_ref()),
                 self.optional_scalar_report(
                     &elements,
                     "description",
@@ -291,9 +291,12 @@ impl OpendataService {
     }
 
     fn duplicate_id_failures(&self, elements: &[Value]) -> Vec<usize> {
+        let Some(id_path) = self.service_descriptor.id.as_deref() else {
+            return Vec::new();
+        };
         let mut occurrences: HashMap<String, Vec<usize>> = HashMap::new();
         for (index, element) in elements.iter().enumerate() {
-            if let Ok(id) = element.get_path(&self.service_descriptor.id) {
+            if let Ok(id) = element.get_path(id_path) {
                 occurrences.entry(id).or_default().push(index);
             }
         }
@@ -496,8 +499,10 @@ impl OpendataService {
     }
 
     pub fn build_opendata(&self, node: &Value) -> Result<Opendata, MyError> {
+        let (id, reference) = self.extract_id_and_reference(node);
         let mut opendata = Opendata {
-            id: node.get_path(&self.service_descriptor.id)?,
+            id,
+            reference,
             ..Opendata::default()
         };
         if let Some(latitude_path) = &self.service_descriptor.latitude
@@ -521,11 +526,32 @@ impl OpendataService {
         Ok(opendata)
     }
 
+    /// Extracts the id and reference values of a raw element. The id comes from
+    /// the optional descriptor `id` path (empty when unset); the reference comes
+    /// from the descriptor `reference` path when set, falling back to the id.
+    fn extract_id_and_reference(&self, node: &Value) -> (String, Option<String>) {
+        let id = self
+            .service_descriptor
+            .id
+            .as_deref()
+            .and_then(|path| node.get_path(path).ok())
+            .unwrap_or_default();
+        let reference = self
+            .service_descriptor
+            .reference
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+            .and_then(|path| node.get_path(path).ok())
+            .filter(|value| !value.is_empty())
+            .or_else(|| (!id.is_empty()).then(|| id.clone()));
+        (id, reference)
+    }
+
     pub fn build_opendata_preview(&self, node: &Value) -> Opendata {
+        let (id, reference) = self.extract_id_and_reference(node);
         let mut opendata = Opendata {
-            id: node
-                .get_path(&self.service_descriptor.id)
-                .unwrap_or_default(),
+            id,
+            reference,
             ..Opendata::default()
         };
         if let Some(latitude_path) = &self.service_descriptor.latitude
@@ -604,6 +630,11 @@ impl OpendataService {
             opendata: self.build_opendata(node)?,
             ..Roadwork::default()
         };
+        if roadwork_builder.opendata.id.is_empty() {
+            return Err(MyError::ParsingError(
+                "Cannot build roadwork as id is empty".to_string(),
+            ));
+        }
         self.fill_roadwork_fields(node, &mut roadwork_builder);
         let date_range = self.get_date_range(node)?;
         roadwork_builder.start = date_range.from.timestamp_millis();

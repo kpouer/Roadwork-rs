@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ServiceDescriptor {
     pub metadata: Metadata,
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

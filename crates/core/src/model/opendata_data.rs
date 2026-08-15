@@ -13,9 +13,22 @@ pub struct OpendataData {
 impl OpendataData {
     pub fn new(source: &str, opendata: Vec<Opendata>) -> Self {
         let mut opendata_map = HashMap::new();
-        opendata.into_iter().for_each(|item| {
+        let mut next_auto: u64 = 1;
+        for mut item in opendata {
+            let key = if !item.id.is_empty() && !opendata_map.contains_key(&item.id) {
+                item.id.clone()
+            } else {
+                loop {
+                    let candidate = next_auto.to_string();
+                    next_auto += 1;
+                    if !opendata_map.contains_key(&candidate) {
+                        break candidate;
+                    }
+                }
+            };
+            item.id = key;
             opendata_map.insert(item.id.clone(), item);
-        });
+        }
         Self {
             source: source.to_string(),
             opendata: opendata_map,

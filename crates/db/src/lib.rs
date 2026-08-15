@@ -184,7 +184,7 @@ impl Store {
         tx.execute("DELETE FROM data WHERE service = ?1", params![service])?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO data(service, id, latitude, longitude, polygons, description) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO data(service, id, latitude, longitude, polygons, description, reference) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
             for item in data.iter() {
                 let polygons = item
@@ -198,7 +198,8 @@ impl Store {
                     item.latitude,
                     item.longitude,
                     polygons,
-                    item.description
+                    item.description,
+                    item.reference
                 ])?;
             }
         }
@@ -209,7 +210,7 @@ impl Store {
     /// Returns the cached opendata items for `service`. Opendata never expires.
     pub fn get_opendata(&self, service: &str) -> Result<Option<OpendataData>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, latitude, longitude, polygons, description FROM data WHERE service = ?1",
+            "SELECT id, latitude, longitude, polygons, description, reference FROM data WHERE service = ?1",
         )?;
         let rows = stmt.query_map(params![service], |row| {
             Ok((
@@ -218,6 +219,7 @@ impl Store {
                 row.get::<_, f64>(2)?,
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
             ))
         })?;
         collect_opendata(service, rows)
@@ -236,7 +238,7 @@ impl Store {
         let (lat_min, lat_max) = ordered(lat_min, lat_max);
         let (lon_min, lon_max) = ordered(lon_min, lon_max);
         let mut stmt = self.conn.prepare(
-            "SELECT id, latitude, longitude, polygons, description FROM data
+            "SELECT id, latitude, longitude, polygons, description, reference FROM data
              WHERE service = ?1 AND latitude BETWEEN ?2 AND ?3 AND longitude BETWEEN ?4 AND ?5",
         )?;
         let rows = stmt.query_map(
@@ -248,6 +250,7 @@ impl Store {
                     row.get::<_, f64>(2)?,
                     row.get::<_, Option<String>>(3)?,
                     row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             },
         )?;
@@ -380,17 +383,27 @@ fn collect_roadworks(
 /// Assembles the opendata rows into an `OpendataData`, or `None` when empty.
 fn collect_opendata(
     service: &str,
-    rows: impl Iterator<Item = rusqlite::Result<(String, f64, f64, Option<String>, Option<String>)>>,
+    rows: impl Iterator<
+        Item = rusqlite::Result<(
+            String,
+            f64,
+            f64,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )>,
+    >,
 ) -> Result<Option<OpendataData>> {
     let mut opendata = HashMap::new();
     for row in rows {
-        let (id, latitude, longitude, polygons, description) = row?;
+        let (id, latitude, longitude, polygons, description, reference) = row?;
         let polygons: Option<Vec<Polygon>> =
             polygons.map(|p| serde_json::from_str(&p)).transpose()?;
         opendata.insert(
             id.clone(),
             Opendata {
                 id,
+                reference,
                 latitude,
                 longitude,
                 polygons,
@@ -409,7 +422,6 @@ fn collect_opendata(
 }
 
 const DDL: &str = "
-PRAGMA user_version = 2;
 CREATE TABLE IF NOT EXISTS cache (
     service    TEXT NOT NULL,
     type       TEXT NOT NULL,
@@ -423,6 +435,7 @@ CREATE TABLE IF NOT EXISTS data (
     longitude   REAL NOT NULL,
     polygons    TEXT,
     description TEXT,
+    reference   TEXT,
     PRIMARY KEY (service, id)
 );
 CREATE INDEX IF NOT EXISTS idx_data_location ON data(latitude, longitude);
@@ -441,7 +454,30 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 ";
 
+const SCHEMA_VERSION: i64 = 3;
+
 fn init_schema(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(&format!("PRAGMA foreign_keys = ON;\n{DDL}"))?;
+    migrate(conn)?;
+    Ok(())
+}
+
+/// Migrates an existing database to the current [`SCHEMA_VERSION`].
+fn migrate(conn: &mut Connection) -> Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    if version < 3 {
+        let has_reference: bool = conn
+            .prepare("PRAGMA table_info(data)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|column| column.ok())
+            .any(|name| name == "reference");
+        if !has_reference {
+            conn.execute_batch("ALTER TABLE data ADD COLUMN reference TEXT")?;
+        }
+    }
+    conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
     Ok(())
 }

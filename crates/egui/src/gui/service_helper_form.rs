@@ -12,6 +12,7 @@ pub(crate) const LABEL_WIDTH: f32 = 150.0;
 pub(crate) struct FieldsValidation {
     pub data_array: bool,
     pub id: bool,
+    pub reference: bool,
     pub latitude: bool,
     pub longitude: bool,
     pub polygon: bool,
@@ -27,6 +28,7 @@ pub(crate) struct FieldsValidation {
 pub(crate) struct FieldsValues {
     pub data_array: Option<String>,
     pub id: Option<String>,
+    pub reference: Option<String>,
     pub latitude: Option<String>,
     pub longitude: Option<String>,
     pub polygon: Option<String>,
@@ -55,6 +57,7 @@ impl FieldsValidation {
         Self {
             data_array: true,
             id: true,
+            reference: true,
             latitude: true,
             longitude: true,
             polygon: true,
@@ -111,8 +114,23 @@ pub(crate) fn show(
         ui,
         validation.id,
         "id must point to a scalar value in the fetched JSON",
-        |ui, tooltip| text_row(ui, "id", &mut descriptor.id, tooltip, Some(&scalar_wand)),
+        |ui, tooltip| optional_text_row(ui, "id", &mut descriptor.id, tooltip, Some(&scalar_wand)),
         values.id.as_deref(),
+    );
+    changed |= validated(
+        ui,
+        validation.reference,
+        "reference must point to a scalar value in the fetched JSON",
+        |ui, tooltip| {
+            optional_text_row(
+                ui,
+                "reference",
+                &mut descriptor.reference,
+                tooltip,
+                Some(&scalar_wand),
+            )
+        },
+        values.reference.as_deref(),
     );
     changed |= validated(
         ui,

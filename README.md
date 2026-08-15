@@ -73,7 +73,8 @@ A descriptor contains a first object called **metadata** that contains all infor
 |-------------------------|-----------|------------------------------------|-------------------------------------------------|
 | metadata                | yes       | A metadata structure               | see next chapter                                |
 | data_array           | yes       | $.records                          | The path of the roadwork array                  |
-| id                      | yes       | @.recordid                         | The path of the id field within a roadwork item |
+| id                      | no        | @.recordid                         | The path of the id field within a roadwork item. If absent, an auto-incremented id is generated |
+| reference               | no        | @.recordid                         | The path of the original reference to preserve when the id is missing or duplicated |
 | latitude                | yes       | @.geometry.coordinates[1]          | The path of the latitude                        |
 | longitude               | yes       | @.geometry.coordinates[0]          | The path of the longitude                       |
 | road                    | no        | @.fields.voie                      | The path of the road information                |

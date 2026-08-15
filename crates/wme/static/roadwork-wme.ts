@@ -46,7 +46,7 @@ window.addEventListener("message", async (e) => {
             dataSource = result.name!;
             saveDataSource();
             updateDataPanel();
-            postHelperMessage({ type: "ROADWORK_SAVE_DONE", name: result.name });
+            postHelperMessage({ type: "ROADWORK_SAVE_DONE", name: result.name, count: result.count });
         } else {
             postHelperMessage({ type: "ROADWORK_SAVE_ERROR", error: result.error });
         }
@@ -1943,6 +1943,7 @@ interface SaveDescriptorResult {
     ok: boolean;
     name?: string;
     error?: string;
+    count?: number;
 }
 
 async function saveOpendataDescriptorFromHelper(
@@ -2027,7 +2028,8 @@ async function saveOpendataDescriptorFromHelper(
         setStatus(msg, "error");
         return { ok: false, error: msg };
     }
-    return { ok: true, name };
+    const count = Object.keys(currentOpendata[name]?.opendata ?? {}).length;
+    return { ok: true, name, count };
 }
 
 async function renderOpendataList() {
@@ -2215,7 +2217,7 @@ function updateDataPanel() {
                     tdSource.textContent = filter;
 
                     const tdId = document.createElement("td");
-                    tdId.textContent = id;
+                    tdId.textContent = od.reference ?? id;
 
                     const tdDesc = document.createElement("td");
                     tdDesc.className = "rw-desc";

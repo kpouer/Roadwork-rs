@@ -283,8 +283,9 @@ fn data_array_pointer(path: &str) -> Option<String> {
     Some(format!("/{}", base.replace('.', "/")))
 }
 
-/// Columns shown in the preview table. `id` is always present (required
-/// field); the optional ones appear only when selected in the descriptor.
+/// Columns shown in the preview table. The `id` column is always present
+/// (falls back to the reference when the id is not configured); the optional
+/// ones appear only when selected in the descriptor.
 struct TableColumns {
     id: bool,
     latitude: bool,
@@ -327,10 +328,16 @@ impl PreviewRow {
                 .and_then(|path| ods.path_fetched_value_in(element, path))
                 .unwrap_or_default()
         };
+        let id = ods
+            .path_fetched_value_in(element, descriptor.id.as_deref().unwrap_or_default())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                let reference = fetched(&descriptor.reference);
+                (!reference.is_empty()).then_some(reference)
+            })
+            .unwrap_or_default();
         Self {
-            id: ods
-                .path_fetched_value_in(element, &descriptor.id)
-                .unwrap_or_default(),
+            id,
             latitude: fetched(&descriptor.latitude),
             longitude: fetched(&descriptor.longitude),
             polygon_count: descriptor
@@ -352,8 +359,14 @@ impl PreviewRow {
                 _ => String::new(),
             }
         };
+        let reference = fetched(item.get("reference"));
+        let id = if reference.is_empty() {
+            fetched(item.get("id"))
+        } else {
+            reference
+        };
         Self {
-            id: fetched(item.get("id")),
+            id,
             latitude: fetched(item.get("latitude")),
             longitude: fetched(item.get("longitude")),
             polygon_count: item
@@ -537,7 +550,13 @@ impl ServiceHelperDialog {
                         .color(ui.visuals().hyperlink_color),
                 );
                 ui.add_space(4.0);
-                ui.label(format!("Service \"{name}\" saved to extension"));
+                let label = match state.count {
+                    Some(count) => {
+                        format!("Service \"{name}\" saved to extension ({count} roadworks)")
+                    }
+                    None => format!("Service \"{name}\" saved to extension"),
+                };
+                ui.label(label);
                 ui.add_space(8.0);
                 if ui.button("OK").clicked() {
                     ok = true;
@@ -1695,7 +1714,8 @@ impl ServiceHelperDialog {
             return false;
         };
         !descriptor.data_array.trim().is_empty()
-            || !descriptor.id.trim().is_empty()
+            || descriptor.id.is_some()
+            || descriptor.reference.is_some()
             || descriptor.latitude.is_some()
             || descriptor.longitude.is_some()
             || descriptor.polygon.is_some()
@@ -1720,7 +1740,8 @@ impl ServiceHelperDialog {
         };
         FieldsValues {
             data_array: path(&descriptor.data_array),
-            id: path(&descriptor.id),
+            id: descriptor.id.as_deref().and_then(path),
+            reference: optional_path(&descriptor.reference),
             latitude: optional_path(&descriptor.latitude),
             longitude: optional_path(&descriptor.longitude),
             polygon: optional_path(&descriptor.polygon),
@@ -1758,7 +1779,12 @@ impl ServiceHelperDialog {
         };
         FieldsValidation {
             data_array: self.opendata_array_is_valid(),
-            id: ods.path_points_to_scalar_in(&element, &descriptor.id),
+            id: descriptor
+                .id
+                .as_deref()
+                .map(|path| ods.path_points_to_scalar_in(&element, path))
+                .unwrap_or(true),
+            reference: scalar(&descriptor.reference),
             latitude: scalar(&descriptor.latitude),
             longitude: scalar(&descriptor.longitude),
             polygon: descriptor

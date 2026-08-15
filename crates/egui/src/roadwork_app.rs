@@ -98,6 +98,8 @@ pub(crate) struct SaveProgressState {
     pub fraction: f32,
     pub done: Option<String>,
     pub error: Option<String>,
+    /// Number of opendata records stored by the extension, when known.
+    pub count: Option<u64>,
     pub last_update: f64,
 }
 
@@ -109,6 +111,7 @@ impl SaveProgressState {
             fraction: -1.0,
             done: None,
             error: None,
+            count: None,
             last_update: js_sys::Date::now(),
         }
     }
@@ -127,6 +130,7 @@ pub(crate) fn start_save_progress() {
         state.fraction = -1.0;
         state.done = None;
         state.error = None;
+        state.count = None;
         state.last_update = js_sys::Date::now();
     });
 }
@@ -139,6 +143,7 @@ pub(crate) fn update_save_progress(stage: &str, fraction: f32) {
         state.fraction = fraction;
         state.done = None;
         state.error = None;
+        state.count = None;
         state.last_update = js_sys::Date::now();
     });
 }
@@ -198,11 +203,16 @@ pub fn setup_save_progress_listener() {
                 let name = js_sys::Reflect::get(&obj, &js_sys::JsString::from("name"))
                     .ok()
                     .and_then(|v| v.as_string());
+                let count = js_sys::Reflect::get(&obj, &js_sys::JsString::from("count"))
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as u64);
                 SAVE_PROGRESS.with(|cell| {
                     let mut state = cell.borrow_mut();
                     state.active = false;
                     state.done = name;
                     state.error = None;
+                    state.count = count;
                     state.last_update = js_sys::Date::now();
                 });
             }
