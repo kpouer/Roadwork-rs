@@ -113,6 +113,7 @@ const DEFAULTS = {
 };
 
 const OPENDATA_LAYER = "Opendata";
+const OPENDATA_TABLE_MAX = 100;
 
 let wmeSDK: WmeSDK | null = null;
 let settings = {...DEFAULTS};
@@ -1566,7 +1567,7 @@ async function queryRoadworksInViewport(bounds) {
 }
 
 async function queryOpendataInViewport(name, bounds) {
-    const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax];
+    const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax, OPENDATA_TABLE_MAX];
     let data = await rpcCall("get_opendata_in_bbox", args);
     if (!data || !data.opendata) {
         const cached = await rpcCall("get_opendata_cached", [name]).catch(() => null);
@@ -1829,7 +1830,10 @@ function renderOpendataToMap() {
         if (svc.visible === false) continue;
         const data = currentOpendata[name];
         if (!data || !data.opendata) continue;
+        let rendered = 0;
         for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
+            if (rendered >= OPENDATA_TABLE_MAX) break;
+            rendered++;
             if (od.polygons && od.polygons.length > 0) {
                 for (let pIdx = 0; pIdx < od.polygons.length; pIdx++) {
                     const polygon = od.polygons[pIdx];
@@ -2209,6 +2213,7 @@ function updateDataPanel() {
             const data = currentOpendata[filter];
             if (data && data.opendata) {
                 for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
+                    if (count >= OPENDATA_TABLE_MAX) break;
                     count++;
                     const tr = document.createElement("tr");
                     tr.title = id;
@@ -2272,6 +2277,18 @@ function updateDataPanel() {
     }
 }
 
+async function refreshDataPanelFromViewport() {
+    if (!dataSource) return;
+    const bounds = getViewportBounds();
+    if (!bounds) return;
+    try {
+        currentOpendata[dataSource] = await queryOpendataInViewport(dataSource, bounds);
+    } catch (e) {
+        console.warn("[Roadwork] Failed to refresh data panel from viewport:", e);
+    }
+    renderOpendataToMap();
+}
+
 function createDataPanel() {
     dataToggleBtn = document.createElement("button");
     dataToggleBtn.className = "rw-data-toggle-btn";
@@ -2282,6 +2299,7 @@ function createDataPanel() {
         dataPanelEl.classList.remove("rw-hidden");
         dataToggleBtn.style.display = "none";
         updateDataPanel();
+        refreshDataPanelFromViewport();
     });
     if (toolbarEl) toolbarEl.appendChild(dataToggleBtn);
 
@@ -2350,6 +2368,7 @@ function createDataPanel() {
         dataSource = dataSourceSelectEl.value;
         saveDataSource();
         updateDataPanel();
+        refreshDataPanelFromViewport();
     });
     controls.appendChild(dataSourceSelectEl);
 

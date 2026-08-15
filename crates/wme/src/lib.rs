@@ -313,11 +313,19 @@ pub async fn get_opendata_in_bbox(
     lon_min: f64,
     lat_max: f64,
     lon_max: f64,
+    limit: Option<u32>,
 ) -> Result<JsValue, JsValue> {
-    info!("[wasm] get_opendata_in_bbox {service_name}");
+    info!("[wasm] get_opendata_in_bbox {service_name} limit={limit:?}");
     let store = store_take().await?;
     let result = store
-        .get_opendata_in_bbox(service_name, lat_min, lon_min, lat_max, lon_max)
+        .get_opendata_in_bbox(
+            service_name,
+            lat_min,
+            lon_min,
+            lat_max,
+            lon_max,
+            limit.map(|l| l as u64),
+        )
         .map_err(js_err)?;
     store_put_back(store);
     match result {

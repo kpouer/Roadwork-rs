@@ -21,7 +21,7 @@ declare global {
         get_opendata_cached(service: unknown): Promise<unknown>;
         get_opendata_counts(): Promise<unknown>;
         get_roadworks_in_bbox(service: unknown, latMin: unknown, lonMin: unknown, latMax: unknown, lonMax: unknown): Promise<unknown>;
-        get_opendata_in_bbox(service: unknown, latMin: unknown, lonMin: unknown, latMax: unknown, lonMax: unknown): Promise<unknown>;
+        get_opendata_in_bbox(service: unknown, latMin: unknown, lonMin: unknown, latMax: unknown, lonMax: unknown, limit?: unknown): Promise<unknown>;
         store_opendata_data(service: unknown, dataJson: unknown): Promise<unknown>;
         clear_roadworks_cache(service: unknown): Promise<unknown>;
         clear_opendata_cache(service: unknown): Promise<unknown>;

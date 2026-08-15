@@ -227,6 +227,8 @@ impl Store {
 
     /// Returns the cached opendata items for `service` whose point falls inside
     /// the given latitude/longitude rectangle. The bound order does not matter.
+    /// When `limit` is provided, at most that many items are returned, ordered
+    /// by `id` for a deterministic subset.
     pub fn get_opendata_in_bbox(
         &self,
         service: &str,
@@ -234,26 +236,35 @@ impl Store {
         lon_min: f64,
         lat_max: f64,
         lon_max: f64,
+        limit: Option<u64>,
     ) -> Result<Option<OpendataData>> {
         let (lat_min, lat_max) = ordered(lat_min, lat_max);
         let (lon_min, lon_max) = ordered(lon_min, lon_max);
-        let mut stmt = self.conn.prepare(
+        let mut sql = String::from(
             "SELECT id, latitude, longitude, polygons, description, reference FROM data
              WHERE service = ?1 AND latitude BETWEEN ?2 AND ?3 AND longitude BETWEEN ?4 AND ?5",
-        )?;
-        let rows = stmt.query_map(
-            params![service, lat_min, lat_max, lon_min, lon_max],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, f64>(1)?,
-                    row.get::<_, f64>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                ))
-            },
-        )?;
+        );
+        if limit.is_some() {
+            sql.push_str(" ORDER BY id LIMIT ?6");
+        }
+        let mut stmt = self.conn.prepare(&sql)?;
+        let map = |row: &rusqlite::Row<'_>| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, f64>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        };
+        let rows = match limit {
+            Some(limit) => stmt.query_map(
+                params![service, lat_min, lat_max, lon_min, lon_max, limit as i64],
+                map,
+            )?,
+            None => stmt.query_map(params![service, lat_min, lat_max, lon_min, lon_max], map)?,
+        };
         collect_opendata(service, rows)
     }
 
