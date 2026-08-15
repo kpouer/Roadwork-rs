@@ -207,32 +207,42 @@ impl OpendataService {
         );
 
         let locale = descriptor.metadata.get_locale();
-        for (label, date) in [
-            ("from", descriptor.from.as_ref()),
-            ("to", descriptor.to.as_ref()),
-        ] {
-            let Some(date) = date else { continue };
-            if date.path.trim().is_empty() {
-                continue;
-            }
-            let failures = self.optional_path_failures(&elements, |element| {
-                element
-                    .get_path(&date.path)
-                    .map(|value| date.parse(&value, locale).is_ok())
-                    .unwrap_or(false)
-            });
-            report.push(PathValidation::new(
-                label,
-                &date.path,
-                false,
-                "parseable date",
-                failures,
-                count,
-                None,
-            ));
+
+        if let Some(date) = &descriptor.from {
+            self.validate_date(&mut report, &elements, count, locale, "from", date);
+        }
+        if let Some(date) = &descriptor.to {
+            self.validate_date(&mut report, &elements, count, locale, "from", date);
         }
 
         report
+    }
+
+    fn validate_date(
+        &self,
+        report: &mut Vec<PathValidation>,
+        elements: &Vec<Value>,
+        count: usize,
+        locale: Tz,
+        label: &str,
+        date: &DateParser,
+    ) {
+        if date.path.trim().is_empty() {}
+        let failures = self.optional_path_failures(&elements, |element| {
+            element
+                .get_path(&date.path)
+                .map(|value| date.parse(&value, locale).is_ok())
+                .unwrap_or(false)
+        });
+        report.push(PathValidation::new(
+            label,
+            &date.path,
+            false,
+            "parseable date",
+            failures,
+            count,
+            None,
+        ));
     }
 
     pub(crate) fn optional_scalar_report(
