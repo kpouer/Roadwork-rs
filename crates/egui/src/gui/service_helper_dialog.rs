@@ -162,7 +162,7 @@ impl ImportRunner {
     fn poll_inner(&mut self, state: &Arc<Mutex<ImportProgress>>, ctx: &Context) -> bool {
         if self.array_pointer.is_none() {
             if self.ods.service_descriptor.data_array.trim().is_empty() {
-                let message = "Unable to parse the data: the descriptor has no dataArray path — \
+                let message = "Unable to parse the data: the descriptor has no data_array path — \
                                fill it in the descriptor form before importing."
                     .to_string();
                 log::error!("{message}");
@@ -814,7 +814,7 @@ impl ServiceHelperDialog {
                     } else if !self.raw_json.trim().is_empty() {
                         ui.colored_label(
                             ui.visuals().hyperlink_color,
-                            "JSON loaded — pick the dataArray path in the descriptor (✨) \
+                            "JSON loaded — pick the data_array path in the descriptor (✨) \
                              to build the data.",
                         );
                     } else {
@@ -1282,7 +1282,7 @@ impl ServiceHelperDialog {
                         toasts.success(format!("Data imported from {file_name}"));
                     } else {
                         toasts.success(format!(
-                            "JSON imported from {file_name} — pick the dataArray path (✨) to build the data"
+                            "JSON imported from {file_name} — pick the data_array path (✨) to build the data"
                         ));
                     }
                 }
@@ -1290,7 +1290,7 @@ impl ServiceHelperDialog {
         }
     }
 
-    /// Fills `dataArray` with the unique array found in the fetched/imported
+    /// Fills `data_array` with the unique array found in the fetched/imported
     /// JSON, if any. Returns `true` when the path was filled.
     fn auto_fill_data_array(&mut self) -> bool {
         if self.array_paths.len() != 1 {

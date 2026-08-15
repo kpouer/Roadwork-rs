@@ -72,7 +72,7 @@ A descriptor contains a first object called **metadata** that contains all infor
 | field                   | mandatory | example                            | description                                     |
 |-------------------------|-----------|------------------------------------|-------------------------------------------------|
 | metadata                | yes       | A metadata structure               | see next chapter                                |
-| dataArray           | yes       | $.records                          | The path of the roadwork array                  |
+| data_array           | yes       | $.records                          | The path of the roadwork array                  |
 | id                      | yes       | @.recordid                         | The path of the id field within a roadwork item |
 | latitude                | yes       | @.geometry.coordinates[1]          | The path of the latitude                        |
 | longitude               | yes       | @.geometry.coordinates[0]          | The path of the longitude                       |

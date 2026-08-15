@@ -11,7 +11,7 @@
     },
     "locale": "en_US"
   },
-  "dataArray": "$",
+  "data_array": "$",
   "id": "$.objectid",
   "latitude": "$.shape.coordinates[0][1]",
   "longitude": "$.shape.coordinates[0][0]",

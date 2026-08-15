@@ -26,6 +26,5 @@ pub struct ServiceDescriptor {
     pub from: Option<DateParser>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<DateParser>,
-    #[serde(rename = "dataArray")]
     pub data_array: String,
 }

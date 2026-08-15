@@ -84,7 +84,7 @@ pub(crate) fn show(
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: None,
-        hint: "Fetch the JSON first and make sure dataArray points to the array of roadworks.",
+        hint: "Fetch the JSON first and make sure data_array points to the array of roadworks.",
     };
     let polygon_wand = Wand {
         scalars: &path_candidates.scalars,
@@ -255,13 +255,13 @@ pub(crate) fn roadwork_array_row(
     validated(
         ui,
         valid,
-        "dataArray must point to an array in the fetched JSON",
+        "data_array must point to an array in the fetched JSON",
         |ui, tooltip| {
             let mut changed = false;
             ui.horizontal(|ui| {
                 let label = ui.add_sized(
                     [LABEL_WIDTH, 20.0],
-                    egui::Label::new(RichText::new("dataArray").strong()),
+                    egui::Label::new(RichText::new("data_array").strong()),
                 );
                 let width = ui.available_width() - 30.0;
                 let mut text = value.strip_suffix("[*]").unwrap_or(value).to_string();

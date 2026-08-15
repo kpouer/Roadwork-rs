@@ -11,7 +11,7 @@
     },
     "locale": "fr_FR"
   },
-  "dataArray": "$.features[*]",
+  "data_array": "$.features[*]",
   "id": "$.properties.id",
   "latitude": "$.geometry.coordinates[0][1]",
   "longitude": "$.geometry.coordinates[0][0]",

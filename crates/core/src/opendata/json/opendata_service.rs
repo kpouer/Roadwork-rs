@@ -98,7 +98,7 @@ impl OpendataService {
 
         let array_valid = self.roadwork_array_targets_array(json) && !elements.is_empty();
         report.push(PathValidation {
-            label: "dataArray",
+            label: "data_array",
             path: descriptor.data_array.to_owned(),
             required: true,
             expected: "array of opendata",
@@ -310,7 +310,7 @@ impl OpendataService {
             .unwrap_or_default()
     }
 
-    /// Returns the elements matched by `dataArray`, borrowing from the document.
+    /// Returns the elements matched by `data_array`, borrowing from the document.
     ///
     /// This performs a single `jsonpath` query, avoiding the full-element cloning
     /// done by [`Self::roadwork_elements_value`]. It is safe to reuse the returned

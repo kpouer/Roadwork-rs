@@ -42,5 +42,5 @@
       }
     ]
   },
-  "dataArray": "$.features[*]"
+  "data_array": "$.features[*]"
 }

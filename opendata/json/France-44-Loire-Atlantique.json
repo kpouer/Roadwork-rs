@@ -42,5 +42,5 @@
       }
     ]
   },
-  "dataArray": "$.records[*]"
+  "data_array": "$.records[*]"
 }

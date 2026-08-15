@@ -13,7 +13,7 @@
     },
     "locale": "fr_FR"
   },
-  "dataArray": "$.records[*]",
+  "data_array": "$.records[*]",
   "id": "$.fields.reference",
   "latitude": "$.fields.lattitude",
   "longitude": "$.fields.longitude",
