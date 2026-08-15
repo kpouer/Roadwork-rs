@@ -105,7 +105,7 @@ const DEFAULTS = {
 
 const OPENDATA_LAYER = "Opendata";
 
-let wmeSDK: WmeSDK = null;
+let wmeSDK: WmeSDK | null = null;
 let settings = {...DEFAULTS};
 let currentRoadworks: any = {};
 let currentOpendata: Record<string, any> = {};
@@ -114,31 +114,31 @@ let dataSource: string = "";
 let opendataFeatureIndex: Record<string, any> = {};
 let opendataListEl = null;
 let servicesData = [];
-let panelEl = null;
-let statusEl = null;
+let panelEl: HTMLDivElement | null = null;
+let statusEl: HTMLDivElement | null = null;
 let lastRefreshEl = null;
-let floatingPanelEl = null;
-let floatingTableBody = null;
-let floatingToggleBtn = null;
-let floatingTitleEl = null;
-let serviceSelectEl = null;
-let selectedRoadworkId = null;
+let floatingPanelEl: HTMLDivElement | null = null;
+let floatingTableBody: HTMLDivElement | null = null;
+let floatingToggleBtn: HTMLButtonElement | null = null;
+let floatingTitleEl: HTMLHeadElement | null = null;
+let serviceSelectEl: HTMLSelectElement | null = null;
+let selectedRoadworkId: string | null = null;
 let polygonGroups: any = {};
 let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
-let detailPanelEl = null;
+let detailPanelEl: HTMLDivElement | null = null;
 let hideFinished = false;
 let sortColumn = -1;
 let sortDirection = 'asc';
-let dataPanelEl = null;
-let dataToggleBtn = null;
-let dataTableBody = null;
-let dataSourceSelectEl = null;
-let dataUpdateBtn = null;
-let dataDeleteBtn = null;
-let dataEditBtn = null;
-let dataStatusEl = null;
-let dataDropzoneEl = null;
+let dataPanelEl: HTMLDivElement | null = null;
+let dataToggleBtn: HTMLButtonElement | null = null;
+let dataTableBody: HTMLTableSectionElement | null = null;
+let dataSourceSelectEl: HTMLSelectElement | null = null;
+let dataUpdateBtn: HTMLButtonElement | null = null;
+let dataDeleteBtn: HTMLButtonElement | null = null;
+let dataEditBtn: HTMLButtonElement | null = null;
+let dataStatusEl: HTMLDivElement | null = null;
+let dataDropzoneEl: HTMLDivElement | null = null;
 let viewportRefreshTimer = null;
 let viewportRefreshInFlight = false;
 let viewportRefreshPending = false;
@@ -985,7 +985,7 @@ function formatTimestamp(millis) {
     }
 }
 
-function findMatchingParen(str, openIdx) {
+function findMatchingParen(str: string, openIdx: number) {
     let depth = 1;
     let i = openIdx;
     while (depth > 0 && i < str.length - 1) {
@@ -996,11 +996,11 @@ function findMatchingParen(str, openIdx) {
     return i;
 }
 
-function parseCoordList(str) {
+function parseCoordList(str: string) {
     return str.split(',').map(p => p.trim().split(/\s+/).map(Number)).filter(c => c.length >= 2 && isFinite(c[0]) && isFinite(c[1]));
 }
 
-function splitTopLevelParens(str) {
+function splitTopLevelParens(str: string) {
     str = str.trim();
     const groups = [];
     let depth = 0;
@@ -1021,7 +1021,7 @@ function splitTopLevelParens(str) {
     return groups;
 }
 
-function parseRings(str) {
+function parseRings(str: string) {
     return splitTopLevelParens(str).map(ringStr => {
         const coords = parseCoordList(ringStr);
         if (coords.length < 3) return coords;
@@ -1132,7 +1132,7 @@ function buildPopupContent(rw) {
     return html;
 }
 
-let detailOverlayEl = null;
+let detailOverlayEl: HTMLDivElement | null = null;
 
 function createDetailPanel() {
     detailOverlayEl = document.createElement("div");
@@ -2388,10 +2388,10 @@ function createDataPanel() {
 }
 
 let toolbarEl = null;
-let polygonesPanelEl = null;
-let polygonesToggleBtn = null;
-let polygonesPanelBody = null;
-let polygonesDropzoneEl = null;
+let polygonesPanelEl: HTMLDivElement | null = null;
+let polygonesToggleBtn: HTMLButtonElement | null = null;
+let polygonesPanelBody: HTMLDivElement | null = null;
+let polygonesDropzoneEl: HTMLDivElement | null = null;
 
 function addPolygonGroup(name: string, features) {
     const gid = "group_" + nextGroupId;
@@ -3049,7 +3049,7 @@ async function init() {
                 return;
             }
 
-            let rwId = null;
+            let rwId : string | null = null;
             if (featureId.startsWith("roadwork-marker-")) {
                 rwId = featureId.replace("roadwork-marker-", "");
             } else if (featureId.startsWith("roadwork-polygon-")) {
