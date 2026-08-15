@@ -964,13 +964,16 @@ impl ServiceHelperDialog {
 
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Sample data").strong());
-                    if self.opendata_count > 0 {
+                    if let Some(count) = self.data_count() {
                         ui.separator();
-                        ui.label(format!(
-                            "{} items · {}",
-                            self.opendata_count,
-                            format_bytes(self.opendata_bytes)
-                        ));
+                        if self.opendata_bytes > 0 {
+                            ui.label(format!(
+                                "{count} data · {}",
+                                format_bytes(self.opendata_bytes)
+                            ));
+                        } else {
+                            ui.label(format!("{count} data"));
+                        }
                     }
                 });
                 if let Some(report) = &self.validation_report {
@@ -989,6 +992,18 @@ impl ServiceHelperDialog {
 
     fn url_is_valid(&self) -> bool {
         self.url.starts_with("http://") || self.url.starts_with("https://")
+    }
+
+    /// Total number of data elements in the current data source, regardless of
+    /// how many rows the preview table displays.
+    fn data_count(&self) -> Option<usize> {
+        if self.parsed_opendata.is_some() {
+            Some(self.opendata_count)
+        } else if self.parsed_json.is_some() {
+            Some(self.element_count)
+        } else {
+            None
+        }
     }
 
     fn show_form(&mut self, ui: &mut Ui, available_height: f32) {
