@@ -28,6 +28,8 @@ impl<'a> MetadataForm<'a> {
             center_picker,
             center_picker_open,
         );
+        changed |= optional_text_row(ui, "URL", &mut self.metadata.url, None, None);
+
         changed |= optional_text_row(ui, "Country", &mut self.metadata.country, None, None);
         changed |= optional_text_row(ui, "Producer", &mut self.metadata.producer, None, None);
         changed |= optional_text_row(
@@ -45,7 +47,6 @@ impl<'a> MetadataForm<'a> {
             None,
         );
         changed |= optional_text_row(ui, "Source URL", &mut self.metadata.source_url, None, None);
-        changed |= optional_text_row(ui, "URL", &mut self.metadata.url, None, None);
         changed |= optional_text_row(ui, "Locale", &mut self.metadata.locale, None, None);
         changed |= color_row(ui, &mut self.metadata.color);
 

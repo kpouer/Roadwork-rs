@@ -224,7 +224,7 @@ impl OpendataService {
         elements: &Vec<Value>,
         count: usize,
         locale: Tz,
-        label: &str,
+        label: &'static str,
         date: &DateParser,
     ) {
         if date.path.trim().is_empty() {}
