@@ -2281,7 +2281,13 @@ function updateDataPanel() {
         if (titleEl) titleEl.textContent = label;
         if (dataToggleBtn) dataToggleBtn.textContent = label;
         const hasSource = !!dataSource;
-        if (dataUpdateBtn) dataUpdateBtn.disabled = !hasSource;
+        const canRefresh = hasSource && !!getOpendataDescriptorUrl(services[dataSource]);
+        if (dataUpdateBtn) {
+            dataUpdateBtn.disabled = !canRefresh;
+            dataUpdateBtn.title = canRefresh
+                ? "Recharger les données de la source sélectionnée"
+                : "No URL in descriptor - data must be imported by dropping a file when editing";
+        }
         if (dataDeleteBtn) dataDeleteBtn.disabled = !hasSource;
         if (dataEditBtn) dataEditBtn.disabled = !hasSource;
     } catch (e) {
