@@ -6,6 +6,13 @@ let rpcId = 0;
 const rpcPending = new Map();
 let helperAcked = false;
 
+function postHelperMessage(msg: any) {
+    const helper = document.querySelector(
+        "iframe.rw-helper-iframe",
+    ) as HTMLIFrameElement | null;
+    helper?.contentWindow?.postMessage(msg, "*");
+}
+
 window.addEventListener("message", async (e) => {
     if (e.data?.type === "ROADWORK_OPEN_HELPER_ACK") {
         helperAcked = true;
@@ -29,18 +36,20 @@ window.addEventListener("message", async (e) => {
         const method = e.data.level === "error" ? console.error : e.data.level === "warn" ? console.warn : console.log;
         method("[Roadwork WASM]", ...e.data.args);
     } else if (e.data?.type === "ROADWORK_SAVE_OPENDATA_DESCRIPTOR") {
-        const savedName = await saveOpendataDescriptorFromHelper(
+        const result = await saveOpendataDescriptorFromHelper(
             e.data.name,
             e.data.descriptor,
             e.data.oldName,
             e.data.data,
         );
-        if (savedName) {
-            dataSource = savedName;
+        if (result.ok) {
+            dataSource = result.name!;
             saveDataSource();
             updateDataPanel();
+            postHelperMessage({ type: "ROADWORK_SAVE_DONE", name: result.name });
+        } else {
+            postHelperMessage({ type: "ROADWORK_SAVE_ERROR", error: result.error });
         }
-        window.postMessage({ type: "ROADWORK_CLOSE_HELPER" }, "*");
     } else if (e.data?.type === "ROADWORK_DELETE_OPENDATA_SERVICE") {
         removeOpendataService(e.data.name);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
@@ -1930,8 +1939,21 @@ async function removeOpendataService(name: string) {
     refreshOpendataTotals();
 }
 
-async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data) {
-    if (!name || !descriptor) return undefined;
+interface SaveDescriptorResult {
+    ok: boolean;
+    name?: string;
+    error?: string;
+}
+
+async function saveOpendataDescriptorFromHelper(
+    name,
+    descriptor,
+    oldName,
+    data,
+): Promise<SaveDescriptorResult> {
+    if (!name || !descriptor) {
+        return { ok: false, error: "Missing name or descriptor" };
+    }
     try {
         const parsed = JSON.parse(descriptor);
         const svcName = parsed?.metadata?.name;
@@ -1953,15 +1975,37 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
     setStatus(`Opendata service "${name}" saved`, "success");
     renderOpendataList();
     try {
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: "Saving descriptor\u2026",
+            fraction: 0.1,
+        });
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: "Syncing to extension engine\u2026",
+            fraction: 0.3,
+        });
         await syncOpendataDescriptorsToWasm();
         if (data) {
             try {
                 currentOpendata[name] = JSON.parse(data);
+                postHelperMessage({
+                    type: "ROADWORK_SAVE_PROGRESS",
+                    stage: "Storing imported data\u2026",
+                    fraction: -1,
+                });
                 await saveOpendataCache(name, currentOpendata[name]);
             } catch (e) {
-                setStatus(`Failed to parse stored data for ${name}: ${e.message}`, "error");
+                const msg = `Failed to parse stored data for ${name}: ${e.message}`;
+                setStatus(msg, "error");
+                return { ok: false, error: msg };
             }
         } else if (getOpendataDescriptorUrl(services[name])) {
+            postHelperMessage({
+                type: "ROADWORK_SAVE_PROGRESS",
+                stage: "Fetching remote data\u2026",
+                fraction: -1,
+            });
             await fetchOpendataData(name, true);
         } else {
             setStatus(
@@ -1969,17 +2013,21 @@ async function saveOpendataDescriptorFromHelper(name, descriptor, oldName, data)
                 "info",
             );
         }
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: "Updating map\u2026",
+            fraction: 0.9,
+        });
         renderOpendataToMap();
         refreshOpendataTotals();
     } catch (e) {
-        setStatus(
-            data
-                ? `Failed to parse ${name}: ${e.message}`
-                : `Failed to fetch ${name}: ${e.message}`,
-            "error",
-        );
+        const msg = data
+            ? `Failed to parse ${name}: ${e.message}`
+            : `Failed to fetch ${name}: ${e.message}`;
+        setStatus(msg, "error");
+        return { ok: false, error: msg };
     }
-    return name;
+    return { ok: true, name };
 }
 
 async function renderOpendataList() {

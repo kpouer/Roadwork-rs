@@ -10,6 +10,7 @@ fn main() {
     let web_options = eframe::WebOptions::default();
 
     roadwork_egui::roadwork_app::setup_helper_data_listener();
+    roadwork_egui::roadwork_app::setup_save_progress_listener();
 
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()

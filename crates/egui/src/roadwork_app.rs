@@ -87,6 +87,147 @@ pub fn setup_helper_data_listener() {
     closure.forget();
 }
 
+/// Tracks the "save to extension" flow progress, driven by `ROADWORK_SAVE_PROGRESS` /
+/// `ROADWORK_SAVE_DONE` / `ROADWORK_SAVE_ERROR` messages posted by the WME extension
+/// page-world script. Mirrors the `PENDING_OPENDATA_DATA` thread-local pattern.
+#[derive(Clone)]
+pub(crate) struct SaveProgressState {
+    pub active: bool,
+    pub stage: String,
+    /// -1 means indeterminate.
+    pub fraction: f32,
+    pub done: Option<String>,
+    pub error: Option<String>,
+    pub last_update: f64,
+}
+
+impl SaveProgressState {
+    fn idle() -> Self {
+        Self {
+            active: false,
+            stage: String::new(),
+            fraction: -1.0,
+            done: None,
+            error: None,
+            last_update: js_sys::Date::now(),
+        }
+    }
+}
+
+thread_local! {
+    static SAVE_PROGRESS: std::cell::RefCell<SaveProgressState> =
+        std::cell::RefCell::new(SaveProgressState::idle());
+}
+
+pub(crate) fn start_save_progress() {
+    SAVE_PROGRESS.with(|cell| {
+        let mut state = cell.borrow_mut();
+        state.active = true;
+        state.stage = "Saving descriptor…".to_string();
+        state.fraction = -1.0;
+        state.done = None;
+        state.error = None;
+        state.last_update = js_sys::Date::now();
+    });
+}
+
+pub(crate) fn update_save_progress(stage: &str, fraction: f32) {
+    SAVE_PROGRESS.with(|cell| {
+        let mut state = cell.borrow_mut();
+        state.active = true;
+        state.stage = stage.to_string();
+        state.fraction = fraction;
+        state.done = None;
+        state.error = None;
+        state.last_update = js_sys::Date::now();
+    });
+}
+
+pub(crate) fn save_progress_state() -> SaveProgressState {
+    SAVE_PROGRESS.with(|cell| cell.borrow().clone())
+}
+
+pub(crate) fn finish_save_progress() {
+    SAVE_PROGRESS.with(|cell| *cell.borrow_mut() = SaveProgressState::idle());
+}
+
+/// Posts a `ROADWORK_CLOSE_HELPER` message to the parent window so the WME
+/// extension hides the helper overlay.
+pub(crate) fn close_helper_overlay() {
+    let object = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &object,
+        &wasm_bindgen::JsValue::from_str("type"),
+        &wasm_bindgen::JsValue::from_str("ROADWORK_CLOSE_HELPER"),
+    )
+    .ok();
+    if let Some(window) = web_sys::window()
+        && let Ok(Some(parent)) = window.parent()
+    {
+        let _ = parent.post_message(&object, "*");
+    }
+}
+
+/// Registers a `message` listener that receives the save progress / result messages
+/// posted by the WME extension page-world script during a "save to extension".
+pub fn setup_save_progress_listener() {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::prelude::Closure;
+    let window = web_sys::window().expect("No window");
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+        let Ok(obj) = event.data().dyn_into::<js_sys::Object>() else {
+            return;
+        };
+        let type_value = js_sys::Reflect::get(&obj, &js_sys::JsString::from("type")).ok();
+        let Some(msg_type) = type_value.and_then(|v| v.as_string()) else {
+            return;
+        };
+        match msg_type.as_str() {
+            "ROADWORK_SAVE_PROGRESS" => {
+                let stage = js_sys::Reflect::get(&obj, &js_sys::JsString::from("stage"))
+                    .ok()
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default();
+                let fraction = js_sys::Reflect::get(&obj, &js_sys::JsString::from("fraction"))
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(-1.0) as f32;
+                update_save_progress(&stage, fraction);
+            }
+            "ROADWORK_SAVE_DONE" => {
+                let name = js_sys::Reflect::get(&obj, &js_sys::JsString::from("name"))
+                    .ok()
+                    .and_then(|v| v.as_string());
+                SAVE_PROGRESS.with(|cell| {
+                    let mut state = cell.borrow_mut();
+                    state.active = false;
+                    state.done = name;
+                    state.error = None;
+                    state.last_update = js_sys::Date::now();
+                });
+            }
+            "ROADWORK_SAVE_ERROR" => {
+                let error = js_sys::Reflect::get(&obj, &js_sys::JsString::from("error"))
+                    .ok()
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_else(|| "Unknown save error".to_string());
+                SAVE_PROGRESS.with(|cell| {
+                    let mut state = cell.borrow_mut();
+                    state.active = false;
+                    state.done = None;
+                    state.error = Some(error);
+                    state.last_update = js_sys::Date::now();
+                });
+            }
+            _ => {}
+        }
+    }) as Box<dyn FnMut(web_sys::MessageEvent)>);
+    window
+        .add_event_listener_with_callback("message", closure.as_ref().unchecked_ref())
+        .expect("Failed to add save progress listener");
+    closure.forget();
+}
+
 pub struct RoadworkApp {
     ctx: Context,
     tiles: HttpTiles,

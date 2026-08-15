@@ -498,6 +498,68 @@ impl ServiceHelperDialog {
                     self.show_content(ui, toasts, custom_services);
                 });
         }
+        self.show_save_progress_modal(ui.ctx());
+    }
+
+    /// Renders the "saving to extension" progress modal. Shown while a save is in
+    /// flight (with a 120s watchdog), then replaced by a success or error state with
+    /// an OK button that closes the helper overlay.
+    fn show_save_progress_modal(&self, ctx: &Context) {
+        let mut state = crate::roadwork_app::save_progress_state();
+        if !state.active && state.done.is_none() && state.error.is_none() {
+            return;
+        }
+        if state.active && js_sys::Date::now() - state.last_update > 120_000.0 {
+            state.active = false;
+            state.error = Some("Save timed out after 120 seconds".to_string());
+        }
+        let mut ok = false;
+        egui::Modal::new(egui::Id::new("save_progress_modal")).show(ctx, |ui| {
+            ui.set_min_width(340.0);
+            if state.active {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Saving to extension").strong());
+                });
+                ui.add_space(8.0);
+                ui.label(&state.stage);
+                ui.add_space(4.0);
+                if state.fraction < 0.0 {
+                    ui.add(egui::ProgressBar::new(0.5).animate(true));
+                } else {
+                    ui.add(egui::ProgressBar::new(state.fraction).show_percentage());
+                }
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            } else if let Some(name) = &state.done {
+                ui.label(
+                    RichText::new("Saved")
+                        .strong()
+                        .color(ui.visuals().hyperlink_color),
+                );
+                ui.add_space(4.0);
+                ui.label(format!("Service \"{name}\" saved to extension"));
+                ui.add_space(8.0);
+                if ui.button("OK").clicked() {
+                    ok = true;
+                }
+            } else if let Some(error) = &state.error {
+                ui.label(
+                    RichText::new("Save failed")
+                        .strong()
+                        .color(ui.visuals().error_fg_color),
+                );
+                ui.add_space(4.0);
+                ui.label(error);
+                ui.add_space(8.0);
+                if ui.button("OK").clicked() {
+                    ok = true;
+                }
+            }
+        });
+        if ok {
+            crate::roadwork_app::finish_save_progress();
+            crate::roadwork_app::close_helper_overlay();
+        }
     }
 
     fn is_builtin(&self) -> bool {
@@ -706,13 +768,10 @@ impl ServiceHelperDialog {
                 })
                 .clicked()
             {
-                match self.save_to_extension() {
-                    Ok(name) => {
-                        toasts.success(format!("Service \"{name}\" saved to extension"));
-                    }
-                    Err(e) => {
-                        toasts.error(format!("Save failed: {e}"));
-                    }
+                crate::roadwork_app::start_save_progress();
+                if let Err(e) = self.save_to_extension() {
+                    crate::roadwork_app::finish_save_progress();
+                    toasts.error(format!("Save failed: {e}"));
                 }
             }
         });
