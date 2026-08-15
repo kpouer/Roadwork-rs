@@ -136,6 +136,7 @@ let dataTableBody = null;
 let dataSourceSelectEl = null;
 let dataUpdateBtn = null;
 let dataDeleteBtn = null;
+let dataEditBtn = null;
 let dataStatusEl = null;
 let dataDropzoneEl = null;
 let viewportRefreshTimer = null;
@@ -2215,6 +2216,7 @@ function updateDataPanel() {
         const hasSource = !!dataSource;
         if (dataUpdateBtn) dataUpdateBtn.disabled = !hasSource;
         if (dataDeleteBtn) dataDeleteBtn.disabled = !hasSource;
+        if (dataEditBtn) dataEditBtn.disabled = !hasSource;
     } catch (e) {
         console.warn("[Roadwork] Failed to render data panel:", e);
     }
@@ -2316,6 +2318,16 @@ function createDataPanel() {
         }
     });
     controls.appendChild(dataUpdateBtn);
+
+    dataEditBtn = document.createElement("button");
+    dataEditBtn.textContent = "Edit";
+    dataEditBtn.title = "Ouvrir l'assistant pour éditer la source sélectionnée";
+    dataEditBtn.disabled = true;
+    dataEditBtn.addEventListener("click", () => {
+        if (!dataSource) return;
+        editOpendataService(dataSource);
+    });
+    controls.appendChild(dataEditBtn);
 
     dataDeleteBtn = document.createElement("button");
     dataDeleteBtn.textContent = "Delete";
