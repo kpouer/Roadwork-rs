@@ -757,34 +757,7 @@ impl ServiceHelperDialog {
                         });
                 }
             });
-        egui::Panel::bottom("helper_sample_data")
-            .resizable(true)
-            .default_size(((available_height - 100.0) * 0.4).max(60.0))
-            .min_size(60.0)
-            .show_inside(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Sample data").strong());
-                    if self.opendata_count > 0 {
-                        ui.separator();
-                        ui.label(format!(
-                            "{} items · {}",
-                            self.opendata_count,
-                            format_bytes(self.opendata_bytes)
-                        ));
-                    }
-                });
-                if let Some(report) = &self.validation_report {
-                    ui.separator();
-                    self.show_validation_report(ui, report);
-                }
-                ui.separator();
-                if self.fields_chosen() {
-                    self.show_preview_table(ui);
-                } else {
-                    self.show_data_drop_zone(ui);
-                }
-            });
-        self.show_url_fetch_panel(ui);
+        self.show_center_panel(ui);
     }
 
     fn show_data_drop_zone(&mut self, ui: &mut Ui) {
@@ -942,51 +915,75 @@ impl ServiceHelperDialog {
         }
     }
 
-    fn show_url_fetch_panel(&mut self, ui: &mut Ui) {
+    fn show_center_panel(&mut self, ui: &mut Ui) {
         let (fetching, step) = match &*self.fetch_state.lock().unwrap() {
             Some(FetchState::Connecting) => (true, "Connecting…".to_string()),
             Some(FetchState::Downloading) => (true, "Getting data…".to_string()),
             _ => (false, String::new()),
         };
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.horizontal(|ui| {
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut self.url)
-                        .hint_text("https://...")
-                        .desired_width(f32::INFINITY),
-                );
-                if response.changed() {
-                    self.propagate_url();
-                }
-                let can_fetch = !fetching && self.url_is_valid();
-                if ui
-                    .add_enabled(can_fetch, egui::Button::new("Fetch"))
-                    .on_hover_text("URL must start with http:// or https://")
-                    .clicked()
-                {
-                    self.fetch(ui.ctx().clone());
-                }
-                if !self.url.is_empty() && !self.url_is_valid() {
-                    ui.colored_label(
-                        ui.visuals().error_fg_color,
-                        "URL must start with http:// or https://",
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.url)
+                            .hint_text("https://...")
+                            .desired_width(f32::INFINITY),
                     );
+                    if response.changed() {
+                        self.propagate_url();
+                    }
+                    let can_fetch = !fetching && self.url_is_valid();
+                    if ui
+                        .add_enabled(can_fetch, egui::Button::new("Fetch"))
+                        .on_hover_text("URL must start with http:// or https://")
+                        .clicked()
+                    {
+                        self.fetch(ui.ctx().clone());
+                    }
+                    if !self.url.is_empty() && !self.url_is_valid() {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            "URL must start with http:// or https://",
+                        );
+                    }
+                    if fetching {
+                        ui.spinner();
+                        ui.label(step);
+                    }
+                });
+                if let Some(error) = &self.error {
+                    ui.colored_label(ui.visuals().error_fg_color, error);
                 }
-                if fetching {
-                    ui.spinner();
-                    ui.label(step);
+
+                if !self.raw_json.is_empty() {
+                    ui.label(format!(
+                        "Fetched JSON · {}",
+                        format_bytes(self.raw_json.len())
+                    ));
+                }
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Sample data").strong());
+                    if self.opendata_count > 0 {
+                        ui.separator();
+                        ui.label(format!(
+                            "{} items · {}",
+                            self.opendata_count,
+                            format_bytes(self.opendata_bytes)
+                        ));
+                    }
+                });
+                if let Some(report) = &self.validation_report {
+                    ui.separator();
+                    self.show_validation_report(ui, report);
+                }
+                ui.separator();
+                if self.fields_chosen() {
+                    self.show_preview_table(ui);
+                } else {
+                    self.show_data_drop_zone(ui);
                 }
             });
-            if let Some(error) = &self.error {
-                ui.colored_label(ui.visuals().error_fg_color, error);
-            }
-
-            if !self.raw_json.is_empty() {
-                ui.label(format!(
-                    "Fetched JSON · {}",
-                    format_bytes(self.raw_json.len())
-                ));
-            }
         });
     }
 
