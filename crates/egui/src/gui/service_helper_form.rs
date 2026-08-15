@@ -92,8 +92,11 @@ pub(crate) fn show(
         hint: scalar_wand.hint,
     };
 
-    let mut changed =
-        MetadataForm::new(&mut descriptor.metadata).show(ui, center_picker, center_picker_open);
+    let mut changed = MetadataForm::new(&mut descriptor.metadata, opendata_mode).show(
+        ui,
+        center_picker,
+        center_picker_open,
+    );
 
     ui.add_space(8.0);
     ui.heading("Fields");

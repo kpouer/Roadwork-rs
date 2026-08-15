@@ -6,11 +6,15 @@ use roadwork_core::opendata::json::model::metadata::Metadata;
 
 pub struct MetadataForm<'a> {
     metadata: &'a mut Metadata,
+    opendata_mode: bool,
 }
 
 impl<'a> MetadataForm<'a> {
-    pub fn new(metadata: &'a mut Metadata) -> Self {
-        Self { metadata }
+    pub const fn new(metadata: &'a mut Metadata, opendata_mode: bool) -> Self {
+        Self {
+            metadata,
+            opendata_mode,
+        }
     }
 
     pub fn show(
@@ -28,27 +32,46 @@ impl<'a> MetadataForm<'a> {
             center_picker,
             center_picker_open,
         );
-        changed |= optional_text_row(ui, "URL", &mut self.metadata.url, None, None);
 
-        changed |= optional_text_row(ui, "Country", &mut self.metadata.country, None, None);
-        changed |= optional_text_row(ui, "Producer", &mut self.metadata.producer, None, None);
-        changed |= optional_text_row(
-            ui,
-            "Licence name",
-            &mut self.metadata.licence_name,
-            None,
-            None,
-        );
-        changed |= optional_text_row(
-            ui,
-            "Licence URL",
-            &mut self.metadata.licence_url,
-            None,
-            None,
-        );
-        changed |= optional_text_row(ui, "Source URL", &mut self.metadata.source_url, None, None);
-        changed |= optional_text_row(ui, "Locale", &mut self.metadata.locale, None, None);
-        changed |= color_row(ui, &mut self.metadata.color);
+        if !self.opendata_mode {
+            changed |= ui
+                .collapsing("Optional parameters", |ui| {
+                    let mut changed = false;
+                    changed |= optional_text_row(ui, "URL", &mut self.metadata.url, None, None);
+
+                    changed |=
+                        optional_text_row(ui, "Country", &mut self.metadata.country, None, None);
+                    changed |=
+                        optional_text_row(ui, "Producer", &mut self.metadata.producer, None, None);
+                    changed |= optional_text_row(
+                        ui,
+                        "Licence name",
+                        &mut self.metadata.licence_name,
+                        None,
+                        None,
+                    );
+                    changed |= optional_text_row(
+                        ui,
+                        "Licence URL",
+                        &mut self.metadata.licence_url,
+                        None,
+                        None,
+                    );
+                    changed |= optional_text_row(
+                        ui,
+                        "Source URL",
+                        &mut self.metadata.source_url,
+                        None,
+                        None,
+                    );
+                    changed |=
+                        optional_text_row(ui, "Locale", &mut self.metadata.locale, None, None);
+                    changed |= color_row(ui, &mut self.metadata.color);
+                    changed
+                })
+                .body_returned
+                .unwrap_or(false);
+        }
 
         changed
     }
