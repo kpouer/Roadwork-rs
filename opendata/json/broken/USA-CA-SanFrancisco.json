@@ -3,9 +3,9 @@
     "country": "USA California",
     "name": "San Francisco",
     "producer": "San Francisco City",
-    "licenceName": "Open Data Commons Public Domain Dedication and License",
-    "licenceUrl": "https://opendatacommons.org/licenses/pddl/1-0/",
-    "sourceUrl": "https://dev.socrata.com/foundry/data.sfgov.org/8x25-yybr",
+    "licence_name": "Open Data Commons Public Domain Dedication and License",
+    "licence_url": "https://opendatacommons.org/licenses/pddl/1-0/",
+    "source_url": "https://dev.socrata.com/foundry/data.sfgov.org/8x25-yybr",
     "url": "https://data.sfgov.org/resource/8x25-yybr.json",
     "center": {
       "lat": 37.7421536,
@@ -19,7 +19,7 @@
   "longitude": "$.shape.coordinates[0][0]",
   "road": "$.street",
   "description": "$.info",
-  "impactCirculationDetail": "$.veh_imp",
+  "impact_circulation_detail": "$.veh_imp",
   "from": {
     "path": "$.start_dt",
     "parsers": [

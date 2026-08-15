@@ -232,8 +232,8 @@ function applyStatusOverrides() {
     const overrides = loadStatusOverrides();
     for (const [id, status] of Object.entries(overrides)) {
         if (currentRoadworks[id]) {
-            currentRoadworks[id].syncData = currentRoadworks[id].syncData || {};
-            currentRoadworks[id].syncData.status = status;
+            currentRoadworks[id].sync_data = currentRoadworks[id].sync_data || {};
+            currentRoadworks[id].sync_data.status = status;
         }
     }
 }
@@ -260,8 +260,8 @@ function changeRoadworkStatus(rwId, newStatus) {
     const rw = currentRoadworks[rwId];
     if (!rw) return;
 
-    rw.syncData = rw.syncData || {};
-    rw.syncData.status = newStatus;
+    rw.sync_data = rw.sync_data || {};
+    rw.sync_data.status = newStatus;
 
     const overrides = loadStatusOverrides();
     overrides[rwId] = newStatus;
@@ -860,18 +860,18 @@ function updateFloatingTable() {
     }
 
     if (hideFinished) {
-        entries = entries.filter(([, rw]) => (rw.syncData?.status || "New") !== "Finished");
+        entries = entries.filter(([, rw]) => (rw.sync_data?.status || "New") !== "Finished");
     }
 
     if (sortColumn >= 0) {
         const getValue = (rw, col) => {
             switch (col) {
-                case 0: return (rw.syncData?.status || "New");
+                case 0: return (rw.sync_data?.status || "New");
                 case 1: return (rw.road || "");
                 case 2: return rw.start != null ? rw.start : Infinity;
                 case 3: return rw.end != null ? rw.end : Infinity;
                 case 4: return (rw.opendata?.description || "");
-                case 5: return (rw.impactCirculationDetail || "");
+                case 5: return (rw.impact_circulation_detail || "");
                 default: return "";
             }
         };
@@ -902,13 +902,13 @@ function updateFloatingTable() {
     }
 
     for (const [id, rw] of entries) {
-        const status = rw.syncData?.status || "New";
+        const status = rw.sync_data?.status || "New";
         const color = STATUS_COLORS[status] || "#9ca3af";
         const road = rw.road || "";
         const start = formatTimestamp(rw.start);
         const end = formatTimestamp(rw.end);
         const desc = rw.opendata?.description || "";
-        const impact = rw.impactCirculationDetail || "";
+        const impact = rw.impact_circulation_detail || "";
 
         const tr = document.createElement("tr");
         tr.title = desc;
@@ -1112,8 +1112,8 @@ function buildPopupContent(rw) {
     const end = formatTimestamp(rw.end);
     const road = rw.road || "";
     const desc = rw.opendata?.description || "";
-    const impact = rw.impactCirculationDetail || "";
-    const status = rw.syncData?.status || "New";
+    const impact = rw.impact_circulation_detail || "";
+    const status = rw.sync_data?.status || "New";
 
     let html = `<div style="font-size:13px;max-width:280px;">`;
     html += `<strong style="color:${STATUS_COLORS[status] || "#333"};">[${status}]</strong> `;
@@ -1169,13 +1169,13 @@ function showDetailPanel(rw) {
     const body = detailPanelEl.querySelector(".rw-detail-body");
     if (!body) return;
 
-    const status = rw.syncData?.status || "New";
+    const status = rw.sync_data?.status || "New";
     const color = STATUS_COLORS[status] || "#9ca3af";
     const road = rw.road || "";
     const start = formatTimestamp(rw.start);
     const end = formatTimestamp(rw.end);
     const desc = rw.opendata?.description || "";
-    const impact = rw.impactCirculationDetail || "";
+    const impact = rw.impact_circulation_detail || "";
 
     body.replaceChildren();
 
@@ -1390,7 +1390,7 @@ function buildStyleRulesForLayer(status: string) {
 
     if (selectedRoadworkId) {
         const selRw = currentRoadworks[selectedRoadworkId];
-        if (selRw && (selRw.syncData?.status || "New") === status) {
+        if (selRw && (selRw.sync_data?.status || "New") === status) {
             rules.push({
                 predicate: (props) => {
                     return props.roadworkId === selectedRoadworkId && props.geomType === "Polygon";
@@ -1459,7 +1459,7 @@ function renderRoadworksToMap(roadworks) {
     }
 
     for (const [id, rw] of Object.entries(roadworks as Record<string, any>)) {
-        const status = rw.syncData?.status || "New";
+        const status = rw.sync_data?.status || "New";
         const features = featuresByStatus[status] || featuresByStatus["New"];
 
         if (rw.opendata?.polygons && rw.opendata?.polygons.length > 0) {

@@ -3,9 +3,9 @@
     "country": "France",
     "name": "Toulouse",
     "producer": "Toulouse Métropole",
-    "licenceName": "Licence Ouverte v2.0 (Etalab)",
-    "licenceUrl": "https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf",
-    "sourceUrl": "https://data.toulouse-metropole.fr/explore/dataset/chantiers-en-cours/information/",
+    "licence_name": "Licence Ouverte v2.0 (Etalab)",
+    "licence_url": "https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf",
+    "source_url": "https://data.toulouse-metropole.fr/explore/dataset/chantiers-en-cours/information/",
     "url": "https://data.toulouse-metropole.fr/api/records/1.0/search/?dataset=chantiers-en-cours&q=&rows=1000&facet=voie&facet=commune&facet=pole&facet=declarant&facet=entreprise&facet=datedebut&facet=datefin",
     "center": {
       "lat":43.60072,
@@ -19,8 +19,8 @@
   "longitude": "$.geometry.coordinates[0]",
   "polygon": "$.fields.geo_shape.coordinates",
   "road": "$.fields.voie",
-  "locationDetails": "$.fields.libelle",
-  "impactCirculationDetail": "$.fields.circulation",
+  "location_details": "$.fields.libelle",
+  "impact_circulation_detail": "$.fields.circulation",
   "from": {
     "path": "$.fields.datedebut",
     "parsers": [

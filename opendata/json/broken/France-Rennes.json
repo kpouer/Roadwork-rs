@@ -3,7 +3,7 @@
     "country": "France",
     "name": "Rennes",
     "producer": "Rennes Métropole",
-    "sourceUrl": "http://travaux.data.rennesmetropole.fr/#roadwork-info",
+    "source_url": "http://travaux.data.rennesmetropole.fr/#roadwork-info",
     "url": "http://travaux.data.rennesmetropole.fr/api/roadworks?epsg=4326",
     "center": {
      "lat":48.10881,
@@ -17,7 +17,7 @@
   "longitude": "$.geometry.coordinates[0][0]",
   "road": "$.properties.localisation",
   "description": "$.properties.libelle",
-  "impactCirculationDetail": "$.properties.type",
+  "impact_circulation_detail": "$.properties.type",
   "from": {
     "path": "$.properties.date_deb",
     "parsers": [

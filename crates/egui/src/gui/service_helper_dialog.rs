@@ -505,7 +505,7 @@ impl ServiceHelperDialog {
     }
 
     /// The helper edits either a built-in roadwork service (full Roadwork model:
-    /// road, locationDetails, impactCirculationDetail, dates) or a plain opendata
+    /// road, location_details, impact_circulation_detail, dates) or a plain opendata
     /// source (only id/latitude/longitude/polygon/description).
     fn is_opendata_mode(&self) -> bool {
         !self.is_builtin()

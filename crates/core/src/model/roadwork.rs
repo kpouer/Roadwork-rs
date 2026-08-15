@@ -9,11 +9,8 @@ pub struct Roadwork {
     pub start: i64,
     pub end: i64,
     pub road: Option<String>,
-    #[serde(rename = "locationDetails")]
     pub location_details: Option<String>,
-    #[serde(rename = "impactCirculationDetail")]
     pub impact_circulation_detail: Option<String>,
-    #[serde(rename = "syncData")]
     pub sync_data: SyncData,
 }
 

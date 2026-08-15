@@ -3,7 +3,7 @@
     "country": "USA Illinois",
     "name": "Chicago",
     "producer": "City of Chicago",
-    "sourceUrl": "https://dev.socrata.com/foundry/data.cityofchicago.org/jdis-5sry",
+    "source_url": "https://dev.socrata.com/foundry/data.cityofchicago.org/jdis-5sry",
     "url": "https://data.cityofchicago.org/resource/jdis-5sry.json",
     "center": {
       "lat": 41.8875245,
@@ -17,7 +17,7 @@
   "longitude": "$.shape.coordinates[0][0]",
   "road": "$.street",
   "description": "$.info",
-  "impactCirculationDetail": "$.veh_imp",
+  "impact_circulation_detail": "$.veh_imp",
   "from": {
     "path": "$.start_dt",
     "parsers": [

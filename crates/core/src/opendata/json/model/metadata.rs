@@ -9,7 +9,6 @@ pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
     pub center: LatLng,
-    #[serde(rename = "sourceUrl")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -17,10 +16,8 @@ pub struct Metadata {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub producer: Option<String>,
-    #[serde(rename = "licenceName")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub licence_name: Option<String>,
-    #[serde(rename = "licenceUrl")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub licence_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

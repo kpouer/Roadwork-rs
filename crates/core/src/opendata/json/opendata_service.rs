@@ -176,7 +176,7 @@ impl OpendataService {
     }
 
     /// Validates every descriptor path — including the roadwork-specific fields
-    /// (road, url, locationDetails, impactCirculationDetail, dates) — against
+    /// (road, url, location_details, impact_circulation_detail, dates) — against
     /// every element of the roadwork array.
     pub fn validate_roadworks(&self, json: &str) -> Vec<PathValidation> {
         let mut report = self.validate(json);
@@ -193,12 +193,12 @@ impl OpendataService {
                 self.optional_scalar_report(&elements, "road", descriptor.road.as_ref()),
                 self.optional_scalar_report(
                     &elements,
-                    "locationDetails",
+                    "location_details",
                     descriptor.location_details.as_ref(),
                 ),
                 self.optional_scalar_report(
                     &elements,
-                    "impactCirculationDetail",
+                    "impact_circulation_detail",
                     descriptor.impact_circulation_detail.as_ref(),
                 ),
             ]

@@ -175,11 +175,11 @@ pub(crate) fn show(
         changed |= validated(
             ui,
             validation.location_details,
-            "locationDetails must point to a scalar value in the fetched JSON",
+            "location_details must point to a scalar value in the fetched JSON",
             |ui, tooltip| {
                 optional_text_row(
                     ui,
-                    "locationDetails",
+                    "location_details",
                     &mut descriptor.location_details,
                     tooltip,
                     Some(&scalar_wand),
@@ -190,11 +190,11 @@ pub(crate) fn show(
         changed |= validated(
             ui,
             validation.impact_circulation_detail,
-            "impactCirculationDetail must point to a scalar value in the fetched JSON",
+            "impact_circulation_detail must point to a scalar value in the fetched JSON",
             |ui, tooltip| {
                 optional_text_row(
                     ui,
-                    "impactCirculationDetail",
+                    "impact_circulation_detail",
                     &mut descriptor.impact_circulation_detail,
                     tooltip,
                     Some(&scalar_wand),

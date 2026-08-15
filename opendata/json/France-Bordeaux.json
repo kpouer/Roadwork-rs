@@ -3,9 +3,9 @@
     "country": "France",
     "name": "Bordeaux",
     "producer": "Ville de Bordeaux",
-    "licenceName": "Licence Ouverte",
-    "licenceUrl": "https://www.etalab.gouv.fr/wp-content/uploads/2014/05/Licence_Ouverte.pdf",
-    "sourceUrl": "https://opendata.bordeaux-metropole.fr/explore/dataset/ci_chantier/information/",
+    "licence_name": "Licence Ouverte",
+    "licence_url": "https://www.etalab.gouv.fr/wp-content/uploads/2014/05/Licence_Ouverte.pdf",
+    "source_url": "https://opendata.bordeaux-metropole.fr/explore/dataset/ci_chantier/information/",
     "url": "https://opendata.bordeaux-metropole.fr/api/records/1.0/search/?dataset=ci_chantier&q=&rows=1000&facet=alias_nature_n1&facet=alias_nature_n2&facet=geo_shape_type",
     "center": {
       "lat": 44.84492,
@@ -20,7 +20,7 @@
   "polygon": "$.fields.geo_shape.coordinates",
   "road": "$.fields.localisation",
   "description": "$.fields.localisation_emprise",
-  "impactCirculationDetail": "$.fields.libelle",
+  "impact_circulation_detail": "$.fields.libelle",
   "from": {
     "path": "$.fields.date_debut",
     "parsers": [

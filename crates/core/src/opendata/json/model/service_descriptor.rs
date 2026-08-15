@@ -16,10 +16,8 @@ pub struct ServiceDescriptor {
     pub road: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "locationDetails")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location_details: Option<String>,
-    #[serde(rename = "impactCirculationDetail")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact_circulation_detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

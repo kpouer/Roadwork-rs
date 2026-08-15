@@ -3,9 +3,9 @@
     "country": "France",
     "name": "Paris",
     "producer": "Direction de la Voirie et des Déplacements - Ville de Paris",
-    "licenceName": "Open Database License (ODbL)",
-    "licenceUrl": "https://opendatacommons.org/licenses/odbl/",
-    "sourceUrl": "https://opendata.paris.fr/explore/dataset/chantiers-perturbants/information/?disjunctive.cp_arrondissement&disjunctive.maitre_ouvrage&disjunctive.objet&disjunctive.impact_circulation&disjunctive.niveau_perturbation&disjunctive.statut",
+    "licence_name": "Open Database License (ODbL)",
+    "licence_url": "https://opendatacommons.org/licenses/odbl/",
+    "source_url": "https://opendata.paris.fr/explore/dataset/chantiers-perturbants/information/?disjunctive.cp_arrondissement&disjunctive.maitre_ouvrage&disjunctive.objet&disjunctive.impact_circulation&disjunctive.niveau_perturbation&disjunctive.statut",
     "url": "https://opendata.paris.fr/api/records/1.0/search/?dataset=chantiers-perturbants&q=&rows=1000&facet=cp_arrondissement&facet=typologie&facet=maitre_ouvrage&facet=objet&facet=impact_circulation&facet=niveau_perturbation&facet=statut&exclude.statut=5",
     "center": {
       "lat": 48.85337,
@@ -19,8 +19,8 @@
   "longitude": "$.geometry.coordinates[0]",
   "polygon": "$.fields.geo_shape.coordinates[0]",
   "road": "$.fields.voie",
-  "locationDetails": "$.fields.precision_localisation",
-  "impactCirculationDetail": "$.fields.impact_circulation_detail",
+  "location_details": "$.fields.precision_localisation",
+  "impact_circulation_detail": "$.fields.impact_circulation_detail",
   "from": {
     "path": "$.fields.date_debut",
     "parsers": [

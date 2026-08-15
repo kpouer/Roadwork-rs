@@ -77,9 +77,9 @@ A descriptor contains a first object called **metadata** that contains all infor
 | latitude                | yes       | @.geometry.coordinates[1]          | The path of the latitude                        |
 | longitude               | yes       | @.geometry.coordinates[0]          | The path of the longitude                       |
 | road                    | no        | @.fields.voie                      | The path of the road information                |
-| impactCirculationDetail | no        | @.fields.impact_circulation_detail | The path for circulation impact                 |
+| impact_circulation_detail | no        | @.fields.impact_circulation_detail | The path for circulation impact                 |
 | description             | no        | @.fields.description               | The path of the description                     |
-| locationDetails         | no        | @.fields.precision_localisation    | The path for more location information          |
+| location_details         | no        | @.fields.precision_localisation    | The path for more location information          |
 | from                    | yes       | A date parser structure            |                                                 |
 | to                      | yes       | A date parser structure            |                                                 |
 
@@ -91,9 +91,9 @@ A descriptor contains a first object called **metadata** that contains all infor
 | country     | yes       | France           | The country of the service                    |
 | name        | yes       | Paris            | The city (or region or anything)              |
 | producer    | no        | Ville de Paris   | The owner/producer of the service             |
-| licenceName | no        | Creative Commons | The name of the licence                       |
-| licenceUrl  | no        | https://xxxx     | The url of the licence                        |
-| sourceUrl   | no        | https://xxxx     | The homepage of the service                   |
+| licence_name | no        | Creative Commons | The name of the licence                       |
+| licence_url  | no        | https://xxxx     | The url of the licence                        |
+| source_url   | no        | https://xxxx     | The homepage of the service                   |
 | url         | no        | https://xxxx     | The url that will be called to retrieve data. Mandatory for roadwork services. If absent, data must be imported by dropping a file |
 | locale      | yes       | fr_FR            | The locale that can be used to parse the date |
 | color       | no        | #0d9488          | Color used to display this source in WME      |
