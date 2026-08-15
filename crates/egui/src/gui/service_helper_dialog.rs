@@ -689,14 +689,16 @@ impl ServiceHelperDialog {
                     && !self.descriptor_json.trim().is_empty()
                     && has_data
                     && self.has_name()
-                    && !self.importing
             };
             if ui
                 .add_enabled(can_save, egui::Button::new("Save to extension"))
-                .on_hover_text(
+                .on_hover_text(if self.importing {
                     "Save the descriptor and the data into the Roadwork WME extension \
-                     and enable the service",
-                )
+                     (the data will be built from the imported JSON on save)"
+                } else {
+                    "Save the descriptor and the data into the Roadwork WME extension \
+                     and enable the service"
+                })
                 .on_disabled_hover_text(if self.is_builtin() {
                     "Built-in services are read-only"
                 } else {
@@ -1029,6 +1031,7 @@ impl ServiceHelperDialog {
             .max_height(available_height - 24.0)
             .show(ui, |ui| match descriptor {
                 Some(descriptor) => {
+                    let data_signature_before = data_signature(descriptor);
                     let changed = crate::gui::service_helper_form::show(
                         ui,
                         descriptor,
@@ -1052,15 +1055,17 @@ impl ServiceHelperDialog {
                         } else {
                             Some(params)
                         };
-                        *dirty = true;
                         *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
                         *url = descriptor.metadata.url.clone().unwrap_or_default();
-                        *importing = false;
-                        *import_runner = None;
-                        *processing.lock().unwrap() = ImportProgress::default();
-                        self.parsed_opendata = None;
-                        self.opendata_bytes = 0;
-                        self.opendata_count = 0;
+                        if data_signature_before != data_signature(descriptor) {
+                            *dirty = true;
+                            *importing = false;
+                            *import_runner = None;
+                            *processing.lock().unwrap() = ImportProgress::default();
+                            self.parsed_opendata = None;
+                            self.opendata_bytes = 0;
+                            self.opendata_count = 0;
+                        }
                     }
                 }
                 None => {
@@ -1072,7 +1077,6 @@ impl ServiceHelperDialog {
             && let Some(descriptor) = descriptor
         {
             descriptor.metadata.center = center;
-            *dirty = true;
             *descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
         }
     }
@@ -1498,8 +1502,14 @@ impl ServiceHelperDialog {
             &wasm_bindgen::JsValue::from_str(&self.descriptor_json),
         )
         .map_err(|e| format!("{e:?}"))?;
-        if let Some(data) = &self.parsed_opendata {
-            let data = serde_json::to_string(data).map_err(|e| e.to_string())?;
+        let data = match &self.parsed_opendata {
+            Some(data) => serde_json::to_string(data).map_err(|e| e.to_string())?,
+            None => match self.build_opendata_sync() {
+                Some(data) => serde_json::to_string(&data).map_err(|e| e.to_string())?,
+                None => String::new(),
+            },
+        };
+        if !data.is_empty() {
             js_sys::Reflect::set(
                 &object,
                 &wasm_bindgen::JsValue::from_str("data"),
@@ -1514,6 +1524,44 @@ impl ServiceHelperDialog {
             .post_message(&object, "*")
             .map_err(|e| format!("{e:?}"))?;
         Ok(name)
+    }
+
+    /// Synchronously builds the opendata payload from the current raw JSON and
+    /// descriptor, mirroring the cooperative [`ImportRunner`] finalization.
+    /// Used by the save flow when a background import has not finished yet, so
+    /// saving always ships data even mid-rebuild.
+    fn build_opendata_sync(&self) -> Option<OpendataData> {
+        let descriptor = self.descriptor.as_ref()?;
+        if self.raw_json.trim().is_empty() {
+            return None;
+        }
+        let value: serde_json::Value = serde_json::from_str(&self.raw_json).ok()?;
+        let ods = OpendataService::from(descriptor);
+        let items: Vec<Opendata> = match data_array_pointer(&descriptor.data_array) {
+            Some(pointer) => value
+                .pointer(&pointer)
+                .and_then(|node| node.as_array())
+                .map(|array| {
+                    array
+                        .iter()
+                        .filter_map(|node| ods.build_opendata(node).ok())
+                        .filter(OpendataService::is_valid)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => ods
+                .roadwork_array(&value)
+                .ok()
+                .map(|array| {
+                    array
+                        .iter()
+                        .filter_map(|node| ods.build_opendata(node).ok())
+                        .filter(OpendataService::is_valid)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        Some(OpendataData::new(&ods.service_name, items))
     }
 
     fn show_validation_report(&self, ui: &mut Ui, report: &[PathValidation]) {
@@ -1763,4 +1811,15 @@ fn is_opendata_data(json: &str) -> bool {
 
 fn is_opendata_data_value(value: &serde_json::Value) -> bool {
     value.get("opendata").is_some_and(|o| o.is_object())
+}
+
+/// Compact signature of the data-affecting fields of a descriptor. Metadata
+/// edits (name, url, center…) leave it unchanged, so the form only restarts
+/// the import when the paths that shape the parsed data actually change.
+fn data_signature(descriptor: &ServiceDescriptor) -> String {
+    let mut value = serde_json::to_value(descriptor).unwrap_or_default();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("metadata");
+    }
+    value.to_string()
 }
