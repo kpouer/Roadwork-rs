@@ -10,6 +10,7 @@ use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::opendata::json::path_validation::PathValidation;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -25,6 +26,36 @@ const PREVIEW_MAX_ELEMENTS: usize = 100;
 
 /// Maximum characters rendered in a single table cell.
 const MAX_CELL_CHARS: usize = 512;
+
+/// Standard latitude paths (relative to each data_array element), in priority
+/// order, tried when auto-filling an empty latitude field.
+const LATITUDE_CANDIDATES: &[&str] = &[
+    "$.geometry.coordinates[1]",
+    "$.latitude",
+    "$.lat",
+    "$.Latitude",
+    "$.Lat",
+    "$.y",
+    "$[1]",
+];
+
+/// Standard longitude paths (relative to each data_array element), in priority
+/// order, tried when auto-filling an empty longitude field.
+const LONGITUDE_CANDIDATES: &[&str] = &[
+    "$.geometry.coordinates[0]",
+    "$.longitude",
+    "$.lon",
+    "$.lng",
+    "$.Longitude",
+    "$.Lon",
+    "$.Lng",
+    "$.x",
+    "$[0]",
+];
+
+/// Standard polygon paths (relative to each data_array element), in priority
+/// order, tried when auto-filling an empty polygon field.
+const POLYGON_CANDIDATES: &[&str] = &["$.geometry.coordinates", "$.coordinates", "$.polygon"];
 
 /// The source the helper dialog is currently working on.
 ///
@@ -459,9 +490,12 @@ impl ServiceHelperDialog {
             match result {
                 Ok(text) => {
                     self.raw_json = text;
-                    self.parsed_json = None;
+                    self.parsed_json = serde_json::from_str(&self.raw_json).ok().map(Arc::new);
                     self.array_paths = roadwork_core::json_tools::find_json_arrays(&self.raw_json);
                     self.auto_fill_data_array();
+                    if let Some(value) = self.parsed_json.clone() {
+                        self.apply_standard_coord_paths(&value, toasts);
+                    }
                     self.error = None;
                     self.dirty = true;
                     self.validation_report = None;
@@ -1367,6 +1401,7 @@ impl ServiceHelperDialog {
                     self.element_count = 0;
                     self.current_index = 0;
                     self.auto_fill_data_array();
+                    self.apply_standard_coord_paths(&value, toasts);
                     let has_data_array = self
                         .descriptor
                         .as_ref()
@@ -1399,6 +1434,54 @@ impl ServiceHelperDialog {
         descriptor.data_array = format!("{}[*]", self.array_paths[0].0);
         self.descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
         true
+    }
+
+    /// Fills the descriptor's latitude/longitude/polygon paths with standard
+    /// GeoJSON / plain-JSON paths, but only for empty fields and only when the
+    /// candidate path actually resolves to a value in the data.
+    fn apply_standard_coord_paths(&mut self, value: &serde_json::Value, toasts: &mut Toasts) {
+        let Some(descriptor) = self.descriptor.as_mut() else {
+            return;
+        };
+        if descriptor.data_array.trim().is_empty() {
+            if is_geojson_feature_collection(value) {
+                descriptor.data_array = "$.features[*]".to_string();
+            } else if self.array_paths.len() == 1 {
+                descriptor.data_array = format!("{}[*]", self.array_paths[0].0);
+            }
+        }
+        if descriptor.data_array.trim().is_empty() {
+            return;
+        }
+        let Ok(elements) = OpendataService::from(&*descriptor).roadwork_array(value) else {
+            return;
+        };
+        if elements.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        if is_empty_path(descriptor.latitude.as_deref())
+            && let Some(path) = first_matching_path(&elements, LATITUDE_CANDIDATES, 90.0)
+        {
+            descriptor.latitude = Some(path.to_string());
+            changed = true;
+        }
+        if is_empty_path(descriptor.longitude.as_deref())
+            && let Some(path) = first_matching_path(&elements, LONGITUDE_CANDIDATES, 180.0)
+        {
+            descriptor.longitude = Some(path.to_string());
+            changed = true;
+        }
+        if is_empty_path(descriptor.polygon.as_deref())
+            && let Some(path) = first_matching_polygon_path(&elements, POLYGON_CANDIDATES)
+        {
+            descriptor.polygon = Some(path.to_string());
+            changed = true;
+        }
+        if changed {
+            self.descriptor_json = super::pretty_json_tabs(descriptor).unwrap_or_default();
+            toasts.success("latitude/longitude auto-filled from the data");
+        }
     }
 
     /// Starts the cooperative import for the dropped raw data. Returns `false`
@@ -1896,6 +1979,54 @@ fn is_opendata_data(json: &str) -> bool {
 
 fn is_opendata_data_value(value: &serde_json::Value) -> bool {
     value.get("opendata").is_some_and(|o| o.is_object())
+}
+
+/// True when the dropped/fetched JSON is a GeoJSON `FeatureCollection`.
+fn is_geojson_feature_collection(value: &serde_json::Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("FeatureCollection")
+        && value.get("features").is_some_and(Value::is_array)
+}
+
+/// True when an optional descriptor path is unset or blank.
+fn is_empty_path(path: Option<&str>) -> bool {
+    path.is_none_or(|p| p.trim().is_empty())
+}
+
+/// Returns the first candidate path that resolves, on at least one element, to
+/// a finite number within `max_abs` (a plausible latitude/longitude).
+fn first_matching_path(
+    elements: &[&serde_json::Value],
+    candidates: &'static [&'static str],
+    max_abs: f64,
+) -> Option<&'static str> {
+    for path in candidates {
+        if elements.iter().any(|element| {
+            (*element)
+                .get_path_as_double(path)
+                .is_ok_and(|v| v.is_finite() && v.abs() <= max_abs)
+        }) {
+            return Some(*path);
+        }
+    }
+    None
+}
+
+/// Returns the first candidate path that yields at least one polygon on at
+/// least one element ("the polygon can be filled").
+fn first_matching_polygon_path(
+    elements: &[&serde_json::Value],
+    candidates: &'static [&'static str],
+) -> Option<&'static str> {
+    for path in candidates {
+        if elements.iter().any(|element| {
+            (*element)
+                .get_path_as_polygons(path)
+                .is_some_and(|polygons| !polygons.is_empty())
+        }) {
+            return Some(*path);
+        }
+    }
+    None
 }
 
 /// Compact signature of the data-affecting fields of a descriptor. Metadata

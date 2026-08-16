@@ -60,6 +60,13 @@ window.addEventListener("message", async (e) => {
         const { id, method, args } = e.data;
         const source = e.source as Window | null;
         try {
+            if (method === "get_viewport_bounds") {
+                source?.postMessage(
+                    { type: "ROADWORK_APP_RPC_RESULT", id, result: getViewportBounds() },
+                    "*"
+                );
+                return;
+            }
             const result = await rpcCall(method, args || []);
             source?.postMessage({ type: "ROADWORK_APP_RPC_RESULT", id, result }, "*");
         } catch (err) {

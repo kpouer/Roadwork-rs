@@ -77,6 +77,19 @@ struct DbOverview {
     opendata_by_service: Vec<ServiceCount>,
 }
 
+/// The current WME map viewport, returned by the `get_viewport_bounds` RPC.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewportBounds {
+    lat_min: f64,
+    lon_min: f64,
+    lat_max: f64,
+    lon_max: f64,
+}
+
+/// Fixed number of rows per page in the DB explorer.
+const PAGE_SIZE: i64 = 100;
+
 #[derive(Default)]
 struct ExplorerState {
     tables: Vec<TableInfo>,
@@ -85,13 +98,16 @@ struct ExplorerState {
     rows: Vec<Vec<Cell>>,
     total: i64,
     page: i64,
-    page_size: i64,
     db_size: Option<i64>,
     roadwork_counts: Vec<ServiceCount>,
     opendata_counts: Vec<ServiceCount>,
     loading_tables: bool,
     loading_data: bool,
     error: Option<String>,
+    /// Set when the map viewport is required but unavailable.
+    notice: Option<String>,
+    /// When true, only the rows inside the current WME viewport are shown.
+    only_visible: bool,
     needs_init: bool,
 }
 
@@ -100,8 +116,13 @@ impl ExplorerState {
         if self.total <= 0 {
             1
         } else {
-            (self.total + self.page_size - 1) / self.page_size
+            (self.total + PAGE_SIZE - 1) / PAGE_SIZE
         }
+    }
+
+    fn has_location(&self) -> bool {
+        self.columns.iter().any(|c| c.name == "latitude")
+            && self.columns.iter().any(|c| c.name == "longitude")
     }
 }
 
@@ -123,8 +144,7 @@ impl Default for DbExplorerDialog {
     fn default() -> Self {
         Self {
             state: Arc::new(Mutex::new(ExplorerState {
-                page: 0,
-                page_size: 50,
+                only_visible: true,
                 ..Default::default()
             })),
             pending_delete: None,
@@ -318,25 +338,19 @@ impl DbExplorerDialog {
         enum Action {
             Prev,
             Next,
-            Resize(i64),
         }
         let mut action: Option<Action> = None;
+        let mut only_visible_toggled = false;
         {
-            let st = self.state.lock().unwrap();
+            let mut st = self.state.lock().unwrap();
             if st.loading_data {
                 ui.centered_and_justified(|ui| {
                     ui.label("Chargement…");
                 });
                 return;
             }
-            if st.columns.is_empty() {
-                if let Some(error) = &st.error {
-                    ui.colored_label(egui::Color32::RED, error);
-                } else {
-                    ui.label("Sélectionnez une table pour voir ses données.");
-                }
-                return;
-            }
+            let has_location = st.has_location();
+            let enable_checkbox = has_location || st.notice.is_some();
             ui.horizontal(|ui| {
                 ui.label(format!("{} ligne(s)", st.total));
                 ui.separator();
@@ -349,45 +363,45 @@ impl DbExplorerDialog {
                     action = Some(Action::Next);
                 }
                 ui.separator();
-                ui.label("Taille:");
-                let page_size = st.page_size;
-                let new_size = egui::ComboBox::from_id_salt("db_explorer_page_size")
-                    .selected_text(format!("{page_size}"))
-                    .show_ui(ui, |ui| {
-                        let mut chosen = page_size;
-                        for size in [10i64, 25, 50, 100, 500] {
-                            if ui
-                                .selectable_value(&mut chosen, size, size.to_string())
-                                .clicked()
-                            {
-                                break;
-                            }
-                        }
-                        chosen
-                    })
-                    .inner
-                    .unwrap_or(page_size);
-                if new_size != page_size {
-                    action = Some(Action::Resize(new_size));
+                let mut only_visible = st.only_visible;
+                let response = ui.add_enabled(
+                    enable_checkbox,
+                    egui::Checkbox::new(&mut only_visible, "Données visibles à l'écran"),
+                );
+                if !has_location && st.notice.is_none() {
+                    response.clone().on_hover_text(
+                        "Cette table n'a pas de coordonnées : toutes les lignes sont affichées.",
+                    );
+                }
+                if response.changed() {
+                    st.only_visible = only_visible;
+                    st.page = 0;
+                    only_visible_toggled = true;
                 }
             });
+            if let Some(notice) = &st.notice {
+                ui.add_space(2.0);
+                ui.colored_label(egui::Color32::from_rgb(220, 120, 0), notice);
+            }
             ui.separator();
+            if st.columns.is_empty() && !only_visible_toggled && st.notice.is_none() {
+                if let Some(error) = &st.error {
+                    ui.colored_label(egui::Color32::RED, error);
+                } else {
+                    ui.label("Sélectionnez une table pour voir ses données.");
+                }
+            }
         }
-        match action {
-            Some(Action::Prev) => {
-                self.state.lock().unwrap().page -= 1;
+        if action.is_some() || only_visible_toggled {
+            match action {
+                Some(Action::Prev) => {
+                    self.state.lock().unwrap().page -= 1;
+                }
+                Some(Action::Next) => {
+                    self.state.lock().unwrap().page += 1;
+                }
+                None => {}
             }
-            Some(Action::Next) => {
-                self.state.lock().unwrap().page += 1;
-            }
-            Some(Action::Resize(size)) => {
-                let mut st = self.state.lock().unwrap();
-                st.page_size = size;
-                st.page = 0;
-            }
-            None => {}
-        }
-        if action.is_some() {
             let table_name = { self.state.lock().unwrap().selected.clone() };
             if let Some(table) = table_name {
                 self.load_data(ctx, &table);
@@ -402,6 +416,9 @@ impl DbExplorerDialog {
         let Some(table_name) = table_name else {
             return;
         };
+        if columns.is_empty() {
+            return;
+        }
 
         let mut table = egui_extras::TableBuilder::new(ui)
             .striped(true)
@@ -597,25 +614,17 @@ impl DbExplorerDialog {
             let mut st = self.state.lock().unwrap();
             st.loading_data = true;
             st.error = None;
+            st.notice = None;
         }
         let state = Arc::clone(&self.state);
         let ctx = ctx.clone();
         let table = table.to_string();
         spawn_task(async move {
-            let (offset, limit) = {
+            let (offset, only_visible) = {
                 let st = state.lock().unwrap();
-                (st.page * st.page_size, st.page_size)
+                (st.page * PAGE_SIZE, st.only_visible)
             };
-            let result = rpc_json::<DbTableData>(
-                "get_db_table",
-                vec![
-                    JsValue::from_str(&table),
-                    JsValue::from_f64(offset as f64),
-                    JsValue::from_f64(limit as f64),
-                ],
-            )
-            .await;
-            {
+            let apply = |result: Result<DbTableData, String>| {
                 let mut st = state.lock().unwrap();
                 st.loading_data = false;
                 match result {
@@ -627,13 +636,60 @@ impl DbExplorerDialog {
                         st.rows = data.rows;
                         st.total = data.total;
                         st.error = None;
+                        st.notice = None;
                     }
                     Err(e) => {
                         st.error = Some(e);
                     }
                 }
+                ctx.request_repaint();
+            };
+            if only_visible {
+                let bounds =
+                    rpc_json::<Option<ViewportBounds>>("get_viewport_bounds", vec![]).await;
+                let Some(bounds) = bounds.ok().flatten() else {
+                    let mut st = state.lock().unwrap();
+                    st.loading_data = false;
+                    st.rows = Vec::new();
+                    st.total = 0;
+                    st.notice = Some(
+                        "Emprise de la carte WME indisponible : déplacez la carte puis cliquez \
+                         sur Rafraîchir, ou décochez la case pour tout afficher."
+                            .to_string(),
+                    );
+                    ctx.request_repaint();
+                    return;
+                };
+                let result = rpc_json::<DbTableData>(
+                    "get_db_table",
+                    vec![
+                        JsValue::from_str(&table),
+                        JsValue::from_f64(offset as f64),
+                        JsValue::from_f64(PAGE_SIZE as f64),
+                        JsValue::from_f64(bounds.lat_min),
+                        JsValue::from_f64(bounds.lon_min),
+                        JsValue::from_f64(bounds.lat_max),
+                        JsValue::from_f64(bounds.lon_max),
+                    ],
+                )
+                .await;
+                apply(result);
+            } else {
+                let result = rpc_json::<DbTableData>(
+                    "get_db_table",
+                    vec![
+                        JsValue::from_str(&table),
+                        JsValue::from_f64(offset as f64),
+                        JsValue::from_f64(PAGE_SIZE as f64),
+                        JsValue::NULL,
+                        JsValue::NULL,
+                        JsValue::NULL,
+                        JsValue::NULL,
+                    ],
+                )
+                .await;
+                apply(result);
             }
-            ctx.request_repaint();
         });
     }
 }

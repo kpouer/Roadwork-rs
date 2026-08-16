@@ -397,13 +397,32 @@ pub async fn get_db_overview() -> Result<JsValue, JsValue> {
     serialize_data(&overview)
 }
 
-/// Reads a paginated page of `table` for the DB explorer.
+/// Reads a paginated page of `table` for the DB explorer. When the optional
+/// `lat_min`/`lon_min`/`lat_max`/`lon_max` bounds are all given and `table`
+/// has `latitude`/`longitude` columns, only the rows inside that rectangle are
+/// returned.
 #[wasm_bindgen]
-pub async fn get_db_table(table: &str, offset: u32, limit: u32) -> Result<JsValue, JsValue> {
-    info!("[wasm] get_db_table {table} offset={offset} limit={limit}");
+pub async fn get_db_table(
+    table: &str,
+    offset: u32,
+    limit: u32,
+    lat_min: Option<f64>,
+    lon_min: Option<f64>,
+    lat_max: Option<f64>,
+    lon_max: Option<f64>,
+) -> Result<JsValue, JsValue> {
+    info!(
+        "[wasm] get_db_table {table} offset={offset} limit={limit} bbox={lat_min:?}/{lon_min:?}/{lat_max:?}/{lon_max:?}"
+    );
+    let bbox = match (lat_min, lon_min, lat_max, lon_max) {
+        (Some(lat_min), Some(lon_min), Some(lat_max), Some(lon_max)) => {
+            Some((lat_min, lon_min, lat_max, lon_max))
+        }
+        _ => None,
+    };
     let store = store_take().await?;
     let data = store
-        .table_rows(table, offset as i64, limit as i64)
+        .table_rows(table, offset as i64, limit as i64, bbox)
         .map_err(js_err)?;
     store_put_back(store);
     serialize_data(&data)

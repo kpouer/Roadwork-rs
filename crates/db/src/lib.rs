@@ -524,16 +524,55 @@ impl Store {
     }
 
     /// Reads a page of `table` ordered by `rowid`, returning columns, rows and
-    /// the total number of rows.
-    pub fn table_rows(&self, table: &str, offset: i64, limit: i64) -> Result<DbTableData> {
+    /// the total number of rows. When `bbox` is given and `table` has
+    /// `latitude`/`longitude` columns, only the rows inside that rectangle are
+    /// returned (and counted); the bound order does not matter.
+    pub fn table_rows(
+        &self,
+        table: &str,
+        offset: i64,
+        limit: i64,
+        bbox: Option<(f64, f64, f64, f64)>,
+    ) -> Result<DbTableData> {
         self.ensure_table(table)?;
         let columns = self.table_columns(table)?;
-        let total = self.table_count(table)?;
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2"
-        ))?;
+        let has_location = columns.iter().any(|c| c.name == "latitude")
+            && columns.iter().any(|c| c.name == "longitude");
+        let bbox = bbox
+            .filter(|_| has_location)
+            .map(|(lat_min, lon_min, lat_max, lon_max)| {
+                let (lat_min, lat_max) = ordered(lat_min, lat_max);
+                let (lon_min, lon_max) = ordered(lon_min, lon_max);
+                (lat_min, lon_min, lat_max, lon_max)
+            });
+        let total = self.table_count_filtered(table, bbox)?;
+        let (select_sql, page_params): (String, Vec<rusqlite::types::Value>) = match bbox {
+            Some((lat_min, lon_min, lat_max, lon_max)) => (
+                format!(
+                    "SELECT * FROM \"{table}\"
+                     WHERE latitude BETWEEN ?1 AND ?2 AND longitude BETWEEN ?3 AND ?4
+                     ORDER BY rowid LIMIT ?5 OFFSET ?6"
+                ),
+                vec![
+                    rusqlite::types::Value::Real(lat_min),
+                    rusqlite::types::Value::Real(lat_max),
+                    rusqlite::types::Value::Real(lon_min),
+                    rusqlite::types::Value::Real(lon_max),
+                    rusqlite::types::Value::Integer(limit),
+                    rusqlite::types::Value::Integer(offset),
+                ],
+            ),
+            None => (
+                format!("SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2"),
+                vec![
+                    rusqlite::types::Value::Integer(limit),
+                    rusqlite::types::Value::Integer(offset),
+                ],
+            ),
+        };
+        let mut stmt = self.conn.prepare(&select_sql)?;
         let rows = stmt
-            .query_map(params![limit, offset], |row| {
+            .query_map(rusqlite::params_from_iter(page_params), |row| {
                 let mut cells = Vec::with_capacity(columns.len());
                 for i in 0..columns.len() {
                     let value: rusqlite::types::Value = row.get(i)?;
@@ -548,6 +587,29 @@ impl Store {
             rows,
             total,
         })
+    }
+
+    /// Returns the number of rows of `table`, optionally filtered by a
+    /// `latitude`/`longitude` rectangle.
+    fn table_count_filtered(&self, table: &str, bbox: Option<(f64, f64, f64, f64)>) -> Result<i64> {
+        let (sql, params): (String, Vec<rusqlite::types::Value>) = match bbox {
+            Some((lat_min, lon_min, lat_max, lon_max)) => (
+                format!(
+                    "SELECT COUNT(*) FROM \"{table}\"
+                     WHERE latitude BETWEEN ?1 AND ?2 AND longitude BETWEEN ?3 AND ?4"
+                ),
+                vec![
+                    rusqlite::types::Value::Real(lat_min),
+                    rusqlite::types::Value::Real(lat_max),
+                    rusqlite::types::Value::Real(lon_min),
+                    rusqlite::types::Value::Real(lon_max),
+                ],
+            ),
+            None => (format!("SELECT COUNT(*) FROM \"{table}\""), Vec::new()),
+        };
+        self.conn
+            .query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
+            .map_err(Error::from)
     }
 
     /// Deletes the row of `table` identified by `keys` (column/value pairs).
