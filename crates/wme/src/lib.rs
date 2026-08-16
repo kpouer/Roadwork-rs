@@ -398,9 +398,12 @@ pub async fn get_db_overview() -> Result<JsValue, JsValue> {
 }
 
 /// Reads a paginated page of `table` for the DB explorer. When the optional
+/// `service` is given and `table` has a `service` column, only the rows of that
+/// service are returned. When the optional
 /// `lat_min`/`lon_min`/`lat_max`/`lon_max` bounds are all given and `table`
 /// has `latitude`/`longitude` columns, only the rows inside that rectangle are
 /// returned.
+#[allow(clippy::too_many_arguments)]
 #[wasm_bindgen]
 pub async fn get_db_table(
     table: &str,
@@ -410,9 +413,10 @@ pub async fn get_db_table(
     lon_min: Option<f64>,
     lat_max: Option<f64>,
     lon_max: Option<f64>,
+    service: Option<String>,
 ) -> Result<JsValue, JsValue> {
     info!(
-        "[wasm] get_db_table {table} offset={offset} limit={limit} bbox={lat_min:?}/{lon_min:?}/{lat_max:?}/{lon_max:?}"
+        "[wasm] get_db_table {table} offset={offset} limit={limit} service={service:?} bbox={lat_min:?}/{lon_min:?}/{lat_max:?}/{lon_max:?}"
     );
     let bbox = match (lat_min, lon_min, lat_max, lon_max) {
         (Some(lat_min), Some(lon_min), Some(lat_max), Some(lon_max)) => {
@@ -422,7 +426,7 @@ pub async fn get_db_table(
     };
     let store = store_take().await?;
     let data = store
-        .table_rows(table, offset as i64, limit as i64, bbox)
+        .table_rows(table, offset as i64, limit as i64, service.as_deref(), bbox)
         .map_err(js_err)?;
     store_put_back(store);
     serialize_data(&data)

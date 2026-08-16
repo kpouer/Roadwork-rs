@@ -1,6 +1,7 @@
-//! DB Explorer dialog: browse the extension's SQLite tables with pagination and
-//! row deletion. All data flows through the [`crate::db_rpc`] channel to the
-//! wasm worker that owns the store.
+//! DB Explorer dialog: browse the cached services (Roadwork then Data) and,
+//! in a secondary view, the raw SQLite tables, with pagination and deletion.
+//! All data flows through the [`crate::db_rpc`] channel to the wasm worker that
+//! owns the store.
 
 use std::sync::{Arc, Mutex};
 
@@ -90,18 +91,47 @@ struct ViewportBounds {
 /// Fixed number of rows per page in the DB explorer.
 const PAGE_SIZE: i64 = 100;
 
+/// What the top list shows: the cached services, or the raw SQLite tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ViewMode {
+    #[default]
+    Services,
+    Tables,
+}
+
+impl ViewMode {
+    fn label(self) -> &'static str {
+        match self {
+            ViewMode::Services => "Services",
+            ViewMode::Tables => "Tables brutes",
+        }
+    }
+}
+
+/// What the data panel currently displays.
+#[derive(Debug, Clone)]
+struct Selection {
+    /// Underlying table to read (`roadwork`, `data` or a raw table name).
+    table: String,
+    /// Service filter, when browsing one service's data.
+    service: Option<String>,
+    /// Label shown in the toolbar.
+    label: String,
+}
+
 #[derive(Default)]
 struct ExplorerState {
+    view_mode: ViewMode,
     tables: Vec<TableInfo>,
-    selected: Option<String>,
+    roadwork_counts: Vec<ServiceCount>,
+    opendata_counts: Vec<ServiceCount>,
+    selection: Option<Selection>,
     columns: Vec<ColumnInfo>,
     rows: Vec<Vec<Cell>>,
     total: i64,
     page: i64,
     db_size: Option<i64>,
-    roadwork_counts: Vec<ServiceCount>,
-    opendata_counts: Vec<ServiceCount>,
-    loading_tables: bool,
+    loading_overview: bool,
     loading_data: bool,
     error: Option<String>,
     /// Set when the map viewport is required but unavailable.
@@ -109,6 +139,9 @@ struct ExplorerState {
     /// When true, only the rows inside the current WME viewport are shown.
     only_visible: bool,
     needs_init: bool,
+    /// Set when the selection changed outside a click (e.g. after reloading
+    /// the overview) and its data still has to be loaded.
+    data_needs_load: bool,
 }
 
 impl ExplorerState {
@@ -124,12 +157,59 @@ impl ExplorerState {
         self.columns.iter().any(|c| c.name == "latitude")
             && self.columns.iter().any(|c| c.name == "longitude")
     }
+
+    /// Whether `sel` still exists in the current view mode's data.
+    fn selection_valid(&self, sel: &Selection) -> bool {
+        match (self.view_mode, &sel.service) {
+            (ViewMode::Services, Some(service)) => {
+                if sel.table == "roadwork" {
+                    self.roadwork_counts.iter().any(|s| &s.service == service)
+                } else if sel.table == "data" {
+                    self.opendata_counts.iter().any(|s| &s.service == service)
+                } else {
+                    false
+                }
+            }
+            (ViewMode::Tables, None) => self.tables.iter().any(|t| t.name == sel.table),
+            _ => false,
+        }
+    }
+
+    /// The selection to fall back on for the current view mode, if any.
+    fn default_selection(&self) -> Option<Selection> {
+        match self.view_mode {
+            ViewMode::Services => {
+                if let Some(sc) = self.roadwork_counts.first() {
+                    Some(Selection {
+                        table: "roadwork".to_string(),
+                        service: Some(sc.service.clone()),
+                        label: format!("{} (Roadwork)", sc.service),
+                    })
+                } else {
+                    self.opendata_counts.first().map(|sc| Selection {
+                        table: "data".to_string(),
+                        service: Some(sc.service.clone()),
+                        label: format!("{} (Data)", sc.service),
+                    })
+                }
+            }
+            ViewMode::Tables => self.tables.first().map(|t| Selection {
+                table: t.name.clone(),
+                service: None,
+                label: t.name.clone(),
+            }),
+        }
+    }
 }
 
 struct PendingDelete {
     table: String,
     keys: Vec<(String, serde_json::Value)>,
     summary: String,
+    /// Confirmation window message.
+    title: String,
+    /// Extra warning shown below the summary, if any.
+    warning: Option<String>,
 }
 
 pub(crate) struct DbExplorerDialog {
@@ -172,7 +252,7 @@ impl DbExplorerDialog {
             init
         };
         if needs_init && *open {
-            self.load_tables(ctx);
+            self.load_overview(ctx);
         }
 
         let screen = ctx.content_rect().size();
@@ -210,7 +290,7 @@ impl DbExplorerDialog {
         };
         let ctx = ui.ctx().clone();
         if needs_init {
-            self.load_tables(&ctx);
+            self.load_overview(&ctx);
         }
         self.show_content(ui, &ctx, true);
         if self.pending_delete.is_some() {
@@ -225,25 +305,59 @@ impl DbExplorerDialog {
     fn show_content(&mut self, ui: &mut Ui, ctx: &Context, show_close: bool) {
         self.show_toolbar(ui, ctx, show_close);
         ui.separator();
-        egui::Panel::left("db_explorer_tables_panel")
+        let top_height = (ui.available_height() * 0.45).clamp(110.0, 320.0);
+        egui::Panel::top("db_explorer_top_panel")
             .resizable(true)
-            .default_size(180.0)
+            .min_size(100.0)
+            .default_size(top_height)
             .show_inside(ui, |ui| {
-                self.show_tables_panel(ui, ctx);
+                self.show_top_panel(ui, ctx);
             });
         egui::CentralPanel::default().show_inside(ui, |ui| {
             self.show_data_panel(ui, ctx);
         });
+
+        let (selection, needs_load) = {
+            let mut st = self.state.lock().unwrap();
+            let needs_load = st.data_needs_load;
+            if needs_load {
+                st.data_needs_load = false;
+            }
+            (st.selection.clone(), needs_load)
+        };
+        if needs_load && let Some(sel) = selection {
+            self.load_data(ctx, &sel);
+        }
     }
 
     fn show_toolbar(&mut self, ui: &mut Ui, ctx: &Context, show_close: bool) {
         let mut refresh = false;
+        let mut mode_changed = false;
         ui.horizontal(|ui| {
-            let st = self.state.lock().unwrap();
-            if let Some(table) = &st.selected {
-                ui.label(RichText::new(format!("Table: {table}")).strong());
+            let mut st = self.state.lock().unwrap();
+            if let Some(sel) = &st.selection {
+                ui.label(RichText::new(sel.label.clone()).strong());
             } else {
-                ui.label("Aucune table sélectionnée");
+                ui.label("Aucune source sélectionnée");
+            }
+            ui.separator();
+            let mut mode = st.view_mode;
+            egui::ComboBox::from_id_salt("db_explorer_view_mode")
+                .selected_text(mode.label())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut mode, ViewMode::Services, "Services");
+                    ui.selectable_value(&mut mode, ViewMode::Tables, "Tables brutes");
+                });
+            if mode != st.view_mode {
+                st.view_mode = mode;
+                st.page = 0;
+                st.columns = Vec::new();
+                st.rows = Vec::new();
+                st.total = 0;
+                st.notice = None;
+                st.error = None;
+                st.selection = st.default_selection();
+                mode_changed = true;
             }
             if ui.button("Rafraîchir").clicked() {
                 refresh = true;
@@ -256,7 +370,7 @@ impl DbExplorerDialog {
                 ui.separator();
                 ui.label(format!("Base : {}", format_bytes(size)));
             }
-            if st.loading_tables || st.loading_data {
+            if st.loading_overview || st.loading_data {
                 ui.spinner();
             }
             if show_close {
@@ -267,71 +381,233 @@ impl DbExplorerDialog {
                 });
             }
         });
+        if mode_changed {
+            let selection = { self.state.lock().unwrap().selection.clone() };
+            if let Some(sel) = selection {
+                self.load_data(ctx, &sel);
+            }
+        }
         if refresh {
-            let selected = { self.state.lock().unwrap().selected.clone() };
-            self.load_tables(ctx);
-            if let Some(table) = selected {
-                self.load_data(ctx, &table);
+            let selection = { self.state.lock().unwrap().selection.clone() };
+            self.load_overview(ctx);
+            if let Some(sel) = selection {
+                self.load_data(ctx, &sel);
             }
         }
     }
 
-    fn show_tables_panel(&mut self, ui: &mut Ui, ctx: &Context) {
-        ui.add_space(4.0);
-        let mut pending_select: Option<String> = None;
+    fn show_top_panel(&mut self, ui: &mut Ui, ctx: &Context) {
+        let mut pending_select: Option<Selection> = None;
+        let mut pending_delete_source: Option<(String, String)> = None;
         {
-            let mut st = self.state.lock().unwrap();
-            if st.tables.is_empty() {
-                if st.loading_tables {
-                    ui.label("Chargement…");
-                } else {
-                    ui.label("Aucune table");
-                }
+            let st = self.state.lock().unwrap();
+            if st.loading_overview {
+                ui.centered_and_justified(|ui| {
+                    ui.spinner();
+                });
             } else {
-                egui::ScrollArea::vertical()
-                    .id_salt("db_explorer_tables_scroll")
-                    .show(ui, |ui| {
-                        for table in st.tables.clone() {
-                            let selected = st.selected.as_deref() == Some(table.name.as_str());
-                            let label = format!("{} ({})", table.name, table.count);
-                            if ui.selectable_label(selected, label).clicked() {
-                                st.selected = Some(table.name.clone());
-                                st.page = 0;
-                                st.error = None;
-                                pending_select = Some(table.name);
-                            }
-                        }
-                    });
-            }
-            let roadwork_counts = st.roadwork_counts.clone();
-            let opendata_counts = st.opendata_counts.clone();
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .id_salt("db_explorer_counts_scroll")
-                .max_height(200.0)
-                .show(ui, |ui| {
-                    ui.label(RichText::new("Roadworks").strong());
-                    if roadwork_counts.is_empty() {
-                        ui.label("Aucun");
-                    } else {
-                        for sc in &roadwork_counts {
-                            ui.label(format!("{} : {}", sc.service, sc.count));
-                        }
+                let empty = match st.view_mode {
+                    ViewMode::Services => {
+                        st.roadwork_counts.is_empty() && st.opendata_counts.is_empty()
                     }
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Opendata").strong());
-                    if opendata_counts.is_empty() {
-                        ui.label("Aucun");
-                    } else {
-                        for sc in &opendata_counts {
-                            ui.label(format!("{} : {}", sc.service, sc.count));
-                        }
+                    ViewMode::Tables => st.tables.is_empty(),
+                };
+                if empty {
+                    ui.centered_and_justified(|ui| {
+                        ui.label("Aucune donnée");
+                    });
+                } else {
+                    match st.view_mode {
+                        ViewMode::Services => Self::services_table(
+                            ui,
+                            &st,
+                            &mut pending_select,
+                            &mut pending_delete_source,
+                        ),
+                        ViewMode::Tables => Self::tables_list(ui, &st, &mut pending_select),
+                    }
+                }
+            }
+        }
+        if let Some(sel) = pending_select {
+            {
+                let mut st = self.state.lock().unwrap();
+                st.selection = Some(sel.clone());
+                st.page = 0;
+                st.error = None;
+                st.notice = None;
+            }
+            self.load_data(ctx, &sel);
+        }
+        if let Some((service, cache_type)) = pending_delete_source {
+            self.begin_delete_source(&service, &cache_type);
+        }
+    }
+
+    /// Renders the services list (Roadwork group, then Data group) as a table.
+    fn services_table(
+        ui: &mut Ui,
+        st: &ExplorerState,
+        pending_select: &mut Option<Selection>,
+        pending_delete_source: &mut Option<(String, String)>,
+    ) {
+        let selected = st.selection.clone();
+        let roadwork = st.roadwork_counts.clone();
+        let opendata = st.opendata_counts.clone();
+        egui_extras::TableBuilder::new(ui)
+            .striped(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(
+                egui_extras::Column::initial(220.0)
+                    .at_least(120.0)
+                    .clip(true)
+                    .resizable(true),
+            )
+            .column(
+                egui_extras::Column::initial(60.0)
+                    .at_least(40.0)
+                    .resizable(true),
+            )
+            .column(
+                egui_extras::Column::initial(90.0)
+                    .at_least(70.0)
+                    .resizable(true),
+            )
+            .header(22.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("Source");
+                });
+                header.col(|ui| {
+                    ui.strong("Nb");
+                });
+                header.col(|_ui| {});
+            })
+            .body(|mut body| {
+                Self::services_group(
+                    &mut body,
+                    "Roadwork",
+                    &roadwork,
+                    "roadwork",
+                    "roadwork",
+                    &selected,
+                    pending_select,
+                    pending_delete_source,
+                );
+                Self::services_group(
+                    &mut body,
+                    "Data",
+                    &opendata,
+                    "opendata",
+                    "data",
+                    &selected,
+                    pending_select,
+                    pending_delete_source,
+                );
+            });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn services_group(
+        body: &mut egui_extras::TableBody<'_>,
+        title: &str,
+        counts: &[ServiceCount],
+        cache_type: &str,
+        table: &str,
+        selected: &Option<Selection>,
+        pending_select: &mut Option<Selection>,
+        pending_delete_source: &mut Option<(String, String)>,
+    ) {
+        body.row(22.0, |mut row| {
+            row.set_selected(true);
+            row.col(|ui| {
+                ui.strong(title);
+            });
+            row.col(|_ui| {});
+            row.col(|_ui| {});
+        });
+        if counts.is_empty() {
+            body.row(22.0, |mut row| {
+                row.col(|ui| {
+                    ui.weak("Aucun");
+                });
+                row.col(|_ui| {});
+                row.col(|_ui| {});
+            });
+            return;
+        }
+        for sc in counts {
+            body.row(22.0, |mut row| {
+                let is_selected = selected.as_ref().is_some_and(|s| {
+                    s.service.as_deref() == Some(sc.service.as_str()) && s.table == table
+                });
+                row.col(|ui| {
+                    if ui.selectable_label(is_selected, &sc.service).clicked() {
+                        *pending_select = Some(Selection {
+                            table: table.to_string(),
+                            service: Some(sc.service.clone()),
+                            label: format!("{} ({title})", sc.service),
+                        });
                     }
                 });
+                row.col(|ui| {
+                    ui.label(sc.count.to_string());
+                });
+                row.col(|ui| {
+                    if ui.small_button("Supprimer").clicked() {
+                        *pending_delete_source = Some((sc.service.clone(), cache_type.to_string()));
+                    }
+                });
+            });
         }
-        if let Some(table) = pending_select {
-            self.load_data(ctx, &table);
-        }
+    }
+
+    /// Renders the raw tables list.
+    fn tables_list(ui: &mut Ui, st: &ExplorerState, pending_select: &mut Option<Selection>) {
+        let selected = st.selection.clone();
+        let tables = st.tables.clone();
+        egui_extras::TableBuilder::new(ui)
+            .striped(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(
+                egui_extras::Column::initial(220.0)
+                    .at_least(120.0)
+                    .clip(true)
+                    .resizable(true),
+            )
+            .column(
+                egui_extras::Column::initial(60.0)
+                    .at_least(40.0)
+                    .resizable(true),
+            )
+            .header(22.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("Table");
+                });
+                header.col(|ui| {
+                    ui.strong("Nb");
+                });
+            })
+            .body(|body| {
+                body.rows(22.0, tables.len(), |mut row| {
+                    let index = row.index();
+                    let t = &tables[index];
+                    let is_selected = selected
+                        .as_ref()
+                        .is_some_and(|s| s.table == t.name && s.service.is_none());
+                    row.col(|ui| {
+                        if ui.selectable_label(is_selected, &t.name).clicked() {
+                            *pending_select = Some(Selection {
+                                table: t.name.clone(),
+                                service: None,
+                                label: t.name.clone(),
+                            });
+                        }
+                    });
+                    row.col(|ui| {
+                        ui.label(t.count.to_string());
+                    });
+                });
+            });
     }
 
     fn show_data_panel(&mut self, ui: &mut Ui, ctx: &Context) {
@@ -388,7 +664,11 @@ impl DbExplorerDialog {
                 if let Some(error) = &st.error {
                     ui.colored_label(egui::Color32::RED, error);
                 } else {
-                    ui.label("Sélectionnez une table pour voir ses données.");
+                    let message = match st.view_mode {
+                        ViewMode::Services => "Sélectionnez un service pour voir ses données.",
+                        ViewMode::Tables => "Sélectionnez une table pour voir ses données.",
+                    };
+                    ui.label(message);
                 }
             }
         }
@@ -402,34 +682,39 @@ impl DbExplorerDialog {
                 }
                 None => {}
             }
-            let table_name = { self.state.lock().unwrap().selected.clone() };
-            if let Some(table) = table_name {
-                self.load_data(ctx, &table);
+            let selection = { self.state.lock().unwrap().selection.clone() };
+            if let Some(sel) = selection {
+                self.load_data(ctx, &sel);
             }
             return;
         }
 
-        let (table_name, columns, rows) = {
+        let (selection, columns, rows) = {
             let st = self.state.lock().unwrap();
-            (st.selected.clone(), st.columns.clone(), st.rows.clone())
+            (st.selection.clone(), st.columns.clone(), st.rows.clone())
         };
-        let Some(table_name) = table_name else {
+        let Some(selection) = selection else {
             return;
         };
         if columns.is_empty() {
             return;
         }
+        // Row-level deletion only makes sense for raw tables, not for the
+        // cached data of a service (sources are deleted from the top list).
+        let show_delete = selection.service.is_none();
 
         let mut table = egui_extras::TableBuilder::new(ui)
             .striped(true)
-            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(egui_extras::Column::initial(90.0).clip(true))
-            .column(
-                egui_extras::Column::initial(180.0)
-                    .at_least(80.0)
-                    .clip(true)
-                    .resizable(true),
-            );
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
+        if show_delete {
+            table = table.column(egui_extras::Column::initial(90.0).clip(true));
+        }
+        table = table.column(
+            egui_extras::Column::initial(180.0)
+                .at_least(80.0)
+                .clip(true)
+                .resizable(true),
+        );
         for _ in 1..columns.len() {
             table = table.column(
                 egui_extras::Column::initial(160.0)
@@ -438,11 +723,14 @@ impl DbExplorerDialog {
                     .resizable(true),
             );
         }
+        let table_name = selection.table.clone();
         table
             .header(24.0, |mut header| {
-                header.col(|ui| {
-                    ui.strong("Actions");
-                });
+                if show_delete {
+                    header.col(|ui| {
+                        ui.strong("Actions");
+                    });
+                }
                 for column in &columns {
                     header.col(|ui| {
                         if column.primary_key {
@@ -456,11 +744,13 @@ impl DbExplorerDialog {
             .body(|body| {
                 body.rows(18.0, rows.len(), |mut row| {
                     let index = row.index();
-                    row.col(|ui| {
-                        if ui.small_button("Supprimer").clicked() {
-                            self.begin_delete(&table_name, &columns, &rows[index]);
-                        }
-                    });
+                    if show_delete {
+                        row.col(|ui| {
+                            if ui.small_button("Supprimer").clicked() {
+                                self.begin_delete(&table_name, &columns, &rows[index]);
+                            }
+                        });
+                    }
                     for cell in &rows[index] {
                         row.col(|ui| {
                             ui.add(egui::Label::new(truncate(&cell.display(), 120)).truncate());
@@ -474,7 +764,9 @@ impl DbExplorerDialog {
         let Some(pending) = &self.pending_delete else {
             return;
         };
-        let is_cache = pending.table == "cache";
+        let title = pending.title.clone();
+        let summary = pending.summary.clone();
+        let warning = pending.warning.clone();
         let mut confirmed = false;
         let mut cancelled = false;
         egui::Window::new("Confirmer la suppression")
@@ -482,17 +774,11 @@ impl DbExplorerDialog {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(format!(
-                    "Supprimer la ligne de la table \"{}\" ?",
-                    pending.table
-                ));
-                ui.label(pending.summary.clone());
-                if is_cache {
+                ui.label(title);
+                ui.label(summary);
+                if let Some(warning) = &warning {
                     ui.add_space(4.0);
-                    ui.colored_label(
-                        egui::Color32::from_rgb(220, 120, 0),
-                        "Les données liées de ce service (table roadwork ou data) seront aussi supprimées.",
-                    );
+                    ui.colored_label(egui::Color32::from_rgb(220, 120, 0), warning);
                 }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -533,10 +819,42 @@ impl DbExplorerDialog {
             .map(|(key, value)| format!("{key}: {value}"))
             .collect::<Vec<_>>()
             .join(", ");
+        let warning = if table == "cache" {
+            Some(
+                "Les données liées de ce service (table roadwork ou data) seront aussi supprimées."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
         self.pending_delete = Some(PendingDelete {
             table: table.to_string(),
             keys,
             summary,
+            title: format!("Supprimer la ligne de la table \"{table}\" ?"),
+            warning,
+        });
+    }
+
+    /// Asks to delete a whole source: the `cache` row plus its linked data.
+    fn begin_delete_source(&mut self, service: &str, cache_type: &str) {
+        let kind = match cache_type {
+            "roadwork" => "Roadwork",
+            _ => "Data",
+        };
+        let keys: Vec<(String, serde_json::Value)> = vec![
+            ("service".to_string(), serde_json::json!(service)),
+            ("type".to_string(), serde_json::json!(cache_type)),
+        ];
+        self.pending_delete = Some(PendingDelete {
+            table: "cache".to_string(),
+            keys,
+            summary: format!("{service} ({kind})"),
+            title: format!("Supprimer la source « {service} » ?"),
+            warning: Some(
+                "Les données liées de ce service (table roadwork ou data) seront aussi supprimées."
+                    .to_string(),
+            ),
         });
     }
 
@@ -567,17 +885,13 @@ impl DbExplorerDialog {
             }
             ctx_clone.request_repaint();
         });
-        let table_name = { self.state.lock().unwrap().selected.clone() };
-        if let Some(table) = table_name {
-            self.load_data(ctx, &table);
-        }
-        self.load_tables(ctx);
+        self.load_overview(ctx);
     }
 
-    fn load_tables(&mut self, ctx: &Context) {
+    fn load_overview(&mut self, ctx: &Context) {
         {
             let mut st = self.state.lock().unwrap();
-            st.loading_tables = true;
+            st.loading_overview = true;
             st.error = None;
         }
         let state = Arc::clone(&self.state);
@@ -586,19 +900,16 @@ impl DbExplorerDialog {
             let result = rpc_json::<DbOverview>("get_db_overview", vec![]).await;
             {
                 let mut st = state.lock().unwrap();
-                st.loading_tables = false;
+                st.loading_overview = false;
                 match result {
                     Ok(overview) => {
                         st.tables = overview.tables;
                         st.db_size = Some(overview.size_bytes);
                         st.roadwork_counts = overview.roadwork_by_service;
                         st.opendata_counts = overview.opendata_by_service;
-                        let keep = st
-                            .selected
-                            .as_ref()
-                            .filter(|s| st.tables.iter().any(|t| &t.name == *s))
-                            .cloned();
-                        st.selected = keep.or_else(|| st.tables.first().map(|t| t.name.clone()));
+                        let keep = st.selection.clone().filter(|sel| st.selection_valid(sel));
+                        st.selection = keep.or_else(|| st.default_selection());
+                        st.data_needs_load = st.selection.is_some();
                     }
                     Err(e) => {
                         st.error = Some(e);
@@ -609,7 +920,7 @@ impl DbExplorerDialog {
         });
     }
 
-    fn load_data(&mut self, ctx: &Context, table: &str) {
+    fn load_data(&mut self, ctx: &Context, selection: &Selection) {
         {
             let mut st = self.state.lock().unwrap();
             st.loading_data = true;
@@ -618,7 +929,8 @@ impl DbExplorerDialog {
         }
         let state = Arc::clone(&self.state);
         let ctx = ctx.clone();
-        let table = table.to_string();
+        let table = selection.table.clone();
+        let service = selection.service.clone();
         spawn_task(async move {
             let (offset, only_visible) = {
                 let st = state.lock().unwrap();
@@ -644,7 +956,11 @@ impl DbExplorerDialog {
                 }
                 ctx.request_repaint();
             };
-            if only_visible {
+            let service_arg = match &service {
+                Some(s) => JsValue::from_str(s),
+                None => JsValue::NULL,
+            };
+            let args = if only_visible {
                 let bounds =
                     rpc_json::<Option<ViewportBounds>>("get_viewport_bounds", vec![]).await;
                 let Some(bounds) = bounds.ok().flatten() else {
@@ -660,36 +976,30 @@ impl DbExplorerDialog {
                     ctx.request_repaint();
                     return;
                 };
-                let result = rpc_json::<DbTableData>(
-                    "get_db_table",
-                    vec![
-                        JsValue::from_str(&table),
-                        JsValue::from_f64(offset as f64),
-                        JsValue::from_f64(PAGE_SIZE as f64),
-                        JsValue::from_f64(bounds.lat_min),
-                        JsValue::from_f64(bounds.lon_min),
-                        JsValue::from_f64(bounds.lat_max),
-                        JsValue::from_f64(bounds.lon_max),
-                    ],
-                )
-                .await;
-                apply(result);
+                vec![
+                    JsValue::from_str(&table),
+                    JsValue::from_f64(offset as f64),
+                    JsValue::from_f64(PAGE_SIZE as f64),
+                    JsValue::from_f64(bounds.lat_min),
+                    JsValue::from_f64(bounds.lon_min),
+                    JsValue::from_f64(bounds.lat_max),
+                    JsValue::from_f64(bounds.lon_max),
+                    service_arg,
+                ]
             } else {
-                let result = rpc_json::<DbTableData>(
-                    "get_db_table",
-                    vec![
-                        JsValue::from_str(&table),
-                        JsValue::from_f64(offset as f64),
-                        JsValue::from_f64(PAGE_SIZE as f64),
-                        JsValue::NULL,
-                        JsValue::NULL,
-                        JsValue::NULL,
-                        JsValue::NULL,
-                    ],
-                )
-                .await;
-                apply(result);
-            }
+                vec![
+                    JsValue::from_str(&table),
+                    JsValue::from_f64(offset as f64),
+                    JsValue::from_f64(PAGE_SIZE as f64),
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    service_arg,
+                ]
+            };
+            let result = rpc_json::<DbTableData>("get_db_table", args).await;
+            apply(result);
         });
     }
 }

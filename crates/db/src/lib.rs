@@ -524,20 +524,25 @@ impl Store {
     }
 
     /// Reads a page of `table` ordered by `rowid`, returning columns, rows and
-    /// the total number of rows. When `bbox` is given and `table` has
-    /// `latitude`/`longitude` columns, only the rows inside that rectangle are
-    /// returned (and counted); the bound order does not matter.
+    /// the total number of rows. When `service` is given and `table` has a
+    /// `service` column, only the rows of that service are returned (and
+    /// counted). When `bbox` is given and `table` has `latitude`/`longitude`
+    /// columns, only the rows inside that rectangle are returned (and counted);
+    /// the bound order does not matter.
     pub fn table_rows(
         &self,
         table: &str,
         offset: i64,
         limit: i64,
+        service: Option<&str>,
         bbox: Option<(f64, f64, f64, f64)>,
     ) -> Result<DbTableData> {
         self.ensure_table(table)?;
         let columns = self.table_columns(table)?;
         let has_location = columns.iter().any(|c| c.name == "latitude")
             && columns.iter().any(|c| c.name == "longitude");
+        let has_service = columns.iter().any(|c| c.name == "service");
+        let service = service.filter(|_| has_service);
         let bbox = bbox
             .filter(|_| has_location)
             .map(|(lat_min, lon_min, lat_max, lon_max)| {
@@ -545,31 +550,10 @@ impl Store {
                 let (lon_min, lon_max) = ordered(lon_min, lon_max);
                 (lat_min, lon_min, lat_max, lon_max)
             });
-        let total = self.table_count_filtered(table, bbox)?;
-        let (select_sql, page_params): (String, Vec<rusqlite::types::Value>) = match bbox {
-            Some((lat_min, lon_min, lat_max, lon_max)) => (
-                format!(
-                    "SELECT * FROM \"{table}\"
-                     WHERE latitude BETWEEN ?1 AND ?2 AND longitude BETWEEN ?3 AND ?4
-                     ORDER BY rowid LIMIT ?5 OFFSET ?6"
-                ),
-                vec![
-                    rusqlite::types::Value::Real(lat_min),
-                    rusqlite::types::Value::Real(lat_max),
-                    rusqlite::types::Value::Real(lon_min),
-                    rusqlite::types::Value::Real(lon_max),
-                    rusqlite::types::Value::Integer(limit),
-                    rusqlite::types::Value::Integer(offset),
-                ],
-            ),
-            None => (
-                format!("SELECT * FROM \"{table}\" ORDER BY rowid LIMIT ?1 OFFSET ?2"),
-                vec![
-                    rusqlite::types::Value::Integer(limit),
-                    rusqlite::types::Value::Integer(offset),
-                ],
-            ),
-        };
+        let total = self.table_count_filtered(table, service, bbox)?;
+        let (where_sql, page_params) =
+            Self::filter_clause(service, bbox, "rowid", Some((limit, offset)));
+        let select_sql = format!("SELECT * FROM \"{table}\"{where_sql}");
         let mut stmt = self.conn.prepare(&select_sql)?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(page_params), |row| {
@@ -589,27 +573,59 @@ impl Store {
         })
     }
 
-    /// Returns the number of rows of `table`, optionally filtered by a
-    /// `latitude`/`longitude` rectangle.
-    fn table_count_filtered(&self, table: &str, bbox: Option<(f64, f64, f64, f64)>) -> Result<i64> {
-        let (sql, params): (String, Vec<rusqlite::types::Value>) = match bbox {
-            Some((lat_min, lon_min, lat_max, lon_max)) => (
-                format!(
-                    "SELECT COUNT(*) FROM \"{table}\"
-                     WHERE latitude BETWEEN ?1 AND ?2 AND longitude BETWEEN ?3 AND ?4"
-                ),
-                vec![
-                    rusqlite::types::Value::Real(lat_min),
-                    rusqlite::types::Value::Real(lat_max),
-                    rusqlite::types::Value::Real(lon_min),
-                    rusqlite::types::Value::Real(lon_max),
-                ],
-            ),
-            None => (format!("SELECT COUNT(*) FROM \"{table}\""), Vec::new()),
-        };
+    /// Returns the number of rows of `table`, optionally filtered by `service`
+    /// and/or a `latitude`/`longitude` rectangle.
+    fn table_count_filtered(
+        &self,
+        table: &str,
+        service: Option<&str>,
+        bbox: Option<(f64, f64, f64, f64)>,
+    ) -> Result<i64> {
+        let (where_sql, params) = Self::filter_clause(service, bbox, "", None);
+        let sql = format!("SELECT COUNT(*) FROM \"{table}\"{where_sql}");
         self.conn
             .query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
             .map_err(Error::from)
+    }
+
+    /// Builds the `WHERE` clause (and its bind values) for an optional `service`
+    /// filter and/or a `latitude`/`longitude` rectangle. When `order` is
+    /// non-empty, appends `ORDER BY <order> LIMIT ? OFFSET ?` with the limit and
+    /// offset appended as extra bind values.
+    fn filter_clause(
+        service: Option<&str>,
+        bbox: Option<(f64, f64, f64, f64)>,
+        order: &str,
+        page: Option<(i64, i64)>,
+    ) -> (String, Vec<rusqlite::types::Value>) {
+        let mut clauses: Vec<&str> = Vec::new();
+        let mut params: Vec<rusqlite::types::Value> = Vec::new();
+        if let Some(service) = service {
+            clauses.push("service = ?");
+            params.push(rusqlite::types::Value::Text(service.to_string()));
+        }
+        if let Some((lat_min, lon_min, lat_max, lon_max)) = bbox {
+            clauses.push("latitude BETWEEN ? AND ?");
+            params.push(rusqlite::types::Value::Real(lat_min));
+            params.push(rusqlite::types::Value::Real(lat_max));
+            clauses.push("longitude BETWEEN ? AND ?");
+            params.push(rusqlite::types::Value::Real(lon_min));
+            params.push(rusqlite::types::Value::Real(lon_max));
+        }
+        let mut where_sql = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", clauses.join(" AND "))
+        };
+        if let (order, Some((limit, offset))) = (order, page) {
+            if !order.is_empty() {
+                where_sql.push_str(&format!(" ORDER BY {order}"));
+            }
+            where_sql.push_str(" LIMIT ? OFFSET ?");
+            params.push(rusqlite::types::Value::Integer(limit));
+            params.push(rusqlite::types::Value::Integer(offset));
+        }
+        (where_sql, params)
     }
 
     /// Deletes the row of `table` identified by `keys` (column/value pairs).

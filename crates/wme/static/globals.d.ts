@@ -28,7 +28,7 @@ declare global {
         get_polygon_groups(): Promise<unknown>;
         save_polygon_groups(payload: unknown): Promise<unknown>;
         get_db_overview(): Promise<unknown>;
-        get_db_table(table: unknown, offset: unknown, limit: unknown, latMin?: unknown, lonMin?: unknown, latMax?: unknown, lonMax?: unknown): Promise<unknown>;
+        get_db_table(table: unknown, offset: unknown, limit: unknown, latMin?: unknown, lonMin?: unknown, latMax?: unknown, lonMax?: unknown, service?: unknown): Promise<unknown>;
         delete_db_row(table: unknown, keysJson: unknown): Promise<unknown>;
     };
 
