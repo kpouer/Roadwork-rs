@@ -3,7 +3,6 @@ mod build_color;
 mod convert;
 mod db_rpc;
 mod gui;
-mod open_url;
 pub mod roadwork_app;
 mod tools;
 mod waze_livemap;

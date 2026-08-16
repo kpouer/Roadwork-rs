@@ -73,7 +73,10 @@ impl<'a> MetadataDialog<'a> {
     }
 
     fn open_url(url: &str) {
-        crate::open_url::open_url(url);
+        web_sys::window()
+            .unwrap()
+            .open_with_url_and_target(url, "_blank")
+            .ok();
     }
 
     fn add_row_link(ui: &mut Ui, label: &str, value: &str) {
