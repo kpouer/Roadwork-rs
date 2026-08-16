@@ -21,9 +21,7 @@ pub fn save_settings(settings: &Settings) {
     let Ok(json) = serde_json::to_string(settings) else {
         return;
     };
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(SETTINGS_KEY, &json);
-    }
+    store_in_cache(SETTINGS_KEY, &json);
 }
 
 pub fn sync_config(settings: &Settings) -> Option<SyncConfig> {
@@ -55,9 +53,7 @@ pub fn save_opendata_cache(name: &str, data: &OpendataData) {
     let Ok(json) = serde_json::to_string(&cache) else {
         return;
     };
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(OPENDATA_CACHE_KEY, &json);
-    }
+    store_in_cache(OPENDATA_CACHE_KEY, &json);
 }
 
 /// Removes `name` from the cached opendata.
@@ -67,7 +63,11 @@ pub fn remove_opendata_cache(name: &str) {
     let Ok(json) = serde_json::to_string(&cache) else {
         return;
     };
+    store_in_cache(OPENDATA_CACHE_KEY, &json);
+}
+
+fn store_in_cache(key: &str, json: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(OPENDATA_CACHE_KEY, &json);
+        let _ = storage.set_item(key, &json);
     }
 }
