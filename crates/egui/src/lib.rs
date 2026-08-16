@@ -1,6 +1,4 @@
 mod app_settings;
-mod build_color;
-mod convert;
 mod db_rpc;
 mod gui;
 pub mod roadwork_app;

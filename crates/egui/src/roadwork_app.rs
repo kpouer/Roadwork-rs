@@ -1,4 +1,3 @@
-use crate::convert::{latlng_to_position, position_to_latlng};
 use crate::gui::about_dialog::AboutDialog;
 use crate::gui::db_explorer_dialog::DbExplorerDialog;
 use crate::gui::metada_dialog::MetadataDialog;
@@ -6,6 +5,7 @@ use crate::gui::roadwork_marker::RoadworkMarker;
 use crate::gui::service_helper_dialog::ServiceHelperDialog;
 use crate::gui::settings_dialog::SettingsDialog;
 use crate::gui::status_panel::StatusPanel;
+use crate::tools::{latlng_to_position, position_to_latlng};
 use crate::waze_livemap::Waze;
 use chrono::DateTime;
 use eframe::epaint::text::TextWrapMode;
@@ -563,7 +563,7 @@ impl RoadworkApp {
                     let size = egui::vec2(18.0, 18.0);
                     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
                     ui.painter()
-                        .rect_filled(rect, 3.0, crate::build_color::build_color());
+                        .rect_filled(rect, 3.0, crate::tools::build_color());
                     if response.clicked() {
                         self.show_about_dialog = true;
                     }

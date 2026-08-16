@@ -27,7 +27,7 @@ impl<'a> AboutDialog<'a> {
                 let size = egui::vec2(48.0, 48.0);
                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 ui.painter()
-                    .rect_filled(rect, 4.0, crate::build_color::build_color());
+                    .rect_filled(rect, 4.0, crate::tools::build_color());
             });
     }
 }
