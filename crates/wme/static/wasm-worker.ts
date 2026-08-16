@@ -31,6 +31,8 @@ scope.onmessage = async (e: MessageEvent) => {
             result = wasm_bindgen.get_services();
         } else if (method === 'get_roadworks') {
             result = await wasm_bindgen.get_roadworks(args[0], args[1]);
+        } else if (method === 'get_roadworks_cached') {
+            result = await wasm_bindgen.get_roadworks_cached(args[0]);
         } else if (method === 'clear_all_cache') {
             await wasm_bindgen.clear_all_cache();
             result = true;

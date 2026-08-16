@@ -134,3 +134,18 @@ pub(crate) async fn call(method: &str, args: Vec<JsValue>) -> Result<JsValue, Js
 
     JsFuture::from(promise).await
 }
+
+/// Calls an RPC and deserializes the result through `JSON.stringify`.
+pub(crate) async fn rpc_json<T>(method: &str, args: Vec<JsValue>) -> Result<T, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let value = call(method, args).await.map_err(|e| {
+        e.as_string()
+            .unwrap_or_else(|| format!("Erreur RPC: {e:?}"))
+    })?;
+    let json =
+        js_sys::JSON::stringify(&value).map_err(|e| format!("Erreur de sérialisation: {e:?}"))?;
+    let s = json.as_string().unwrap_or_default();
+    serde_json::from_str(&s).map_err(|e| format!("Erreur de décodage: {e}"))
+}

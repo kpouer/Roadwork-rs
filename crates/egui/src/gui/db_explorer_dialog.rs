@@ -897,7 +897,7 @@ impl DbExplorerDialog {
         let state = Arc::clone(&self.state);
         let ctx = ctx.clone();
         spawn_task(async move {
-            let result = rpc_json::<DbOverview>("get_db_overview", vec![]).await;
+            let result = crate::db_rpc::rpc_json::<DbOverview>("get_db_overview", vec![]).await;
             {
                 let mut st = state.lock().unwrap();
                 st.loading_overview = false;
@@ -961,8 +961,11 @@ impl DbExplorerDialog {
                 None => JsValue::NULL,
             };
             let args = if only_visible {
-                let bounds =
-                    rpc_json::<Option<ViewportBounds>>("get_viewport_bounds", vec![]).await;
+                let bounds = crate::db_rpc::rpc_json::<Option<ViewportBounds>>(
+                    "get_viewport_bounds",
+                    vec![],
+                )
+                .await;
                 let Some(bounds) = bounds.ok().flatten() else {
                     let mut st = state.lock().unwrap();
                     st.loading_data = false;
@@ -998,25 +1001,10 @@ impl DbExplorerDialog {
                     service_arg,
                 ]
             };
-            let result = rpc_json::<DbTableData>("get_db_table", args).await;
+            let result = crate::db_rpc::rpc_json::<DbTableData>("get_db_table", args).await;
             apply(result);
         });
     }
-}
-
-/// Calls an RPC and deserializes the result through `JSON.stringify`.
-async fn rpc_json<T>(method: &str, args: Vec<JsValue>) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let value = crate::db_rpc::call(method, args).await.map_err(|e| {
-        e.as_string()
-            .unwrap_or_else(|| format!("Erreur RPC: {e:?}"))
-    })?;
-    let json =
-        js_sys::JSON::stringify(&value).map_err(|e| format!("Erreur de sérialisation: {e:?}"))?;
-    let s = json.as_string().unwrap_or_default();
-    serde_json::from_str(&s).map_err(|e| format!("Erreur de décodage: {e}"))
 }
 
 /// Asks the extension content script to close the app overlay.

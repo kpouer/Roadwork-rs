@@ -13,6 +13,7 @@ declare global {
         open_store(): Promise<unknown>;
         get_services(): unknown;
         get_roadworks(descriptor: unknown, forceRefresh: unknown): Promise<unknown>;
+        get_roadworks_cached(service: unknown): Promise<unknown>;
         clear_all_cache(): Promise<unknown>;
         set_log_level(level: unknown): void;
         set_custom_descriptors(descriptors: unknown): void;

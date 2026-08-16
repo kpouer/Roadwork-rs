@@ -183,6 +183,25 @@ pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<Js
 }
 
 #[wasm_bindgen]
+pub async fn get_roadworks_cached(service_name: &str) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_roadworks_cached");
+    let data = {
+        let store = store_take().await?;
+        let data = store
+            .get_roadworks(service_name)
+            .map_err(js_err)?
+            .ok_or_else(|| JsValue::from_str(&format!("No cached roadworks for {service_name}")))?;
+        store_put_back(store);
+        data
+    };
+    info!(
+        "[wasm] get_roadworks_cached: data loaded {}",
+        data.roadworks.len()
+    );
+    serialize_data(&data)
+}
+
+#[wasm_bindgen]
 pub async fn clear_all_cache() -> Result<(), JsValue> {
     let mut store = store_take().await?;
     store.clear_all().map_err(js_err)?;

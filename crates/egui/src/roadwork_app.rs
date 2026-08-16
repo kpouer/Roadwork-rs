@@ -19,7 +19,6 @@ use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::metadata::Metadata;
-use roadwork_core::opendata::json::opendata_service::OpendataService;
 use roadwork_core::settings::Settings;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -327,7 +326,7 @@ impl RoadworkApp {
             service_helper,
             show_opendata_panel: false,
             confirm_delete_opendata: None,
-            opendata_data: Arc::new(Mutex::new(crate::app_settings::load_opendata_cache())),
+            opendata_data: Arc::new(Mutex::new(HashMap::new())),
             helper_only,
             db_explorer_only: params.db_explorer_only,
             show_db_explorer: false,
@@ -335,16 +334,17 @@ impl RoadworkApp {
         };
 
         if !helper_only && !params.db_explorer_only {
-            app.load_data();
+            app.load_data(false);
+            app.preload_opendata_caches();
         }
         app
     }
 
-    fn load_data(&self) {
-        self.load_roadworks(&self.selected_service);
+    fn load_data(&self, force_refresh: bool) {
+        self.load_roadworks(&self.selected_service, force_refresh);
     }
 
-    fn load_roadworks(&self, service: &str) {
+    fn load_roadworks(&self, service: &str, force_refresh: bool) {
         let roadwork_data = Arc::clone(&self.roadwork_data);
         let current_metadata = Arc::clone(&self.current_metadata);
         let ctx = self.ctx.clone();
@@ -352,7 +352,36 @@ impl RoadworkApp {
         let sync_config = crate::app_settings::sync_config(&self.settings);
 
         spawn_task(async move {
-            match roadwork_service::get_roadworks(&service).await {
+            let fetched = if force_refresh {
+                crate::db_rpc::rpc_json::<RoadworkData>(
+                    "get_roadworks",
+                    vec![
+                        wasm_bindgen::JsValue::from_str(&service),
+                        wasm_bindgen::JsValue::from_bool(true),
+                    ],
+                )
+                .await
+            } else {
+                match crate::db_rpc::rpc_json::<RoadworkData>(
+                    "get_roadworks_cached",
+                    vec![wasm_bindgen::JsValue::from_str(&service)],
+                )
+                .await
+                {
+                    Ok(data) => Ok(data),
+                    Err(_) => {
+                        crate::db_rpc::rpc_json::<RoadworkData>(
+                            "get_roadworks",
+                            vec![
+                                wasm_bindgen::JsValue::from_str(&service),
+                                wasm_bindgen::JsValue::from_bool(true),
+                            ],
+                        )
+                        .await
+                    }
+                }
+            };
+            match fetched {
                 Ok(mut data) => {
                     if let Some(descriptor) = roadwork_service::get_descriptor(&service) {
                         *current_metadata.lock().unwrap() = Some(descriptor.metadata);
@@ -368,7 +397,7 @@ impl RoadworkApp {
         });
     }
 
-    fn load_opendata(&self, name: &str) {
+    fn load_opendata(&self, name: &str, force_refresh: bool) {
         let Some(descriptor) = self.settings.opendata_services.get(name).cloned() else {
             return;
         };
@@ -378,25 +407,51 @@ impl RoadworkApp {
             .as_deref()
             .is_some_and(|url| !url.trim().is_empty());
         let name = name.to_string();
-        if !has_url {
-            if let Some(data) = crate::app_settings::load_opendata_cache().remove(&name) {
-                self.opendata_data.lock().unwrap().insert(name, data);
-            }
-            return;
-        }
         let opendata_data = Arc::clone(&self.opendata_data);
         let ctx = self.ctx.clone();
         spawn_task(async move {
-            let service = OpendataService {
-                service_name: name.clone(),
-                service_descriptor: descriptor,
+            let fetched = if has_url {
+                crate::db_rpc::rpc_json::<OpendataData>(
+                    "get_opendata",
+                    vec![
+                        wasm_bindgen::JsValue::from_str(&name),
+                        wasm_bindgen::JsValue::from_bool(force_refresh),
+                    ],
+                )
+                .await
+            } else {
+                crate::db_rpc::rpc_json::<OpendataData>(
+                    "get_opendata_cached",
+                    vec![wasm_bindgen::JsValue::from_str(&name)],
+                )
+                .await
             };
-            match service.get_data().await {
+            match fetched {
                 Ok(data) => {
-                    crate::app_settings::save_opendata_cache(&name, &data);
                     opendata_data.lock().unwrap().insert(name.clone(), data);
                 }
                 Err(e) => log::error!("Failed to fetch opendata {name}: {e}"),
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    /// Preloads the cached opendata for every configured source so the source
+    /// list shows the item counts without triggering any network fetch.
+    fn preload_opendata_caches(&self) {
+        let names: Vec<String> = self.settings.opendata_services.keys().cloned().collect();
+        let opendata_data = Arc::clone(&self.opendata_data);
+        let ctx = self.ctx.clone();
+        spawn_task(async move {
+            for name in names {
+                if let Ok(data) = crate::db_rpc::rpc_json::<OpendataData>(
+                    "get_opendata_cached",
+                    vec![wasm_bindgen::JsValue::from_str(&name)],
+                )
+                .await
+                {
+                    opendata_data.lock().unwrap().insert(name, data);
+                }
             }
             ctx.request_repaint();
         });
@@ -534,13 +589,13 @@ impl RoadworkApp {
                                 self.position = service.center;
                                 self.map_memory
                                     .center_at(latlng_to_position(service.center));
-                                self.load_data();
+                                self.load_data(false);
                                 self.toasts.success(format!("Switching to {service_name}"));
                             }
                         }
                     });
                 if ui.button("Reload").clicked() {
-                    self.load_data();
+                    self.load_data(true);
                 }
                 ui.checkbox(&mut self.hide_expired, "Hide expired");
 
@@ -662,7 +717,7 @@ impl RoadworkApp {
                     self.settings.selected_opendata_service = selection.clone();
                     crate::app_settings::save_settings(&self.settings);
                     if let Some(name) = selection {
-                        self.load_opendata(&name);
+                        self.load_opendata(&name, false);
                     }
                 }
                 ui.horizontal(|ui| {
@@ -747,7 +802,7 @@ impl RoadworkApp {
                         None => {
                             ui.label("Aucune donn\u{00e9}e opendata charg\u{00e9}e");
                             if ui.button("Reload").clicked() {
-                                self.load_opendata(name);
+                                self.load_opendata(name, true);
                             }
                         }
                     }
@@ -789,7 +844,6 @@ impl RoadworkApp {
 
     fn delete_opendata_service(&mut self, name: &str) {
         self.settings.opendata_services.remove(name);
-        crate::app_settings::remove_opendata_cache(name);
         self.opendata_data.lock().unwrap().remove(name);
         if self.settings.selected_opendata_service.as_deref() == Some(name) {
             self.settings.selected_opendata_service = None;
