@@ -19,6 +19,7 @@ use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::metadata::Metadata;
+use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::settings::Settings;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,15 @@ pub struct StartupParams {
     pub create_opendata_service: bool,
     pub opendata_descriptor: Option<String>,
     pub db_explorer_only: bool,
+}
+
+/// One custom opendata source as stored in the SQLite `cache` table, mirroring
+/// `roadwork_db::OpendataSource` (the `enabled`/`visible` flags are ignored
+/// here: the egui app reads/writes the descriptor, the extension owns the flags).
+#[derive(serde::Deserialize)]
+struct StoredOpendataSource {
+    service: String,
+    descriptor: String,
 }
 
 pub(crate) fn spawn_task<F>(future: F)
@@ -123,6 +133,17 @@ thread_local! {
         std::cell::RefCell::new(SaveProgressState::idle());
 }
 
+thread_local! {
+    /// Set to the saved service name by the `ROADWORK_SAVE_DONE` listener so the
+    /// next frame reloads the opendata sources from the store.
+    static PENDING_OPENDATA_REFRESH: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn take_pending_opendata_refresh() -> Option<String> {
+    PENDING_OPENDATA_REFRESH.with(|cell| cell.borrow_mut().take())
+}
+
 pub(crate) fn start_save_progress() {
     SAVE_PROGRESS.with(|cell| {
         let mut state = cell.borrow_mut();
@@ -211,11 +232,14 @@ pub fn setup_save_progress_listener() {
                 SAVE_PROGRESS.with(|cell| {
                     let mut state = cell.borrow_mut();
                     state.active = false;
-                    state.done = name;
+                    state.done = name.clone();
                     state.error = None;
                     state.count = count;
                     state.last_update = js_sys::Date::now();
                 });
+                if let Some(name) = name {
+                    PENDING_OPENDATA_REFRESH.with(|cell| *cell.borrow_mut() = Some(name));
+                }
             }
             "ROADWORK_SAVE_ERROR" => {
                 let error = js_sys::Reflect::get(&obj, &js_sys::JsString::from("error"))
@@ -260,6 +284,7 @@ pub struct RoadworkApp {
     show_opendata_panel: bool,
     confirm_delete_opendata: Option<String>,
     opendata_data: Arc<Mutex<HashMap<String, OpendataData>>>,
+    opendata_sources: Arc<Mutex<HashMap<String, ServiceDescriptor>>>,
     helper_only: bool,
     db_explorer_only: bool,
     show_db_explorer: bool,
@@ -327,6 +352,7 @@ impl RoadworkApp {
             show_opendata_panel: false,
             confirm_delete_opendata: None,
             opendata_data: Arc::new(Mutex::new(HashMap::new())),
+            opendata_sources: Arc::new(Mutex::new(HashMap::new())),
             helper_only,
             db_explorer_only: params.db_explorer_only,
             show_db_explorer: false,
@@ -335,7 +361,7 @@ impl RoadworkApp {
 
         if !helper_only && !params.db_explorer_only {
             app.load_data(false);
-            app.preload_opendata_caches();
+            app.reload_opendata_sources();
         }
         app
     }
@@ -398,7 +424,7 @@ impl RoadworkApp {
     }
 
     fn load_opendata(&self, name: &str, force_refresh: bool) {
-        let Some(descriptor) = self.settings.opendata_services.get(name).cloned() else {
+        let Some(descriptor) = self.opendata_sources.lock().unwrap().get(name).cloned() else {
             return;
         };
         let has_url = descriptor
@@ -436,13 +462,38 @@ impl RoadworkApp {
         });
     }
 
-    /// Preloads the cached opendata for every configured source so the source
-    /// list shows the item counts without triggering any network fetch.
-    fn preload_opendata_caches(&self) {
-        let names: Vec<String> = self.settings.opendata_services.keys().cloned().collect();
+    /// Loads the custom opendata sources from the store and preloads the cached
+    /// data of each source so the source list shows the item counts without
+    /// triggering any network fetch. Also called after a save to refresh the map.
+    fn reload_opendata_sources(&self) {
+        let opendata_sources = Arc::clone(&self.opendata_sources);
         let opendata_data = Arc::clone(&self.opendata_data);
         let ctx = self.ctx.clone();
         spawn_task(async move {
+            let sources = match crate::db_rpc::rpc_json::<Vec<StoredOpendataSource>>(
+                "get_opendata_sources",
+                vec![],
+            )
+            .await
+            {
+                Ok(sources) => sources,
+                Err(e) => {
+                    log::error!("Failed to load opendata sources: {e}");
+                    return;
+                }
+            };
+            {
+                let mut map = opendata_sources.lock().unwrap();
+                map.clear();
+                for source in sources {
+                    if let Ok(descriptor) =
+                        serde_json::from_str::<ServiceDescriptor>(&source.descriptor)
+                    {
+                        map.insert(source.service, descriptor);
+                    }
+                }
+            }
+            let names: Vec<String> = opendata_sources.lock().unwrap().keys().cloned().collect();
             for name in names {
                 if let Ok(data) = crate::db_rpc::rpc_json::<OpendataData>(
                     "get_opendata_cached",
@@ -651,13 +702,16 @@ impl RoadworkApp {
         if self.show_db_explorer {
             self.db_explorer.show(ui.ctx(), &mut self.show_db_explorer);
         }
-        self.service_helper.show(
-            ui,
-            &mut self.show_service_helper_dialog,
-            &mut self.toasts,
-            false,
-            &self.settings.opendata_services,
-        );
+        {
+            let custom_services = self.opendata_sources.lock().unwrap();
+            self.service_helper.show(
+                ui,
+                &mut self.show_service_helper_dialog,
+                &mut self.toasts,
+                false,
+                &custom_services,
+            );
+        }
         if self.show_opendata_panel {
             self.show_opendata_panel(ui.ctx());
         }
@@ -676,8 +730,13 @@ impl RoadworkApp {
             .resizable(true)
             .default_size(default_size)
             .show(ctx, |ui| {
-                let mut names: Vec<String> =
-                    self.settings.opendata_services.keys().cloned().collect();
+                let mut names: Vec<String> = self
+                    .opendata_sources
+                    .lock()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect();
                 names.sort();
                 let current = self.settings.selected_opendata_service.clone();
                 let selected_text = current
@@ -727,7 +786,7 @@ impl RoadworkApp {
                         .on_hover_text("Open the opendata service helper to edit this source")
                         .clicked()
                         && let Some(name) = &current
-                        && let Some(descriptor) = self.settings.opendata_services.get(name)
+                        && let Some(descriptor) = self.opendata_sources.lock().unwrap().get(name)
                         && let Ok(json) = crate::gui::pretty_json_tabs(descriptor)
                     {
                         self.service_helper =
@@ -843,7 +902,7 @@ impl RoadworkApp {
     }
 
     fn delete_opendata_service(&mut self, name: &str) {
-        self.settings.opendata_services.remove(name);
+        self.opendata_sources.lock().unwrap().remove(name);
         self.opendata_data.lock().unwrap().remove(name);
         if self.settings.selected_opendata_service.as_deref() == Some(name) {
             self.settings.selected_opendata_service = None;
@@ -908,6 +967,10 @@ impl RoadworkApp {
 
 impl App for RoadworkApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        if let Some(name) = take_pending_opendata_refresh() {
+            self.reload_opendata_sources();
+            self.load_opendata(&name, false);
+        }
         let dropped_files: Vec<egui::DroppedFile> = ui.ctx().input(|i| i.raw.dropped_files.clone());
         if !dropped_files.is_empty() && !self.show_service_helper_dialog {
             self.toasts
@@ -921,12 +984,13 @@ impl App for RoadworkApp {
         } else if self.helper_only {
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 if self.show_service_helper_dialog {
+                    let custom_services = self.opendata_sources.lock().unwrap();
                     self.service_helper.show(
                         ui,
                         &mut self.show_service_helper_dialog,
                         &mut self.toasts,
                         true,
-                        &self.settings.opendata_services,
+                        &custom_services,
                     );
                 }
             });

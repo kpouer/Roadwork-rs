@@ -75,6 +75,16 @@ pub struct ServiceCount {
     pub count: i64,
 }
 
+/// A custom opendata source: its JSON descriptor plus UI flags, stored on the
+/// `cache` row of the service.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OpendataSource {
+    pub service: String,
+    pub descriptor: String,
+    pub enabled: bool,
+    pub visible: bool,
+}
+
 /// A summary of the whole database for the DB explorer: table row counts, the
 /// total size, and per-service counts for roadworks and opendata.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -428,6 +438,96 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Creates or replaces the custom opendata source definition for `service`.
+    /// This also ensures the `cache` row exists, so the source shows up in the
+    /// DB explorer even before it is fetched (with zero items).
+    pub fn upsert_opendata_source(
+        &mut self,
+        service: &str,
+        descriptor: &str,
+        enabled: bool,
+        visible: bool,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO cache(service, type, fetched_at, descriptor, enabled, visible)
+             VALUES (?1, ?2, 0, ?3, ?4, ?5)
+             ON CONFLICT(service, type) DO UPDATE SET
+                 descriptor = excluded.descriptor,
+                 enabled = excluded.enabled,
+                 visible = excluded.visible",
+            params![
+                service,
+                CacheType::Opendata.as_str(),
+                descriptor,
+                enabled as i64,
+                visible as i64
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Updates the UI flags of a custom opendata source.
+    pub fn set_opendata_source_flags(
+        &mut self,
+        service: &str,
+        enabled: bool,
+        visible: bool,
+    ) -> Result<()> {
+        let updated = self.conn.execute(
+            "UPDATE cache SET enabled = ?1, visible = ?2
+             WHERE service = ?3 AND type = ?4",
+            params![
+                enabled as i64,
+                visible as i64,
+                service,
+                CacheType::Opendata.as_str()
+            ],
+        )?;
+        if updated == 0 {
+            return Err(Error::Other(format!("Unknown opendata source: {service}")));
+        }
+        Ok(())
+    }
+
+    /// Returns the custom opendata source definition for `service`, if any.
+    pub fn get_opendata_source(&self, service: &str) -> Result<Option<OpendataSource>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT service, descriptor, enabled, visible FROM cache
+                 WHERE service = ?1 AND type = ?2",
+                params![service, CacheType::Opendata.as_str()],
+                |row| {
+                    Ok(OpendataSource {
+                        service: row.get(0)?,
+                        descriptor: row.get(1)?,
+                        enabled: row.get::<_, i64>(2)? != 0,
+                        visible: row.get::<_, i64>(3)? != 0,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Returns every custom opendata source, sorted by service name.
+    pub fn list_opendata_sources(&self) -> Result<Vec<OpendataSource>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT service, descriptor, enabled, visible FROM cache
+             WHERE type = ?1 AND descriptor IS NOT NULL
+             ORDER BY service",
+        )?;
+        let rows = stmt.query_map(params![CacheType::Opendata.as_str()], |row| {
+            Ok(OpendataSource {
+                service: row.get(0)?,
+                descriptor: row.get(1)?,
+                enabled: row.get::<_, i64>(2)? != 0,
+                visible: row.get::<_, i64>(3)? != 0,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
     }
 
     /// Stores an arbitrary string under `key` (miscellaneous state such as
@@ -817,6 +917,9 @@ CREATE TABLE IF NOT EXISTS cache (
     service    TEXT NOT NULL,
     type       TEXT NOT NULL,
     fetched_at INTEGER NOT NULL,
+    descriptor TEXT,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    visible    INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (service, type)
 );
 CREATE TABLE IF NOT EXISTS data (
@@ -845,7 +948,7 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 ";
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 fn init_schema(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(&format!("PRAGMA foreign_keys = ON;\n{DDL}"))?;
@@ -867,6 +970,22 @@ fn migrate(conn: &mut Connection) -> Result<()> {
             .any(|name| name == "reference");
         if !has_reference {
             conn.execute_batch("ALTER TABLE data ADD COLUMN reference TEXT")?;
+        }
+    }
+    if version < 4 {
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(cache)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)?;
+        if !columns.iter().any(|name| name == "descriptor") {
+            conn.execute_batch("ALTER TABLE cache ADD COLUMN descriptor TEXT")?;
+        }
+        if !columns.iter().any(|name| name == "enabled") {
+            conn.execute_batch("ALTER TABLE cache ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")?;
+        }
+        if !columns.iter().any(|name| name == "visible") {
+            conn.execute_batch("ALTER TABLE cache ADD COLUMN visible INTEGER NOT NULL DEFAULT 1")?;
         }
     }
     conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;

@@ -91,6 +91,38 @@ struct ViewportBounds {
 /// Fixed number of rows per page in the DB explorer.
 const PAGE_SIZE: i64 = 100;
 
+/// Columns of the `cache` table holding internal source data (the descriptor
+/// blob and the enabled/visible flags). They are implementation details, hidden
+/// from the raw-table view.
+const HIDDEN_CACHE_COLUMNS: &[&str] = &["descriptor", "enabled", "visible"];
+
+/// Removes the hidden `cache` columns from the given columns/rows, keeping the
+/// cells aligned with the remaining columns. Other tables are returned as-is.
+fn visible_columns(
+    table: &str,
+    columns: Vec<ColumnInfo>,
+    rows: Vec<Vec<Cell>>,
+) -> (Vec<ColumnInfo>, Vec<Vec<Cell>>) {
+    if table != "cache" {
+        return (columns, rows);
+    }
+    let hidden: Vec<bool> = columns
+        .iter()
+        .map(|column| HIDDEN_CACHE_COLUMNS.contains(&column.name.as_str()))
+        .collect();
+    let keep: Vec<usize> = hidden
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &is_hidden)| (!is_hidden).then_some(index))
+        .collect();
+    let columns = keep.iter().map(|&index| columns[index].clone()).collect();
+    let rows = rows
+        .into_iter()
+        .map(|row| keep.iter().map(|&index| row[index].clone()).collect())
+        .collect();
+    (columns, rows)
+}
+
 /// What the top list shows: the cached services, or the raw SQLite tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum ViewMode {
@@ -944,8 +976,9 @@ impl DbExplorerDialog {
                         if data.rows.is_empty() && data.total > 0 && st.page > 0 {
                             st.page -= 1;
                         }
-                        st.columns = data.columns;
-                        st.rows = data.rows;
+                        let (columns, rows) = visible_columns(&table, data.columns, data.rows);
+                        st.columns = columns;
+                        st.rows = rows;
                         st.total = data.total;
                         st.error = None;
                         st.notice = None;

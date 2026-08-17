@@ -42,8 +42,13 @@ scope.onmessage = async (e: MessageEvent) => {
         } else if (method === 'set_custom_descriptors') {
             wasm_bindgen.set_custom_descriptors(args[0]);
             result = true;
-        } else if (method === 'set_opendata_custom_descriptors') {
-            wasm_bindgen.set_opendata_custom_descriptors(args[0]);
+        } else if (method === 'get_opendata_sources') {
+            result = await wasm_bindgen.get_opendata_sources();
+        } else if (method === 'save_opendata_source') {
+            await wasm_bindgen.save_opendata_source(args[0], args[1], args[2], args[3], args[4]);
+            result = true;
+        } else if (method === 'set_opendata_source_flags') {
+            await wasm_bindgen.set_opendata_source_flags(args[0], args[1], args[2]);
             result = true;
         } else if (method === 'get_opendata') {
             result = await wasm_bindgen.get_opendata(args[0], args[1]);

@@ -41,8 +41,6 @@ pub fn set_log_level(level: &str) {
 thread_local! {
     static CUSTOM_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
         RefCell::new(HashMap::new());
-    static OPENDATA_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
-        RefCell::new(HashMap::new());
 }
 
 /// Maximum age of a cached roadworks snapshot before it is re-fetched (24h).
@@ -210,42 +208,20 @@ pub async fn clear_all_cache() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn set_opendata_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
-    let pairs: Vec<(String, String)> = serde_wasm_bindgen::from_value(pairs)
-        .map_err(|e| JsValue::from_str(&format!("Invalid descriptor pairs: {e}")))?;
-    info!(
-        "[wasm] set_opendata_custom_descriptors: {} pairs",
-        pairs.len()
-    );
-    let mut map = HashMap::new();
-    for (name, json) in pairs {
-        match serde_json::from_str::<ServiceDescriptor>(&json) {
-            Ok(descriptor) => {
-                map.insert(name, descriptor);
-            }
-            Err(e) => {
-                log::error!("Failed to parse opendata descriptor {name}: {e}");
-                return Err(JsValue::from_str(&format!(
-                    "Failed to parse opendata descriptor {name}: {e}"
-                )));
-            }
-        }
-    }
-    OPENDATA_DESCRIPTORS.with(|cell| {
-        *cell.borrow_mut() = map;
-    });
-    Ok(())
-}
-
-#[wasm_bindgen]
 pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsValue, JsValue> {
     info!("[wasm] get_opendata force_refresh={force_refresh}");
-    let descriptor = OPENDATA_DESCRIPTORS
-        .with(|cell| cell.borrow().get(service_name).cloned())
-        .ok_or_else(|| JsValue::from_str(&format!("Unknown opendata service: {service_name}")))?;
-
     let data = {
         let mut store = store_take().await?;
+        let source = store
+            .get_opendata_source(service_name)
+            .map_err(js_err)?
+            .ok_or_else(|| {
+                JsValue::from_str(&format!("Unknown opendata service: {service_name}"))
+            })?;
+        let descriptor: ServiceDescriptor =
+            serde_json::from_str(&source.descriptor).map_err(|e| {
+                JsValue::from_str(&format!("Invalid descriptor for {service_name}: {e}"))
+            })?;
         let has_url = descriptor
             .metadata
             .url
@@ -282,6 +258,58 @@ pub async fn get_opendata(service_name: &str, force_refresh: bool) -> Result<JsV
 
     info!("[wasm] get_opendata: data loaded {}", data.opendata.len());
     serialize_data(&data)
+}
+
+/// Returns every custom opendata source (name, descriptor, flags).
+#[wasm_bindgen]
+pub async fn get_opendata_sources() -> Result<JsValue, JsValue> {
+    info!("[wasm] get_opendata_sources");
+    let store = store_take().await?;
+    let sources = store.list_opendata_sources().map_err(js_err)?;
+    store_put_back(store);
+    serialize_data(&sources)
+}
+
+/// Creates or updates a custom opendata source. When `old_name` differs from
+/// `name`, the previous source (definition and cached data) is removed first.
+#[wasm_bindgen]
+pub async fn save_opendata_source(
+    name: &str,
+    descriptor: &str,
+    enabled: bool,
+    visible: bool,
+    old_name: Option<String>,
+) -> Result<(), JsValue> {
+    info!("[wasm] save_opendata_source {name} old_name={old_name:?}");
+    serde_json::from_str::<ServiceDescriptor>(descriptor)
+        .map_err(|e| JsValue::from_str(&format!("Invalid opendata descriptor: {e}")))?;
+    let mut store = store_take().await?;
+    if let Some(old_name) = &old_name
+        && old_name != name
+    {
+        store.remove_opendata(old_name).map_err(js_err)?;
+    }
+    store
+        .upsert_opendata_source(name, descriptor, enabled, visible)
+        .map_err(js_err)?;
+    store_put_back(store);
+    Ok(())
+}
+
+/// Updates the `enabled`/`visible` flags of a custom opendata source.
+#[wasm_bindgen]
+pub async fn set_opendata_source_flags(
+    name: &str,
+    enabled: bool,
+    visible: bool,
+) -> Result<(), JsValue> {
+    info!("[wasm] set_opendata_source_flags {name}");
+    let mut store = store_take().await?;
+    store
+        .set_opendata_source_flags(name, enabled, visible)
+        .map_err(js_err)?;
+    store_put_back(store);
+    Ok(())
 }
 
 #[wasm_bindgen]

@@ -128,7 +128,6 @@ const DEFAULTS = {
     service: "France-Paris",
     logLevel: "info",
     customSources: [],
-    opendataServices: {},
 };
 
 const OPENDATA_LAYER = "Opendata";
@@ -136,6 +135,7 @@ const OPENDATA_TABLE_MAX = 100;
 
 let wmeSDK: WmeSDK | null = null;
 let settings = {...DEFAULTS};
+let opendataServices: Record<string, any> = {};
 let currentRoadworks: any = {};
 let currentOpendata: Record<string, any> = {};
 let opendataTotals: Record<string, number> = {};
@@ -1692,9 +1692,7 @@ async function refreshData() {
 }
 
 function getOpendataServices(): Record<string, any> {
-    const raw = settings.opendataServices;
-    if (raw && typeof raw === "object") return raw;
-    return {};
+    return opendataServices;
 }
 
 function getOpendataDescriptorUrl(svc: any): string | undefined {
@@ -1750,10 +1748,49 @@ async function clearOpendataCache(name: string) {
     } catch (_) {}
 }
 
-async function syncOpendataDescriptorsToWasm() {
-    const services = getOpendataServices();
-    const pairs = Object.entries(services).map(([name, svc]) => [name, svc.descriptor]);
-    await rpcCall("set_opendata_custom_descriptors", [pairs]);
+/// Loads the custom opendata sources from the wasm store into the in-memory
+/// map. As a one-shot migration, sources still stored in the legacy settings
+/// blob (`settings.opendataServices`) are first pushed to the store.
+async function loadOpendataServices() {
+    const legacy = (settings as Record<string, any>).opendataServices;
+    if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
+        for (const [name, svc] of Object.entries(legacy) as [string, any][]) {
+            if (!svc || typeof svc.descriptor !== "string") continue;
+            try {
+                await rpcCall("save_opendata_source", [
+                    name,
+                    svc.descriptor,
+                    svc.enabled !== false,
+                    svc.visible !== false,
+                    undefined,
+                ]);
+            } catch (e) {
+                console.warn(`[Roadwork] Failed to migrate opendata source ${name}:`, e);
+            }
+        }
+        delete (settings as Record<string, any>).opendataServices;
+        saveSettings();
+    }
+    try {
+        const sources = await rpcCall("get_opendata_sources");
+        const next: Record<string, any> = {};
+        if (sources && Array.isArray(sources)) {
+            for (const src of sources) {
+                if (!src || typeof src.service !== "string" || typeof src.descriptor !== "string") {
+                    continue;
+                }
+                next[src.service] = {
+                    descriptor: src.descriptor,
+                    enabled: src.enabled !== false,
+                    visible: src.visible !== false,
+                };
+            }
+        }
+        opendataServices = next;
+    } catch (e) {
+        console.warn("[Roadwork] Failed to load opendata services:", e);
+        opendataServices = {};
+    }
 }
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
@@ -1921,8 +1958,9 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
     const services = getOpendataServices();
     if (!services[name]) return;
     services[name].visible = visible;
-    settings.opendataServices = services;
-    saveSettings();
+    rpcCall("set_opendata_source_flags", [name, services[name].enabled !== false, visible]).catch((e) => {
+        console.warn(`[Roadwork] Failed to update opendata flags for ${name}:`, e);
+    });
     renderOpendataToMap();
     renderOpendataList();
 }
@@ -1952,13 +1990,10 @@ async function refreshOpendataService(name: string) {
 async function removeOpendataService(name: string) {
     const services = getOpendataServices();
     delete services[name];
-    settings.opendataServices = services;
-    saveSettings();
     await clearOpendataCache(name);
     delete currentOpendata[name];
     renderOpendataToMap();
     renderOpendataList();
-    syncOpendataDescriptorsToWasm().catch(() => {});
     refreshOpendataTotals();
 }
 
@@ -1984,18 +2019,16 @@ async function saveOpendataDescriptorFromHelper(
         if (svcName) name = svcName;
     } catch (_) {}
     const services = getOpendataServices();
-    if (oldName && oldName !== name) {
-        delete services[oldName];
-    }
-    const existing = services[name] || {};
+    const existing = (oldName && oldName !== name ? services[oldName] : services[name]) || {};
     const svc: any = {
         descriptor: descriptor,
         enabled: existing.enabled ?? true,
         visible: existing.visible ?? true,
     };
+    if (oldName && oldName !== name) {
+        delete services[oldName];
+    }
     services[name] = svc;
-    settings.opendataServices = services;
-    saveSettings();
     setStatus(`Opendata service "${name}" saved`, "success");
     renderOpendataList();
     try {
@@ -2009,7 +2042,13 @@ async function saveOpendataDescriptorFromHelper(
             stage: "Syncing to extension engine\u2026",
             fraction: 0.3,
         });
-        await syncOpendataDescriptorsToWasm();
+        await rpcCall("save_opendata_source", [
+            name,
+            descriptor,
+            svc.enabled,
+            svc.visible,
+            oldName || undefined,
+        ]);
         if (data) {
             try {
                 currentOpendata[name] = JSON.parse(data);
@@ -2870,6 +2909,9 @@ async function init() {
     loadHideFinished();
     loadSortState();
     loadDataSource();
+    await loadOpendataServices().catch((e) => {
+        console.warn("[Roadwork] Failed to load opendata services:", e);
+    });
     await syncCustomDescriptorsToWasm(false).catch((e) => {
         console.warn("[Roadwork] Failed to sync custom descriptors:", e);
     });
@@ -3045,9 +3087,6 @@ async function init() {
         console.warn("[Roadwork] Failed to add Opendata layer checkbox:", e);
     }
 
-    await syncOpendataDescriptorsToWasm().catch((e) => {
-        console.warn("[Roadwork] Failed to sync opendata descriptors:", e);
-    });
     await loadAllOpendataCaches();
     renderOpendataToMap();
     refreshOpendataTotals();

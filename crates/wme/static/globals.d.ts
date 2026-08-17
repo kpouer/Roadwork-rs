@@ -17,7 +17,9 @@ declare global {
         clear_all_cache(): Promise<unknown>;
         set_log_level(level: unknown): void;
         set_custom_descriptors(descriptors: unknown): void;
-        set_opendata_custom_descriptors(descriptors: unknown): void;
+        get_opendata_sources(): Promise<unknown>;
+        save_opendata_source(name: unknown, descriptor: unknown, enabled: unknown, visible: unknown, oldName?: unknown): Promise<unknown>;
+        set_opendata_source_flags(name: unknown, enabled: unknown, visible: unknown): Promise<unknown>;
         get_opendata(service: unknown, forceRefresh: unknown): Promise<unknown>;
         get_opendata_cached(service: unknown): Promise<unknown>;
         get_opendata_counts(): Promise<unknown>;
