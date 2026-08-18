@@ -1304,6 +1304,7 @@ function createDetailPanel() {
 
     const header = document.createElement("div");
     header.className = "rw-detail-header";
+    header.style.cursor = "move";
 
     const title = document.createElement("h4");
     title.textContent = "Détails du chantier";
@@ -1322,6 +1323,31 @@ function createDetailPanel() {
     detailPanelEl.appendChild(header);
     detailPanelEl.appendChild(body);
     document.body.appendChild(detailPanelEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    header.addEventListener("mousedown", (e) => {
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
+        isDragging = true;
+        const rect = detailPanelEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const x = e.clientX - dragOffsetX;
+        const y = e.clientY - dragOffsetY;
+        detailPanelEl.style.left = x + "px";
+        detailPanelEl.style.top = y + "px";
+        detailPanelEl.style.right = "auto";
+        detailPanelEl.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
 }
 
 function showDetailPanel(rw) {
@@ -1427,8 +1453,18 @@ function showDetailPanel(rw) {
         addField("Impact circulation", val);
     }
 
+    const wasHidden = detailPanelEl.classList.contains("rw-hidden");
     detailOverlayEl.classList.remove("rw-hidden");
     detailPanelEl.classList.remove("rw-hidden");
+    if (wasHidden) {
+        detailPanelEl.style.left = "";
+        detailPanelEl.style.top = "";
+        detailPanelEl.style.right = "";
+        detailPanelEl.style.bottom = "";
+        const rect = detailPanelEl.getBoundingClientRect();
+        detailPanelEl.style.left = ((window.innerWidth - rect.width) / 2) + "px";
+        detailPanelEl.style.top = ((window.innerHeight - rect.height) / 2) + "px";
+    }
 }
 
 function hideDetailPanel() {
