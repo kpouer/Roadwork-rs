@@ -2161,6 +2161,7 @@ async function removeOpendataService(name: string) {
     delete services[name];
     await clearOpendataCache(name);
     delete currentOpendata[name];
+    delete allOpendata[name];
     renderOpendataToMap();
     renderOpendataList();
     refreshOpendataTotals();
@@ -2220,7 +2221,9 @@ async function saveOpendataDescriptorFromHelper(
         ]);
         if (data) {
             try {
-                currentOpendata[name] = JSON.parse(data);
+                const parsed = JSON.parse(data);
+                allOpendata[name] = parsed;
+                currentOpendata[name] = parsed;
                 postHelperMessage({
                     type: "ROADWORK_SAVE_PROGRESS",
                     stage: t("progress.storing_data"),
