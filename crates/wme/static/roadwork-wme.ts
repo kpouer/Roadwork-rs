@@ -132,6 +132,11 @@ const DEFAULTS = {
 
 const OPENDATA_LAYER = "Opendata";
 const OPENDATA_TABLE_MAX = 100;
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 500];
+const ROADWORK_PAGE_SIZE_KEY = "roadwork-wme-rw-page-size";
+const ROADWORK_VISIBLE_KEY = "roadwork-wme-rw-visible";
+const DATA_PAGE_SIZE_KEY = "roadwork-wme-data-page-size";
+const DATA_VISIBLE_KEY = "roadwork-wme-data-visible";
 
 let wmeSDK: WmeSDK | null = null;
 let settings = {...DEFAULTS};
@@ -171,6 +176,28 @@ let dataDropzoneEl: HTMLDivElement | null = null;
 let viewportRefreshTimer = null;
 let viewportRefreshInFlight = false;
 let viewportRefreshPending = false;
+
+// Roadworks pagination
+let roadworkPage = 0;
+let roadworkPageSize = 100;
+let roadworkOnlyVisible = false;
+let allRoadworks: Record<string, any> = {};
+let floatingPageSizeEl: HTMLSelectElement | null = null;
+let floatingPageLabel: HTMLSpanElement | null = null;
+let floatingPrevBtn: HTMLButtonElement | null = null;
+let floatingNextBtn: HTMLButtonElement | null = null;
+let floatingVisibleCheck: HTMLInputElement | null = null;
+
+// Opendata pagination
+let dataPage = 0;
+let dataPageSize = 100;
+let dataOnlyVisible = false;
+let allOpendata: Record<string, any> = {};
+let dataPageSizeEl: HTMLSelectElement | null = null;
+let dataPageLabel: HTMLSpanElement | null = null;
+let dataPrevBtn: HTMLButtonElement | null = null;
+let dataNextBtn: HTMLButtonElement | null = null;
+let dataVisibleCheck: HTMLInputElement | null = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -283,6 +310,25 @@ function loadSortState() {
             sortColumn = parsed.col;
             sortDirection = parsed.dir;
         }
+    } catch (_) {}
+}
+
+function loadPaginationSettings() {
+    try {
+        const v = localStorage.getItem(ROADWORK_PAGE_SIZE_KEY);
+        if (v !== null) roadworkPageSize = JSON.parse(v);
+    } catch (_) {}
+    try {
+        const v = localStorage.getItem(ROADWORK_VISIBLE_KEY);
+        if (v !== null) roadworkOnlyVisible = JSON.parse(v);
+    } catch (_) {}
+    try {
+        const v = localStorage.getItem(DATA_PAGE_SIZE_KEY);
+        if (v !== null) dataPageSize = JSON.parse(v);
+    } catch (_) {}
+    try {
+        const v = localStorage.getItem(DATA_VISIBLE_KEY);
+        if (v !== null) dataOnlyVisible = JSON.parse(v);
     } catch (_) {}
 }
 
@@ -735,6 +781,65 @@ function createFloatingPanel() {
     floatingPanelEl.appendChild(header);
     floatingPanelEl.appendChild(controls);
     floatingPanelEl.appendChild(statusDiv);
+
+    const paginationRow = document.createElement("div");
+    paginationRow.className = "rw-pagination";
+
+    const visibleLabel = document.createElement("label");
+    visibleLabel.className = "rw-visible-label";
+    const visibleCheck = document.createElement("input");
+    visibleCheck.type = "checkbox";
+    visibleCheck.checked = roadworkOnlyVisible;
+    visibleCheck.addEventListener("change", () => {
+        roadworkOnlyVisible = visibleCheck.checked;
+        localStorage.setItem(ROADWORK_VISIBLE_KEY, JSON.stringify(roadworkOnlyVisible));
+        roadworkPage = 0;
+        updateFloatingTable();
+    });
+    const visibleText = document.createElement("span");
+    visibleText.textContent = "Visible \u00e0 l\u0027\u00e9cran";
+    visibleLabel.appendChild(visibleCheck);
+    visibleLabel.appendChild(visibleText);
+    paginationRow.appendChild(visibleLabel);
+
+    const pageSizeSelect = document.createElement("select");
+    for (const size of PAGE_SIZE_OPTIONS) {
+        const opt = document.createElement("option");
+        opt.value = String(size);
+        opt.textContent = String(size);
+        pageSizeSelect.appendChild(opt);
+    }
+    pageSizeSelect.value = String(roadworkPageSize);
+    pageSizeSelect.addEventListener("change", () => {
+        roadworkPageSize = parseInt(pageSizeSelect.value, 10);
+        localStorage.setItem(ROADWORK_PAGE_SIZE_KEY, String(roadworkPageSize));
+        roadworkPage = 0;
+        updateFloatingTable();
+    });
+    paginationRow.appendChild(pageSizeSelect);
+
+    floatingPrevBtn = document.createElement("button");
+    floatingPrevBtn.textContent = "\u25c0";
+    floatingPrevBtn.title = "Page précédente";
+    floatingPrevBtn.addEventListener("click", () => {
+        if (roadworkPage > 0) { roadworkPage--; updateFloatingTable(); }
+    });
+    paginationRow.appendChild(floatingPrevBtn);
+
+    floatingPageLabel = document.createElement("span");
+    floatingPageLabel.className = "rw-page-label";
+    paginationRow.appendChild(floatingPageLabel);
+
+    floatingNextBtn = document.createElement("button");
+    floatingNextBtn.textContent = "\u25b6";
+    floatingNextBtn.title = "Page suivante";
+    floatingNextBtn.addEventListener("click", () => {
+        roadworkPage++;
+        updateFloatingTable();
+    });
+    paginationRow.appendChild(floatingNextBtn);
+
+    floatingPanelEl.appendChild(paginationRow);
     floatingPanelEl.appendChild(tableWrap);
 
     const resizeHandle = document.createElement("div");
@@ -765,15 +870,18 @@ function createFloatingPanel() {
         saveSettings();
 
         currentRoadworks = {};
+        allRoadworks = {};
         selectedRoadworkId = null;
         hideDetailPanel();
         clearMapFeatures();
+        roadworkPage = 0;
         updateFloatingTable();
 
         setStatus("Loading...");
         try {
             const data = await fetchRoadworks(true);
-            currentRoadworks = data.roadworks || {};
+            allRoadworks = data.roadworks || {};
+            currentRoadworks = allRoadworks;
             applyStatusOverrides();
             const now = Date.now();
             try {
@@ -875,19 +983,8 @@ function updateFloatingTable() {
     if (!floatingTableBody) return;
     updateFloatingCount();
     floatingTableBody.replaceChildren();
-    let entries = Object.entries(currentRoadworks as Record<string, any>);
-    if (entries.length === 0) {
-        const tr = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = 7;
-        td.style.textAlign = "center";
-        td.style.color = "#999";
-        td.style.padding = "16px";
-        td.textContent = "Aucun roadwork chargé";
-        tr.appendChild(td);
-        floatingTableBody.appendChild(tr);
-        return;
-    }
+    const source = roadworkOnlyVisible ? currentRoadworks : allRoadworks;
+    let entries = Object.entries(source as Record<string, any>);
 
     if (hideFinished) {
         entries = entries.filter(([, rw]) => (rw.sync_data?.status || "New") !== "Finished");
@@ -918,20 +1015,33 @@ function updateFloatingTable() {
         });
     }
 
-    if (entries.length === 0) {
+    const totalCount = entries.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / roadworkPageSize));
+    if (roadworkPage >= totalPages) roadworkPage = totalPages - 1;
+    if (roadworkPage < 0) roadworkPage = 0;
+    const start = roadworkPage * roadworkPageSize;
+    const pageEntries = entries.slice(start, start + roadworkPageSize);
+
+    if (floatingPageLabel) floatingPageLabel.textContent = `Page ${roadworkPage + 1} / ${totalPages}`;
+    if (floatingPrevBtn) floatingPrevBtn.disabled = roadworkPage <= 0;
+    if (floatingNextBtn) floatingNextBtn.disabled = roadworkPage >= totalPages - 1;
+
+    if (totalCount === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
         td.colSpan = 7;
         td.style.textAlign = "center";
         td.style.color = "#999";
         td.style.padding = "16px";
-        td.textContent = "Aucun roadwork à afficher";
+        td.textContent = entries.length === 0 && roadworkOnlyVisible
+            ? "Aucun roadwork dans la zone visible"
+            : "Aucun roadwork à afficher";
         tr.appendChild(td);
         floatingTableBody.appendChild(tr);
         return;
     }
 
-    for (const [id, rw] of entries) {
+    for (const [id, rw] of pageEntries) {
         const status = rw.sync_data?.status || "New";
         const color = STATUS_COLORS[status] || "#9ca3af";
         const road = rw.road || "";
@@ -1586,7 +1696,7 @@ async function queryRoadworksInViewport(bounds) {
 }
 
 async function queryOpendataInViewport(name, bounds) {
-    const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax, OPENDATA_TABLE_MAX];
+    const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax, null];
     let data = await rpcCall("get_opendata_in_bbox", args);
     if (!data || !data.opendata) {
         const cached = await rpcCall("get_opendata_cached", [name]).catch(() => null);
@@ -1671,7 +1781,8 @@ async function refreshData() {
     setStatus("Loading...");
     try {
         const data = await fetchRoadworks(true);
-        currentRoadworks = data.roadworks || {};
+        allRoadworks = data.roadworks || {};
+        currentRoadworks = allRoadworks;
         applyStatusOverrides();
         console.info("[Roadwork] refreshData: currentRoadworks count", Object.keys(currentRoadworks).length);
         if (selectedRoadworkId && !currentRoadworks[selectedRoadworkId]) {
@@ -1795,6 +1906,7 @@ async function loadOpendataServices() {
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
     const data = await rpcCall("get_opendata", [name, forceRefresh]);
+    allOpendata[name] = data;
     currentOpendata[name] = data;
     return data;
 }
@@ -1826,6 +1938,7 @@ async function loadAllOpendataCaches() {
     for (const name of Object.keys(services)) {
         const cached = await loadOpendataCache(name);
         if (cached) {
+            allOpendata[name] = cached;
             currentOpendata[name] = cached;
         }
     }
@@ -2243,7 +2356,6 @@ function updateDataPanel() {
     if (!dataTableBody) return;
     try {
         dataTableBody.replaceChildren();
-        let count = 0;
         const services = getOpendataServices();
         const names = Object.keys(services).sort();
         if (dataSourceSelectEl) {
@@ -2266,50 +2378,59 @@ function updateDataPanel() {
             dataSourceSelectEl.value = dataSource;
         }
         const filter = dataSource;
-        let total = 0;
+        let allEntries: [string, any][] = [];
         if (filter) {
-            const data = currentOpendata[filter];
-            if (data && data.opendata) {
-                for (const [id, od] of Object.entries(data.opendata as Record<string, any>)) {
-                    if (count >= OPENDATA_TABLE_MAX) break;
-                    count++;
-                    const tr = document.createElement("tr");
-                    tr.title = id;
-
-                    const tdSource = document.createElement("td");
-                    tdSource.textContent = filter;
-
-                    const tdId = document.createElement("td");
-                    tdId.textContent = od.reference ?? id;
-
-                    const tdDesc = document.createElement("td");
-                    tdDesc.className = "rw-desc";
-                    tdDesc.textContent = od.description || "";
-
-                    const tdPos = document.createElement("td");
-                    tdPos.style.fontFamily = "monospace";
-                    tdPos.style.fontSize = "11px";
-                    if (od.latitude && od.longitude) {
-                        tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
-                    } else if (od.polygons && od.polygons.length > 0) {
-                        tdPos.textContent = "polygon";
-                    } else {
-                        tdPos.textContent = "-";
-                    }
-
-                    tr.appendChild(tdSource);
-                    tr.appendChild(tdId);
-                    tr.appendChild(tdDesc);
-                    tr.appendChild(tdPos);
-
-                    tr.addEventListener("click", () => centerOnOpendataItem(od));
-
-                    dataTableBody.appendChild(tr);
-                }
+            const source = dataOnlyVisible ? currentOpendata[filter] : allOpendata[filter];
+            if (source && source.opendata) {
+                allEntries = Object.entries(source.opendata as Record<string, any>);
             }
-            total = opendataTotals[filter] ?? count;
         }
-        if (count === 0) {
+        const totalCount = allEntries.length;
+        const totalPages = Math.max(1, Math.ceil(totalCount / dataPageSize));
+        if (dataPage >= totalPages) dataPage = totalPages - 1;
+        if (dataPage < 0) dataPage = 0;
+        const start = dataPage * dataPageSize;
+        const pageEntries = allEntries.slice(start, start + dataPageSize);
+
+        if (dataPageLabel) dataPageLabel.textContent = `Page ${dataPage + 1} / ${totalPages}`;
+        if (dataPrevBtn) dataPrevBtn.disabled = dataPage <= 0;
+        if (dataNextBtn) dataNextBtn.disabled = dataPage >= totalPages - 1;
+
+        for (const [id, od] of pageEntries) {
+            const tr = document.createElement("tr");
+            tr.title = id;
+
+            const tdSource = document.createElement("td");
+            tdSource.textContent = filter;
+
+            const tdId = document.createElement("td");
+            tdId.textContent = od.reference ?? id;
+
+            const tdDesc = document.createElement("td");
+            tdDesc.className = "rw-desc";
+            tdDesc.textContent = od.description || "";
+
+            const tdPos = document.createElement("td");
+            tdPos.style.fontFamily = "monospace";
+            tdPos.style.fontSize = "11px";
+            if (od.latitude && od.longitude) {
+                tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
+            } else if (od.polygons && od.polygons.length > 0) {
+                tdPos.textContent = "polygon";
+            } else {
+                tdPos.textContent = "-";
+            }
+
+            tr.appendChild(tdSource);
+            tr.appendChild(tdId);
+            tr.appendChild(tdDesc);
+            tr.appendChild(tdPos);
+
+            tr.addEventListener("click", () => centerOnOpendataItem(od));
+
+            dataTableBody.appendChild(tr);
+        }
+        if (totalCount === 0) {
             const tr = document.createElement("tr");
             const td = document.createElement("td");
             td.colSpan = 4;
@@ -2317,12 +2438,13 @@ function updateDataPanel() {
             td.style.color = "#999";
             td.style.padding = "16px";
             td.textContent = dataSource
-                ? "Aucune donn\u00e9e opendata charg\u00e9e"
+                ? (dataOnlyVisible ? "Aucune donn\u00e9e dans la zone visible" : "Aucune donn\u00e9e opendata charg\u00e9e")
                 : "S\u00e9lectionnez une source";
             tr.appendChild(td);
             dataTableBody.appendChild(tr);
         }
-        const label = dataSource ? `Data (${count}/${total})` : "Data";
+        const total = opendataTotals[filter] ?? totalCount;
+        const label = dataSource ? `Data (${totalCount}/${total})` : "Data";
         const titleEl = document.getElementById("rw-data-title");
         if (titleEl) titleEl.textContent = label;
         if (dataToggleBtn) dataToggleBtn.textContent = label;
@@ -2432,6 +2554,7 @@ function createDataPanel() {
     dataSourceSelectEl.addEventListener("change", () => {
         dataSource = dataSourceSelectEl.value;
         saveDataSource();
+        dataPage = 0;
         updateDataPanel();
         refreshDataPanelFromViewport();
     });
@@ -2493,6 +2616,64 @@ function createDataPanel() {
     dataDropzoneEl.textContent = "D\u00e9posez un fichier .json ici (descripteur ou donn\u00e9es)";
     dataPanelEl.appendChild(dataDropzoneEl);
 
+    const paginationRow = document.createElement("div");
+    paginationRow.className = "rw-pagination";
+
+    const visibleLabel = document.createElement("label");
+    visibleLabel.className = "rw-visible-label";
+    const visibleCheck = document.createElement("input");
+    visibleCheck.type = "checkbox";
+    visibleCheck.checked = dataOnlyVisible;
+    visibleCheck.addEventListener("change", () => {
+        dataOnlyVisible = visibleCheck.checked;
+        localStorage.setItem(DATA_VISIBLE_KEY, JSON.stringify(dataOnlyVisible));
+        dataPage = 0;
+        updateDataPanel();
+    });
+    const visibleText = document.createElement("span");
+    visibleText.textContent = "Visible \u00e0 l\u0027\u00e9cran";
+    visibleLabel.appendChild(visibleCheck);
+    visibleLabel.appendChild(visibleText);
+    paginationRow.appendChild(visibleLabel);
+
+    const pageSizeSelect = document.createElement("select");
+    for (const size of PAGE_SIZE_OPTIONS) {
+        const opt = document.createElement("option");
+        opt.value = String(size);
+        opt.textContent = String(size);
+        pageSizeSelect.appendChild(opt);
+    }
+    pageSizeSelect.value = String(dataPageSize);
+    pageSizeSelect.addEventListener("change", () => {
+        dataPageSize = parseInt(pageSizeSelect.value, 10);
+        localStorage.setItem(DATA_PAGE_SIZE_KEY, String(dataPageSize));
+        dataPage = 0;
+        updateDataPanel();
+    });
+    paginationRow.appendChild(pageSizeSelect);
+
+    dataPrevBtn = document.createElement("button");
+    dataPrevBtn.textContent = "\u25c0";
+    dataPrevBtn.title = "Page précédente";
+    dataPrevBtn.addEventListener("click", () => {
+        if (dataPage > 0) { dataPage--; updateDataPanel(); }
+    });
+    paginationRow.appendChild(dataPrevBtn);
+
+    dataPageLabel = document.createElement("span");
+    dataPageLabel.className = "rw-page-label";
+    paginationRow.appendChild(dataPageLabel);
+
+    dataNextBtn = document.createElement("button");
+    dataNextBtn.textContent = "\u25b6";
+    dataNextBtn.title = "Page suivante";
+    dataNextBtn.addEventListener("click", () => {
+        dataPage++;
+        updateDataPanel();
+    });
+    paginationRow.appendChild(dataNextBtn);
+
+    dataPanelEl.appendChild(paginationRow);
     dataPanelEl.appendChild(tableWrap);
     document.body.appendChild(dataPanelEl);
 
@@ -2909,6 +3090,7 @@ async function init() {
     loadHideFinished();
     loadSortState();
     loadDataSource();
+    loadPaginationSettings();
     await loadOpendataServices().catch((e) => {
         console.warn("[Roadwork] Failed to load opendata services:", e);
     });
