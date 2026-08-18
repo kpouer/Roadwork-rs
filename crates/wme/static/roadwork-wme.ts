@@ -684,24 +684,6 @@ function createFloatingPanel() {
     floatingTitleEl = title;
     title.textContent = "Roadworks";
 
-    const filterLabel = document.createElement("label");
-    filterLabel.className = "rw-filter-label";
-    filterLabel.title = "Masquer les chantiers terminés";
-
-    const filterCheck = document.createElement("input");
-    filterCheck.type = "checkbox";
-    filterCheck.checked = hideFinished;
-    filterCheck.addEventListener("change", () => {
-        hideFinished = filterCheck.checked;
-        localStorage.setItem(HIDE_FINISHED_KEY, JSON.stringify(hideFinished));
-        updateFloatingTable();
-    });
-
-    const filterText = document.createElement("span");
-    filterText.textContent = "Hide finished";
-    filterLabel.appendChild(filterCheck);
-    filterLabel.appendChild(filterText);
-
     const refreshBtn = document.createElement("button");
     refreshBtn.textContent = "Refresh";
     refreshBtn.title = "Refresh";
@@ -719,7 +701,6 @@ function createFloatingPanel() {
     closeBtn.addEventListener("click", () => setFloatingPanelVisible(false));
 
     header.appendChild(title);
-    header.appendChild(filterLabel);
     header.appendChild(closeBtn);
 
     const tableWrap = document.createElement("div");
@@ -770,6 +751,21 @@ function createFloatingPanel() {
     serviceSelectEl.id = "rw-service-select";
     serviceSelectEl.title = "Choisir le service";
     controls.appendChild(serviceSelectEl);
+
+    const centerBtn = document.createElement("button");
+    centerBtn.textContent = "Center";
+    centerBtn.title = "Centrer la carte sur le descripteur";
+    centerBtn.addEventListener("click", () => {
+        const svcInfo = servicesData.find((s) => s.name === serviceSelectEl.value);
+        if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
+            wmeSDK.Map.setMapCenter({
+                lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
+                zoomLevel: 12,
+            });
+        }
+    });
+    controls.appendChild(centerBtn);
+
     controls.appendChild(refreshBtn);
     controls.appendChild(resetBtn);
 
@@ -784,6 +780,23 @@ function createFloatingPanel() {
 
     const paginationRow = document.createElement("div");
     paginationRow.className = "rw-pagination";
+
+    const filterLabel = document.createElement("label");
+    filterLabel.className = "rw-visible-label";
+    filterLabel.title = "Masquer les chantiers terminés";
+    const filterCheck = document.createElement("input");
+    filterCheck.type = "checkbox";
+    filterCheck.checked = hideFinished;
+    filterCheck.addEventListener("change", () => {
+        hideFinished = filterCheck.checked;
+        localStorage.setItem(HIDE_FINISHED_KEY, JSON.stringify(hideFinished));
+        updateFloatingTable();
+    });
+    const filterText = document.createElement("span");
+    filterText.textContent = "Hide finished";
+    filterLabel.appendChild(filterCheck);
+    filterLabel.appendChild(filterText);
+    paginationRow.appendChild(filterLabel);
 
     const visibleLabel = document.createElement("label");
     visibleLabel.className = "rw-visible-label";
@@ -1746,8 +1759,6 @@ async function refreshViewport() {
     renderOpendataToMap();
     updateFloatingTable();
     updateDataPanel();
-    const count = Object.keys(currentRoadworks).length;
-    setStatus(`${count} roadwork(s) dans la zone visible`);
 }
 
 function scheduleViewportRefresh() {

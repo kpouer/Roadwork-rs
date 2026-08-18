@@ -526,7 +526,7 @@ impl RoadworkApp {
         job
     }
 
-    fn show_left_panel(&mut self, ui: &mut Ui) {
+    fn show_roadwork_detail(&mut self) {
         let selected_id = self.selected_roadwork.clone();
         let sync_config = crate::app_settings::sync_config(&self.settings);
 
@@ -536,28 +536,23 @@ impl RoadworkApp {
                 && let Some(roadwork) = roadwork_data.roadworks.get_mut(&id)
             {
                 let mut status_changed = false;
-                egui::Panel::left("left_panel").show_inside(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new("Id:").strong());
-                        ui.add(Label::new(&roadwork.opendata.id).wrap_mode(TextWrapMode::Truncate));
+                let mut center_on: Option<LatLng> = None;
+                egui::Window::new("Détail du chantier")
+                    .id(egui::Id::new("roadwork_detail_window"))
+                    .resizable(true)
+                    .default_width(260.0)
+                    .show(&self.ctx, |ui| {
                         ui.horizontal(|ui| {
-                            egui::Grid::new("loc_grid")
-                                .num_columns(2)
-                                .spacing([4.0, 4.0])
-                                .show(ui, |ui| {
-                                    ui.label(RichText::new("Latitude:").strong());
-                                    ui.add(
-                                        Label::new(roadwork.opendata.latitude.to_string())
-                                            .wrap_mode(TextWrapMode::Truncate),
-                                    );
-                                    ui.end_row();
-                                    ui.label(RichText::new("Longitude:").strong());
-                                    ui.add(
-                                        Label::new(roadwork.opendata.longitude.to_string())
-                                            .wrap_mode(TextWrapMode::Truncate),
-                                    );
-                                    ui.end_row();
+                            ui.label(RichText::new("Id:").strong());
+                            ui.add(
+                                Label::new(&roadwork.opendata.id).wrap_mode(TextWrapMode::Truncate),
+                            );
+                            if ui.button("Cibler").clicked() {
+                                center_on = Some(LatLng {
+                                    lat: roadwork.opendata.latitude,
+                                    lon: roadwork.opendata.longitude,
                                 });
+                            }
                         });
 
                         egui::Grid::new("time_grid")
@@ -601,7 +596,6 @@ impl RoadworkApp {
 
                         status_changed = StatusPanel::new(roadwork).show(ui);
                     });
-                });
                 if status_changed {
                     let ctx = self.ctx.clone();
                     let data = Arc::clone(&self.roadwork_data);
@@ -615,6 +609,10 @@ impl RoadworkApp {
                         }
                         ctx.request_repaint();
                     });
+                }
+                if let Some(ll) = center_on {
+                    self.position = ll;
+                    self.map_memory.center_at(latlng_to_position(ll));
                 }
             }
         }
@@ -996,7 +994,7 @@ impl App for RoadworkApp {
             });
         } else {
             self.show_top_panel(ui);
-            self.show_left_panel(ui);
+            self.show_roadwork_detail();
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 let map = Map::new(
