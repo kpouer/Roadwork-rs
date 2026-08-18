@@ -1,4 +1,5 @@
 type WmeSDK = import("wme-sdk-typings").WmeSDK;
+const { t, getLocale, detectLocale } = (window as any).__rw_i18n;
 
 const wasmIframe = document.getElementById('roadwork-wasm-iframe');
 
@@ -16,7 +17,7 @@ function postHelperMessage(msg: any) {
 window.addEventListener("message", async (e) => {
     if (e.data?.type === "ROADWORK_OPEN_HELPER_ACK") {
         helperAcked = true;
-        setStatus("Descriptor helper opened", "success");
+        setStatus(t("helper.opened"), "success");
     } else if (e.data?.type === "ROADWORK_RPC_RESULT") {
         console.info("[Roadwork] RPC_RESULT received for id", e.data.id, "has result:", e.data.result !== undefined);
         const p = rpcPending.get(e.data.id);
@@ -509,7 +510,7 @@ function updateLastRefreshDisplay() {
     try {
         const stored = localStorage.getItem(LAST_REFRESH_KEY);
         if (stored) {
-            lastRefreshEl.textContent = new Date(parseInt(stored, 10)).toLocaleString("fr-FR");
+            lastRefreshEl.textContent = new Date(parseInt(stored, 10)).toLocaleString(getLocale());
         }
     } catch (_) {
     }
@@ -551,7 +552,7 @@ function editOpendataService(name: string) {
     const services = getOpendataServices();
     const svc = services[name];
     if (!svc || !svc.descriptor) {
-        setStatus(`No descriptor for ${name}`, "error");
+        setStatus(t("status.no_descriptor", { name }), "error");
         return;
     }
     const cached = currentOpendata[name];
@@ -589,7 +590,7 @@ function showDataImportChoice(text: string, fileName: string) {
     const header = document.createElement("div");
     header.className = "rw-opendata-export-header";
     const title = document.createElement("h4");
-    title.textContent = "Importer les données";
+    title.textContent = t("import.title");
     const closeBtn = document.createElement("button");
     closeBtn.className = "roadwork-btn roadwork-btn-icon";
     closeBtn.textContent = "\u00d7";
@@ -602,14 +603,12 @@ function showDataImportChoice(text: string, fileName: string) {
     body.className = "rw-import-choice-body";
 
     const intro = document.createElement("div");
-    intro.textContent =
-        "Ce fichier contient des données brutes (pas un descripteur). " +
-        "Choisissez une source à mettre à jour, ou créez-en une nouvelle.";
+    intro.textContent = t("import.intro");
     body.appendChild(intro);
 
     const createBtn = document.createElement("button");
     createBtn.className = "rw-import-choice-create";
-    createBtn.textContent = "Créer une nouvelle source";
+    createBtn.textContent = t("import.create_new");
     createBtn.addEventListener("click", () => {
         overlay.remove();
         openHelper("opendata", true, baseName, undefined, text);
@@ -619,13 +618,13 @@ function showDataImportChoice(text: string, fileName: string) {
     if (names.length > 0) {
         const label = document.createElement("div");
         label.className = "rw-import-choice-label";
-        label.textContent = "Mettre à jour une source existante";
+        label.textContent = t("import.update_existing");
         body.appendChild(label);
         for (const name of names) {
             const btn = document.createElement("button");
             btn.className = "rw-import-choice-source";
             btn.textContent = name;
-            btn.title = "Ouvrir l'assistant avec ces données pour " + name;
+            btn.title = t("import.update_tooltip", { name });
             btn.addEventListener("click", () => {
                 overlay.remove();
                 openHelper("opendata", false, name, services[name]?.descriptor, text);
@@ -635,7 +634,7 @@ function showDataImportChoice(text: string, fileName: string) {
     } else {
         const empty = document.createElement("div");
         empty.className = "roadwork-opendata-empty";
-        empty.textContent = "Aucune source existante.";
+        empty.textContent = t("import.no_existing");
         body.appendChild(empty);
     }
 
@@ -654,7 +653,7 @@ function openHelper(helper: string, create: boolean = false, service?: string, d
         setStatus("WASM iframe not available", "error");
         return;
     }
-    setStatus("Opening descriptor helper...", "info");
+    setStatus(t("helper.opening"), "info");
     helperAcked = false;
     const msg: any = { type: "ROADWORK_OPEN_HELPER", helper, service: target, create };
     if (descriptor) {
@@ -666,7 +665,7 @@ function openHelper(helper: string, create: boolean = false, service?: string, d
     window.postMessage(msg, "*");
     setTimeout(() => {
         if (!helperAcked) {
-            setStatus("Content script did not respond - reload the extension (chrome://extensions)", "error");
+            setStatus(t("helper.no_response"), "error");
         }
     }, 1000);
 }
@@ -683,22 +682,22 @@ function createFloatingPanel() {
 
     const title = document.createElement("h4");
     floatingTitleEl = title;
-    title.textContent = "Roadworks";
+    title.textContent = t("panel.roadworks");
 
     const refreshBtn = document.createElement("button");
-    refreshBtn.textContent = "Refresh";
-    refreshBtn.title = "Refresh";
+    refreshBtn.textContent = t("btn.refresh");
+    refreshBtn.title = t("btn.refresh");
     refreshBtn.addEventListener("click", () => refreshData());
 
     const resetBtn = document.createElement("button");
-    resetBtn.textContent = "Reset";
-    resetBtn.title = "Reset all data (clear storage)";
+    resetBtn.textContent = t("btn.reset");
+    resetBtn.title = t("btn.reset");
     resetBtn.addEventListener("click", () => clearExtensionStorage());
 
     const closeBtn = document.createElement("button");
     closeBtn.className = "rw-floating-close";
     closeBtn.textContent = "\u00d7";
-    closeBtn.title = "Hide";
+    closeBtn.title = t("btn.hide");
     closeBtn.addEventListener("click", () => setFloatingPanelVisible(false));
 
     header.appendChild(title);
@@ -711,7 +710,7 @@ function createFloatingPanel() {
     table.className = "roadwork-table";
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
-    const COLUMNS = ["Statut", "Route", "Début", "Fin", "Description", "Impact"];
+    const COLUMNS = [t("table.status"), t("table.road"), t("table.start"), t("table.end"), t("table.description"), t("table.impact")];
     const headerCells = [];
     for (let i = 0; i < COLUMNS.length; i++) {
         const th = document.createElement("th");
@@ -750,12 +749,12 @@ function createFloatingPanel() {
     controls.className = "rw-floating-controls";
     serviceSelectEl = document.createElement("select");
     serviceSelectEl.id = "rw-service-select";
-    serviceSelectEl.title = "Choisir le service";
+    serviceSelectEl.title = t("opendata.service_select");
     controls.appendChild(serviceSelectEl);
 
     const centerBtn = document.createElement("button");
-    centerBtn.textContent = "Center";
-    centerBtn.title = "Centrer la carte sur le descripteur";
+    centerBtn.textContent = t("btn.center");
+    centerBtn.title = t("opendata.center_title");
     centerBtn.addEventListener("click", () => {
         const svcInfo = servicesData.find((s) => s.name === serviceSelectEl.value);
         if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
@@ -784,7 +783,7 @@ function createFloatingPanel() {
 
     const filterLabel = document.createElement("label");
     filterLabel.className = "rw-visible-label";
-    filterLabel.title = "Masquer les chantiers terminés";
+    filterLabel.title = t("pagination.hide_finished_title");
     const filterCheck = document.createElement("input");
     filterCheck.type = "checkbox";
     filterCheck.checked = hideFinished;
@@ -794,7 +793,7 @@ function createFloatingPanel() {
         updateFloatingTable();
     });
     const filterText = document.createElement("span");
-    filterText.textContent = "Hide finished";
+    filterText.textContent = t("pagination.hide_finished");
     filterLabel.appendChild(filterCheck);
     filterLabel.appendChild(filterText);
     paginationRow.appendChild(filterLabel);
@@ -811,7 +810,7 @@ function createFloatingPanel() {
         updateFloatingTable();
     });
     const visibleText = document.createElement("span");
-    visibleText.textContent = "Visible \u00e0 l\u0027\u00e9cran";
+    visibleText.textContent = t("pagination.visible");
     visibleLabel.appendChild(visibleCheck);
     visibleLabel.appendChild(visibleText);
     paginationRow.appendChild(visibleLabel);
@@ -834,7 +833,7 @@ function createFloatingPanel() {
 
     floatingPrevBtn = document.createElement("button");
     floatingPrevBtn.textContent = "\u25c0";
-    floatingPrevBtn.title = "Page précédente";
+    floatingPrevBtn.title = t("pagination.prev");
     floatingPrevBtn.addEventListener("click", () => {
         if (roadworkPage > 0) { roadworkPage--; updateFloatingTable(); }
     });
@@ -846,7 +845,7 @@ function createFloatingPanel() {
 
     floatingNextBtn = document.createElement("button");
     floatingNextBtn.textContent = "\u25b6";
-    floatingNextBtn.title = "Page suivante";
+    floatingNextBtn.title = t("pagination.next");
     floatingNextBtn.addEventListener("click", () => {
         roadworkPage++;
         updateFloatingTable();
@@ -891,7 +890,7 @@ function createFloatingPanel() {
         roadworkPage = 0;
         updateFloatingTable();
 
-        setStatus("Loading...");
+        setStatus(t("status.loading"));
         try {
             const data = await fetchRoadworks(true);
             allRoadworks = data.roadworks || {};
@@ -902,7 +901,7 @@ function createFloatingPanel() {
                 localStorage.setItem(LAST_REFRESH_KEY, String(now));
             } catch (_) {}
             if (lastRefreshEl) {
-                lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
+                lastRefreshEl.textContent = new Date(now).toLocaleString(getLocale());
             }
             await refreshViewport();
         } catch (e) {
@@ -928,7 +927,7 @@ function createFloatingPanel() {
 
     floatingToggleBtn = document.createElement("button");
     floatingToggleBtn.className = "rw-toggle-btn";
-    floatingToggleBtn.textContent = "Roadworks";
+    floatingToggleBtn.textContent = t("panel.roadworks");
     floatingToggleBtn.addEventListener("click", () => setFloatingPanelVisible(true));
     if (isFloatingPanelVisible()) {
         floatingToggleBtn.style.display = "none";
@@ -993,9 +992,9 @@ function updateFloatingCount() {
     const count = Object.keys(currentRoadworks).length;
     const statusText = statusEl?.textContent || "";
     if (statusText) {
-        floatingTitleEl.textContent = `Roadworks (${count}) — ${statusText}`;
+        floatingTitleEl.textContent = t("panel.roadworks_count", { count: String(count) }) + ` — ${statusText}`;
     } else {
-        floatingTitleEl.textContent = `Roadworks (${count})`;
+        floatingTitleEl.textContent = t("panel.roadworks_count", { count: String(count) });
     }
 }
 
@@ -1042,7 +1041,7 @@ function updateFloatingTable() {
     const start = roadworkPage * roadworkPageSize;
     const pageEntries = entries.slice(start, start + roadworkPageSize);
 
-    if (floatingPageLabel) floatingPageLabel.textContent = `Page ${roadworkPage + 1} / ${totalPages}`;
+    if (floatingPageLabel) floatingPageLabel.textContent = t("pagination.page", { current: String(roadworkPage + 1), total: String(totalPages) });
     if (floatingPrevBtn) floatingPrevBtn.disabled = roadworkPage <= 0;
     if (floatingNextBtn) floatingNextBtn.disabled = roadworkPage >= totalPages - 1;
 
@@ -1054,8 +1053,8 @@ function updateFloatingTable() {
         td.style.color = "#999";
         td.style.padding = "16px";
         td.textContent = entries.length === 0 && roadworkOnlyVisible
-            ? "Aucun roadwork dans la zone visible"
-            : "Aucun roadwork à afficher";
+            ? t("empty.no_roadwork_visible")
+            : t("empty.no_roadwork");
         tr.appendChild(td);
         floatingTableBody.appendChild(tr);
         return;
@@ -1134,7 +1133,7 @@ function formatTimestamp(millis) {
         return "?";
     }
     try {
-        return new Date(millis).toLocaleDateString("fr-FR", {
+        return new Date(millis).toLocaleDateString(getLocale(), {
             day: "2-digit",
             month: "2-digit",
             year: "numeric",
@@ -1285,7 +1284,7 @@ function buildPopupContent(rw) {
         html += `<p style="margin:4px 0;">${desc}</p>`;
     }
     if (impact) {
-        html += `<p style="margin:4px 0;color:#b45309;">Impact: ${impact}</p>`;
+        html += `<p style="margin:4px 0;color:#b45309;">${t("detail.impact_label")}: ${impact}</p>`;
     }
     html += `</div>`;
     return html;
@@ -1307,7 +1306,7 @@ function createDetailPanel() {
     header.style.cursor = "move";
 
     const title = document.createElement("h4");
-    title.textContent = "Détails du chantier";
+    title.textContent = t("detail.title");
 
     const closeBtn = document.createElement("button");
     closeBtn.className = "rw-detail-close";
@@ -1414,35 +1413,35 @@ function showDetailPanel(rw) {
 
         dropdown.appendChild(trigger);
         dropdown.appendChild(menu);
-        addField("Statut", dropdown);
+        addField(t("detail.status"), dropdown);
     }
 
     if (road) {
         const val = document.createElement("span");
         val.className = "rw-detail-value";
         val.textContent = road;
-        addField("Route", val);
+        addField(t("detail.road"), val);
     }
 
     {
         const val = document.createElement("span");
         val.className = "rw-detail-value";
         val.textContent = `${start} — ${end}`;
-        addField("Période", val);
+        addField(t("detail.period"), val);
     }
 
     if (rw.opendata?.latitude && rw.opendata?.longitude) {
         const val = document.createElement("span");
         val.className = "rw-detail-value";
         val.textContent = `${rw.opendata?.latitude.toFixed(6)}, ${rw.opendata?.longitude.toFixed(6)}`;
-        addField("Coordonnées", val);
+        addField(t("detail.coordinates"), val);
     }
 
     if (desc) {
         const val = document.createElement("span");
         val.className = "rw-detail-value";
         val.textContent = desc;
-        addField("Description", val);
+        addField(t("detail.description"), val);
     }
 
     if (impact) {
@@ -1450,7 +1449,7 @@ function showDetailPanel(rw) {
         val.className = "rw-detail-value";
         val.style.color = "#b45309";
         val.textContent = impact;
-        addField("Impact circulation", val);
+        addField(t("detail.impact"), val);
     }
 
     const wasHidden = detailPanelEl.classList.contains("rw-hidden");
@@ -1523,12 +1522,12 @@ function clearAllPolygonGroups() {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
     const statusEl = document.getElementById("rw-wkt-status");
-    if (statusEl) statusEl.textContent = "Aucun fichier chargé";
+    if (statusEl) statusEl.textContent = t("empty.no_files");
     updatePolygonesPanel();
 }
 
 async function clearExtensionStorage() {
-    if (!confirm("Vider tout le stockage local de l'extension Roadwork ?")) return;
+    if (!confirm(t("confirm.clear_storage"))) return;
     try {
         for (const key of Object.keys(localStorage)) {
             if (key.startsWith("roadwork-wme-")) {
@@ -1835,7 +1834,7 @@ async function runViewportRefresh() {
 }
 
 async function refreshData() {
-    setStatus("Loading...");
+    setStatus(t("status.loading"));
     try {
         const data = await fetchRoadworks(true);
         allRoadworks = data.roadworks || {};
@@ -1851,7 +1850,7 @@ async function refreshData() {
             localStorage.setItem(LAST_REFRESH_KEY, String(now));
         } catch (_) {}
         if (lastRefreshEl) {
-            lastRefreshEl.textContent = new Date(now).toLocaleString("fr-FR");
+            lastRefreshEl.textContent = new Date(now).toLocaleString(getLocale());
         }
         await refreshViewport();
     } catch (e) {
@@ -1969,7 +1968,7 @@ async function fetchOpendataData(name: string, forceRefresh = false) {
 }
 
 async function refreshOpendata() {
-    setStatus("Loading opendata...");
+    setStatus(t("status.loading_opendata"));
     const services = getOpendataServices();
     const enabled = Object.entries(services).filter(
         ([, svc]) => svc.enabled && getOpendataDescriptorUrl(svc),
@@ -1981,11 +1980,11 @@ async function refreshOpendata() {
             count += Object.keys(data.opendata || {}).length;
         } catch (e) {
             console.warn(`[Roadwork] Failed to refresh opendata ${name}:`, e);
-            setStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
+            setStatus(t("status.refresh_failed", { name, error: e.message }), "error");
         }
     }
     renderOpendataToMap();
-    setStatus(`${count} opendata item(s) loaded`, "success");
+    setStatus(t("status.loaded_opendata", { count: String(count) }), "success");
     renderOpendataList();
     refreshOpendataTotals();
 }
@@ -2139,21 +2138,21 @@ async function refreshOpendataService(name: string) {
     const svc = getOpendataServices()[name];
     if (!getOpendataDescriptorUrl(svc) && !(await loadOpendataCache(name))) {
         setDataStatus(
-            `Cannot refresh ${name}: the descriptor has no URL and no cached data. Edit the source and drop a data file to import its data.`,
+            t("status.no_url_no_cache", { name }),
             "error",
         );
         return;
     }
-    setDataStatus(`Loading opendata ${name}...`);
+    setDataStatus(t("status.loading_opendata_svc", { name }));
     try {
         const data = await fetchOpendataData(name, true);
         const count = Object.keys(data.opendata || {}).length;
-        setDataStatus(`${count} opendata item(s) loaded for ${name}`, "success");
+        setDataStatus(t("status.loaded_opendata_svc", { count: String(count), name }), "success");
         renderOpendataToMap();
         renderOpendataList();
         refreshOpendataTotals();
     } catch (e) {
-        setDataStatus(`Failed to refresh opendata ${name}: ${e.message}`, "error");
+        setDataStatus(t("status.refresh_failed", { name, error: e.message }), "error");
     }
 }
 
@@ -2199,17 +2198,17 @@ async function saveOpendataDescriptorFromHelper(
         delete services[oldName];
     }
     services[name] = svc;
-    setStatus(`Opendata service "${name}" saved`, "success");
+    setStatus(t("status.svc_saved", { name }), "success");
     renderOpendataList();
     try {
         postHelperMessage({
             type: "ROADWORK_SAVE_PROGRESS",
-            stage: "Saving descriptor\u2026",
+            stage: t("progress.saving_descriptor"),
             fraction: 0.1,
         });
         postHelperMessage({
             type: "ROADWORK_SAVE_PROGRESS",
-            stage: "Syncing to extension engine\u2026",
+            stage: t("progress.syncing_engine"),
             fraction: 0.3,
         });
         await rpcCall("save_opendata_source", [
@@ -2224,7 +2223,7 @@ async function saveOpendataDescriptorFromHelper(
                 currentOpendata[name] = JSON.parse(data);
                 postHelperMessage({
                     type: "ROADWORK_SAVE_PROGRESS",
-                    stage: "Storing imported data\u2026",
+                    stage: t("progress.storing_data"),
                     fraction: -1,
                 });
                 await saveOpendataCache(name, currentOpendata[name]);
@@ -2236,19 +2235,19 @@ async function saveOpendataDescriptorFromHelper(
         } else if (getOpendataDescriptorUrl(services[name])) {
             postHelperMessage({
                 type: "ROADWORK_SAVE_PROGRESS",
-                stage: "Fetching remote data\u2026",
+                stage: t("progress.fetching_remote"),
                 fraction: -1,
             });
             await fetchOpendataData(name, true);
         } else {
             setStatus(
-                `Opendata service "${name}" has no URL and no data - drop a data file when editing it to import its data`,
+                t("status.svc_no_url", { name }),
                 "info",
             );
         }
         postHelperMessage({
             type: "ROADWORK_SAVE_PROGRESS",
-            stage: "Updating map\u2026",
+            stage: t("progress.updating_map"),
             fraction: 0.9,
         });
         renderOpendataToMap();
@@ -2272,7 +2271,7 @@ async function renderOpendataList() {
     if (names.length === 0) {
         const empty = document.createElement("div");
         empty.className = "roadwork-opendata-empty";
-        empty.textContent = "No opendata service yet. Import or create one.";
+        empty.textContent = t("empty.no_opendata");
         opendataListEl.appendChild(empty);
         return;
     }
@@ -2284,7 +2283,7 @@ async function renderOpendataList() {
         const displayCheck = document.createElement("input");
         displayCheck.type = "checkbox";
         displayCheck.checked = svc.visible !== false;
-        displayCheck.title = "Display on map";
+        displayCheck.title = t("btn.display_on_map");
         displayCheck.addEventListener("change", () => setOpendataServiceVisible(name, displayCheck.checked));
         row.appendChild(displayCheck);
 
@@ -2294,8 +2293,8 @@ async function renderOpendataList() {
         const svcUrl = getOpendataDescriptorUrl(svc);
         loadBtn.disabled = !svcUrl;
         loadBtn.title = svcUrl
-            ? "Reload data"
-            : "No URL in descriptor - data must be imported by dropping a file when editing";
+            ? t("btn.reload_data")
+            : t("btn.no_url_tooltip");
         loadBtn.addEventListener("click", () => refreshOpendataService(name));
         row.appendChild(loadBtn);
 
@@ -2308,21 +2307,21 @@ async function renderOpendataList() {
         const exportBtn = document.createElement("button");
         exportBtn.className = "roadwork-btn roadwork-btn-icon";
         exportBtn.textContent = "\u21e1";
-        exportBtn.title = "Export descriptor";
+        exportBtn.title = t("btn.export_descriptor");
         exportBtn.addEventListener("click", () => showOpendataExport(name));
         row.appendChild(exportBtn);
 
         const editBtn = document.createElement("button");
         editBtn.className = "roadwork-btn roadwork-btn-icon";
         editBtn.textContent = "\u270e";
-        editBtn.title = "Edit descriptor";
+        editBtn.title = t("btn.edit_descriptor");
         editBtn.addEventListener("click", () => editOpendataService(name));
         row.appendChild(editBtn);
 
         const delBtn = document.createElement("button");
         delBtn.className = "roadwork-btn roadwork-btn-icon";
         delBtn.textContent = "\u00d7";
-        delBtn.title = "Remove";
+        delBtn.title = t("btn.remove");
         delBtn.addEventListener("click", () => removeOpendataService(name));
         row.appendChild(delBtn);
 
@@ -2343,7 +2342,7 @@ function showOpendataExport(name: string) {
     const header = document.createElement("div");
     header.className = "rw-opendata-export-header";
     const title = document.createElement("h4");
-    title.textContent = "Descriptor \u2014 " + name;
+    title.textContent = t("opendata.title", { name });
     const closeBtn = document.createElement("button");
     closeBtn.className = "roadwork-btn roadwork-btn-icon";
     closeBtn.textContent = "\u00d7";
@@ -2362,13 +2361,13 @@ function showOpendataExport(name: string) {
     actions.className = "rw-opendata-export-actions";
     const copyBtn = document.createElement("button");
     copyBtn.className = "roadwork-btn roadwork-btn-secondary";
-    copyBtn.textContent = "Copy";
+    copyBtn.textContent = t("btn.copy");
     copyBtn.addEventListener("click", () => {
         textarea.select();
         try {
             navigator.clipboard.writeText(svc.descriptor)
-                .then(() => setStatus("Copied to clipboard", "success"))
-                .catch(() => setStatus("Copy failed", "error"));
+                .then(() => setStatus(t("status.copied"), "success"))
+                .catch(() => setStatus(t("status.copy_failed"), "error"));
         } catch (_) {
             document.execCommand("copy");
         }
@@ -2419,7 +2418,7 @@ function updateDataPanel() {
             dataSourceSelectEl.replaceChildren();
             const noneOpt = document.createElement("option");
             noneOpt.value = "";
-            noneOpt.textContent = "Aucune source";
+            noneOpt.textContent = t("empty.none");
             dataSourceSelectEl.appendChild(noneOpt);
             for (const name of names) {
                 const opt = document.createElement("option");
@@ -2449,7 +2448,7 @@ function updateDataPanel() {
         const start = dataPage * dataPageSize;
         const pageEntries = allEntries.slice(start, start + dataPageSize);
 
-        if (dataPageLabel) dataPageLabel.textContent = `Page ${dataPage + 1} / ${totalPages}`;
+        if (dataPageLabel) dataPageLabel.textContent = t("pagination.page", { current: String(dataPage + 1), total: String(totalPages) });
         if (dataPrevBtn) dataPrevBtn.disabled = dataPage <= 0;
         if (dataNextBtn) dataNextBtn.disabled = dataPage >= totalPages - 1;
 
@@ -2473,7 +2472,7 @@ function updateDataPanel() {
             if (od.latitude && od.longitude) {
                 tdPos.textContent = `${od.latitude.toFixed(5)}, ${od.longitude.toFixed(5)}`;
             } else if (od.polygons && od.polygons.length > 0) {
-                tdPos.textContent = "polygon";
+                tdPos.textContent = t("dropzone.polygon");
             } else {
                 tdPos.textContent = "-";
             }
@@ -2495,13 +2494,13 @@ function updateDataPanel() {
             td.style.color = "#999";
             td.style.padding = "16px";
             td.textContent = dataSource
-                ? (dataOnlyVisible ? "Aucune donn\u00e9e dans la zone visible" : "Aucune donn\u00e9e opendata charg\u00e9e")
-                : "S\u00e9lectionnez une source";
+                ? (dataOnlyVisible ? t("empty.no_data_visible") : t("empty.no_data"))
+                : t("empty.no_source");
             tr.appendChild(td);
             dataTableBody.appendChild(tr);
         }
         const total = opendataTotals[filter] ?? totalCount;
-        const label = dataSource ? `Data (${totalCount}/${total})` : "Data";
+        const label = dataSource ? t("panel.data_count", { count: String(totalCount), total: String(total) }) : t("panel.data");
         const titleEl = document.getElementById("rw-data-title");
         if (titleEl) titleEl.textContent = label;
         if (dataToggleBtn) dataToggleBtn.textContent = label;
@@ -2510,8 +2509,8 @@ function updateDataPanel() {
         if (dataUpdateBtn) {
             dataUpdateBtn.disabled = !canRefresh;
             dataUpdateBtn.title = canRefresh
-                ? "Recharger les données de la source sélectionnée"
-                : "No URL in descriptor - data must be imported by dropping a file when editing";
+                ? t("btn.refresh_opendata_title")
+                : t("btn.no_url_tooltip");
         }
         if (dataDeleteBtn) dataDeleteBtn.disabled = !hasSource;
         if (dataEditBtn) dataEditBtn.disabled = !hasSource;
@@ -2536,7 +2535,7 @@ async function refreshDataPanelFromViewport() {
 function createDataPanel() {
     dataToggleBtn = document.createElement("button");
     dataToggleBtn.className = "rw-data-toggle-btn";
-    dataToggleBtn.textContent = "Data";
+    dataToggleBtn.textContent = t("panel.data");
     dataToggleBtn.addEventListener("click", () => {
         console.info("[Roadwork] Opening data panel", { dataPanelEl: !!dataPanelEl });
         if (!dataPanelEl) return;
@@ -2555,19 +2554,19 @@ function createDataPanel() {
 
     const title = document.createElement("h4");
     title.id = "rw-data-title";
-    title.textContent = "Data";
+    title.textContent = t("panel.data");
 
     const headerBtns = document.createElement("div");
     headerBtns.style.cssText = "display:flex;gap:4px;";
 
     const refreshBtn = document.createElement("button");
     refreshBtn.textContent = "\u21bb";
-    refreshBtn.title = "Refresh";
+    refreshBtn.title = t("btn.refresh");
     refreshBtn.addEventListener("click", () => refreshOpendata());
 
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
-    closeBtn.title = "Fermer";
+    closeBtn.title = t("btn.close");
     closeBtn.addEventListener("click", () => {
         dataPanelEl.classList.add("rw-hidden");
         dataToggleBtn.style.display = "block";
@@ -2578,7 +2577,7 @@ function createDataPanel() {
     header.appendChild(title);
     const buildBadge = document.createElement("span");
     buildBadge.style.cssText = "font-size:10px;color:#999;margin-left:8px;align-self:center;";
-    buildBadge.textContent = "build __BUILD_DATE__";
+    buildBadge.textContent = t("panel.build");
     header.appendChild(buildBadge);
     header.appendChild(headerBtns);
 
@@ -2589,7 +2588,7 @@ function createDataPanel() {
     table.className = "roadwork-table";
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
-    for (const col of ["Source", "ID", "Description", "Position"]) {
+    for (const col of [t("table.source"), t("table.id"), t("table.description"), t("table.position")]) {
         const th = document.createElement("th");
         th.textContent = col;
         headerRow.appendChild(th);
@@ -2607,7 +2606,7 @@ function createDataPanel() {
 
     dataSourceSelectEl = document.createElement("select");
     dataSourceSelectEl.id = "rw-data-source-select";
-    dataSourceSelectEl.title = "Choisir la source de données à afficher";
+    dataSourceSelectEl.title = t("opendata.source_select");
     dataSourceSelectEl.addEventListener("change", () => {
         dataSource = dataSourceSelectEl.value;
         saveDataSource();
@@ -2618,8 +2617,8 @@ function createDataPanel() {
     controls.appendChild(dataSourceSelectEl);
 
     dataUpdateBtn = document.createElement("button");
-    dataUpdateBtn.textContent = "Refresh";
-    dataUpdateBtn.title = "Recharger les données de la source sélectionnée";
+    dataUpdateBtn.textContent = t("btn.refresh");
+    dataUpdateBtn.title = t("btn.refresh_opendata_title");
     dataUpdateBtn.disabled = true;
     dataUpdateBtn.addEventListener("click", async () => {
         if (!dataSource) return;
@@ -2634,8 +2633,8 @@ function createDataPanel() {
     controls.appendChild(dataUpdateBtn);
 
     dataEditBtn = document.createElement("button");
-    dataEditBtn.textContent = "Edit";
-    dataEditBtn.title = "Ouvrir l'assistant pour éditer la source sélectionnée";
+    dataEditBtn.textContent = t("btn.edit");
+    dataEditBtn.title = t("btn.edit_opendata_title");
     dataEditBtn.disabled = true;
     dataEditBtn.addEventListener("click", () => {
         if (!dataSource) return;
@@ -2644,20 +2643,20 @@ function createDataPanel() {
     controls.appendChild(dataEditBtn);
 
     dataDeleteBtn = document.createElement("button");
-    dataDeleteBtn.textContent = "Delete";
-    dataDeleteBtn.title = "Supprimer la source sélectionnée";
+    dataDeleteBtn.textContent = t("btn.delete");
+    dataDeleteBtn.title = t("btn.delete_opendata_title");
     dataDeleteBtn.disabled = true;
     dataDeleteBtn.addEventListener("click", () => {
         if (!dataSource) return;
-        if (!confirm(`Supprimer la source \u00ab ${dataSource} \u00bb ?`)) return;
+        if (!confirm(t("confirm.delete_source", { name: dataSource }))) return;
         removeOpendataService(dataSource);
-        setDataStatus(`Source ${dataSource} supprim\u00e9e`, "success");
+        setDataStatus(t("status.svc_deleted", { name: dataSource }), "success");
     });
     controls.appendChild(dataDeleteBtn);
 
     const createBtn = document.createElement("button");
-    createBtn.textContent = "Create";
-    createBtn.title = "Ouvrir l'assistant de création de service opendata";
+    createBtn.textContent = t("btn.create");
+    createBtn.title = t("btn.create_opendata_title");
     createBtn.addEventListener("click", openOpendataHelper);
     controls.appendChild(createBtn);
 
@@ -2670,7 +2669,7 @@ function createDataPanel() {
 
     dataDropzoneEl = document.createElement("div");
     dataDropzoneEl.className = "rw-data-dropzone";
-    dataDropzoneEl.textContent = "D\u00e9posez un fichier .json ici (descripteur ou donn\u00e9es)";
+    dataDropzoneEl.textContent = t("dropzone.json");
     dataPanelEl.appendChild(dataDropzoneEl);
 
     const paginationRow = document.createElement("div");
@@ -2688,7 +2687,7 @@ function createDataPanel() {
         updateDataPanel();
     });
     const visibleText = document.createElement("span");
-    visibleText.textContent = "Visible \u00e0 l\u0027\u00e9cran";
+    visibleText.textContent = t("pagination.visible");
     visibleLabel.appendChild(visibleCheck);
     visibleLabel.appendChild(visibleText);
     paginationRow.appendChild(visibleLabel);
@@ -2711,7 +2710,7 @@ function createDataPanel() {
 
     dataPrevBtn = document.createElement("button");
     dataPrevBtn.textContent = "\u25c0";
-    dataPrevBtn.title = "Page précédente";
+    dataPrevBtn.title = t("pagination.prev");
     dataPrevBtn.addEventListener("click", () => {
         if (dataPage > 0) { dataPage--; updateDataPanel(); }
     });
@@ -2723,7 +2722,7 @@ function createDataPanel() {
 
     dataNextBtn = document.createElement("button");
     dataNextBtn.textContent = "\u25b6";
-    dataNextBtn.title = "Page suivante";
+    dataNextBtn.title = t("pagination.next");
     dataNextBtn.addEventListener("click", () => {
         dataPage++;
         updateDataPanel();
@@ -2803,7 +2802,7 @@ function renamePolygonGroup(id, newName: string) {
 function createPolygonesUI() {
     polygonesToggleBtn = document.createElement("button");
     polygonesToggleBtn.className = "rw-polygones-toggle-btn";
-    polygonesToggleBtn.textContent = "Polygones";
+    polygonesToggleBtn.textContent = t("panel.polygones");
     polygonesToggleBtn.addEventListener("click", () => {
         polygonesPanelEl.classList.remove("rw-hidden");
         polygonesToggleBtn.style.display = "none";
@@ -2818,23 +2817,23 @@ function createPolygonesUI() {
     header.className = "rw-polygones-header";
 
     const title = document.createElement("h4");
-    title.textContent = "Polygones";
+    title.textContent = t("panel.polygones");
 
     const headerBtns = document.createElement("div");
     headerBtns.style.cssText = "display:flex;gap:4px;";
 
     const resetBtn = document.createElement("button");
-    resetBtn.textContent = "Reset";
-    resetBtn.title = "Supprimer tous les polygones";
+    resetBtn.textContent = t("btn.reset");
+    resetBtn.title = t("btn.reset");
     resetBtn.addEventListener("click", () => {
-        if (confirm("Supprimer tous les polygones ?")) {
+        if (confirm(t("confirm.delete_polygones"))) {
             clearAllPolygonGroups();
         }
     });
 
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
-    closeBtn.title = "Fermer";
+    closeBtn.title = t("btn.close");
     closeBtn.addEventListener("click", () => {
         polygonesPanelEl.classList.add("rw-hidden");
         polygonesToggleBtn.style.display = "block";
@@ -2845,12 +2844,11 @@ function createPolygonesUI() {
     header.appendChild(title);
     header.appendChild(headerBtns);
 
-    polygonesPanelBody = document.createElement("div");
-    polygonesPanelBody.className = "rw-polygones-body";
+    polygonesPanelBody = document.createElement("div");    polygonesPanelBody.className = "rw-polygones-body";
 
     polygonesDropzoneEl = document.createElement("div");
     polygonesDropzoneEl.className = "rw-polygones-dropzone";
-    polygonesDropzoneEl.textContent = "D\u00e9posez un fichier .wkt ici";
+    polygonesDropzoneEl.textContent = t("dropzone.wkt");
 
     polygonesPanelEl.appendChild(header);
     polygonesPanelEl.appendChild(polygonesPanelBody);
@@ -2887,7 +2885,7 @@ function updatePolygonesPanel() {
     if (entries.length === 0) {
         const empty = document.createElement("div");
         empty.className = "rw-polygones-empty";
-        empty.textContent = "Aucun polygone charg\u00e9";
+        empty.textContent = t("empty.no_polygones");
         polygonesPanelBody.appendChild(empty);
         return;
     }
@@ -2899,7 +2897,7 @@ function updatePolygonesPanel() {
         toggleCheck.type = "checkbox";
         toggleCheck.className = "rw-polygon-group-toggle";
         toggleCheck.checked = group.visible;
-        toggleCheck.title = group.visible ? "Masquer" : "Afficher";
+        toggleCheck.title = group.visible ? t("opendata.toggle_hide") : t("opendata.toggle_show");
         toggleCheck.addEventListener("change", () => togglePolygonGroup(group.id));
 
         const nameInput = document.createElement("input");
@@ -2931,9 +2929,9 @@ function updatePolygonesPanel() {
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "rw-polygon-group-delete";
         deleteBtn.textContent = "\uD83D\uDDD1";
-        deleteBtn.title = "Supprimer";
+        deleteBtn.title = t("opendata.delete_title");
         deleteBtn.addEventListener("click", () => {
-            if (confirm("Supprimer le groupe \u00ab " + group.name + " \u00bb ?")) {
+            if (confirm(t("confirm.delete_group", { name: group.name }))) {
                 removePolygonGroup(group.id);
             }
         });
@@ -3006,7 +3004,7 @@ function setupPolygonesDragDrop() {
             const text = evt.target.result;
             const features = parseWkt(text);
             if (features.length === 0) {
-                alert("Aucune g\u00e9om\u00e9trie valide trouv\u00e9e dans le fichier");
+                alert(t("import.no_valid_geometry"));
                 return;
             }
             const fileName = file.name.replace(/\.[^/.]+$/, "");
@@ -3084,18 +3082,18 @@ async function buildPanel(tabPane: Element) {
     panelEl = document.createElement("div");
     panelEl.className = "roadwork-panel";
     const heading = document.createElement("h3");
-    heading.textContent = "Roadwork Settings";
+    heading.textContent = t("panel.settings");
     panelEl.appendChild(heading);
 
     const versionLine = document.createElement("div");
     versionLine.style.cssText = "font-size:11px;color:#888;margin-bottom:8px;";
-    versionLine.textContent = "v__VERSION__ — built __BUILD_DATE__";
+    versionLine.textContent = t("panel.version");
     panelEl.appendChild(versionLine);
 
     const launchBtn = document.createElement("button");
     launchBtn.className = "roadwork-btn";
-    launchBtn.textContent = "Lancer l'appli";
-    launchBtn.title = "Ouvrir l'appli Roadwork";
+    launchBtn.textContent = t("btn.launch");
+    launchBtn.title = t("btn.launch_title");
     launchBtn.addEventListener("click", () => {
         console.log("[Roadwork] launching app overlay");
         window.postMessage({ type: "ROADWORK_OPEN_APP" }, "*");
@@ -3104,8 +3102,8 @@ async function buildPanel(tabPane: Element) {
 
     const exploreBtn = document.createElement("button");
     exploreBtn.className = "roadwork-btn";
-    exploreBtn.textContent = "Explore DB";
-    exploreBtn.title = "Explorer la base de données locale";
+    exploreBtn.textContent = t("btn.explore_db");
+    exploreBtn.title = t("btn.explore_db_title");
     exploreBtn.addEventListener("click", () => {
         console.log("[Roadwork] opening DB explorer");
         window.postMessage({ type: "ROADWORK_OPEN_APP", dbExplorer: true }, "*");
@@ -3116,7 +3114,7 @@ async function buildPanel(tabPane: Element) {
     logLevelDiv.className = "roadwork-field";
 
     const lbl3 = document.createElement("label");
-    lbl3.textContent = "Log level";
+    lbl3.textContent = t("log_level.label");
     const logLevelSel = document.createElement("select");
     logLevelSel.id = "rw-loglevel-select";
     for (const opt of ["error", "warn", "info", "debug", "trace"]) {
@@ -3136,6 +3134,39 @@ async function buildPanel(tabPane: Element) {
     logLevelDiv.appendChild(lbl3);
     logLevelDiv.appendChild(logLevelSel);
     panelEl.appendChild(logLevelDiv);
+
+    const langDiv = document.createElement("div");
+    langDiv.className = "roadwork-field";
+
+    const langLabel = document.createElement("label");
+    langLabel.textContent = t("language.label");
+    const langSel = document.createElement("select");
+    langSel.id = "rw-language-select";
+    const langOptions: [string, string][] = [
+        ["auto", t("language.auto")],
+        ["fr", "Français"],
+        ["en", "English"],
+    ];
+    for (const [val, label] of langOptions) {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = label;
+        langSel.appendChild(o);
+    }
+    try {
+        langSel.value = localStorage.getItem("roadwork-wme-language") || "auto";
+    } catch (_) {
+        langSel.value = "auto";
+    }
+    langSel.addEventListener("change", () => {
+        try {
+            localStorage.setItem("roadwork-wme-language", langSel.value);
+        } catch (_) {}
+        window.location.reload();
+    });
+    langDiv.appendChild(langLabel);
+    langDiv.appendChild(langSel);
+    panelEl.appendChild(langDiv);
 
     tabPane.appendChild(panelEl);
 }
@@ -3165,8 +3196,8 @@ async function init() {
     toolbarEl.className = "rw-toolbar";
     const grip = document.createElement("div");
     grip.className = "rw-toolbar-grip";
-    grip.title = "Déplacer";
-    grip.setAttribute("aria-label", "Déplacer la barre d'outils");
+    grip.title = t("grip.title");
+    grip.setAttribute("aria-label", t("grip.aria"));
     toolbarEl.appendChild(grip);
     document.body.appendChild(toolbarEl);
     (() => {
@@ -3334,11 +3365,11 @@ async function init() {
     const hasRestored = Object.keys(restored).length > 0;
     if (hasRestored) {
         polygonGroups = restored;
-        const wktStatus = document.getElementById("rw-wkt-status");
+            const wktStatus = document.getElementById("rw-wkt-status");
         if (wktStatus) {
             const groupCount = Object.keys(restored).length;
             const featCount = Object.values(restored as Record<string, any>).reduce((s, g) => s + g.features.length, 0);
-            wktStatus.textContent = `${groupCount} groupe(s), ${featCount} g\u00e9om\u00e9trie(s)`;
+            wktStatus.textContent = t("panel.wkt_count", { groupCount: String(groupCount), featCount: String(featCount) });
         }
     }
     renderAllGroupsToMap();

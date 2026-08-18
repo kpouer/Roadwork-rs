@@ -1,5 +1,6 @@
 (() => {
     console.log('[Roadwork] content script loaded');
+
     const iframe = document.createElement('iframe');
     iframe.id = 'roadwork-wasm-iframe';
     iframe.style.display = 'none';

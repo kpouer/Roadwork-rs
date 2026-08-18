@@ -31,7 +31,7 @@
         "run_at": "document_idle"
     }],
     "web_accessible_resources": [{
-        "resources": ["wasm-iframe.html", "wasm_bytes.js", "wasm_bindgen.js", "wasm-init.js", "inject.js", "app/*"],
+        "resources": ["wasm-iframe.html", "wasm_bytes.js", "wasm_bindgen.js", "wasm-init.js", "inject.js", "app/*", "locales/*"],
         "matches": ["https://*.waze.com/*"]
     }]
 }

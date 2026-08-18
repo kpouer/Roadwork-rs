@@ -276,14 +276,51 @@ fn main() {
         &version,
         &build_date,
     );
-    copy_with_replacements(
-        &ts_out_dir,
-        &out_dir,
-        "roadwork-wme.js",
-        "inject.js",
-        &version,
-        &build_date,
+    // --- Copy locale files and embed them into locale-data.js ---
+    let locales_src = static_dir.join("locales");
+    let locales_out = out_dir.join("locales");
+    fs::create_dir_all(&locales_out).unwrap();
+    for entry in fs::read_dir(&locales_src).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_file() {
+            let dest = locales_out.join(path.file_name().unwrap());
+            fs::copy(&path, &dest).unwrap_or_else(|e| {
+                panic!("Failed to copy {}: {e}", path.display());
+            });
+        }
+    }
+
+    // Build a JS object with all locales embedded for the inject script
+    let mut locale_entries: Vec<String> = Vec::new();
+    for entry in fs::read_dir(&locales_out).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+            let json = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+            locale_entries.push(format!("\"{}\": {}", stem, json));
+        }
+    }
+    let locale_data_js = format!(
+        "window.__ROADWORK_LOCALE_DATA_ALL__ = {{ {} }};\n",
+        locale_entries.join(", ")
     );
+    fs::write(out_dir.join("locale-data.js"), &locale_data_js)
+        .expect("Failed to write locale-data.js");
+
+    // --- Concatenate locale-data.js + i18n.js + roadwork-wme.js into inject.js ---
+    let locale_data_js =
+        fs::read_to_string(out_dir.join("locale-data.js")).expect("Failed to read locale-data.js");
+    let i18n_js = fs::read_to_string(ts_out_dir.join("i18n.js")).expect("Failed to read i18n.js");
+    let rw_js = fs::read_to_string(ts_out_dir.join("roadwork-wme.js"))
+        .expect("Failed to read roadwork-wme.js");
+    let combined = format!("{}\n{}\n{}\n", locale_data_js, i18n_js, rw_js);
+    let combined = combined
+        .replace("__VERSION__", &version)
+        .replace("__BUILD_DATE__", &build_date);
+    fs::write(out_dir.join("inject.js"), &combined).expect("Failed to write inject.js");
     fs::copy(ts_out_dir.join("content.js"), out_dir.join("content.js"))
         .expect("Failed to copy content.js");
     fs::copy(static_dir.join("style.css"), out_dir.join("style.css"))

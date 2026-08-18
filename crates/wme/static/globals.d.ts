@@ -54,4 +54,15 @@ declare global {
     interface HTMLElement {
         contentWindow: Window | null;
     }
+
+    interface Window {
+        __ROADWORK_LOCALE_DATA_ALL__?: Record<string, Record<string, string>>;
+        __rw_i18n?: {
+            t(key: string, vars?: Record<string, string | number>): string;
+            setTranslations(locale: string, data: Record<string, string>): void;
+            setFallbackTranslations(data: Record<string, string>): void;
+            getLocale(): string;
+            detectLocale(): string;
+        };
+    }
 }
