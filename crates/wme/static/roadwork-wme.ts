@@ -489,6 +489,7 @@ function setStatus(text: string, type?) {
     }
     statusEl.textContent = text;
     statusEl.className = "roadwork-status" + (type ? " " + type : "");
+    updateFloatingCount();
 }
 
 function setDataStatus(text: string, type?) {
@@ -989,7 +990,13 @@ function createFloatingPanel() {
 
 function updateFloatingCount() {
     if (!floatingTitleEl) return;
-    floatingTitleEl.textContent = `Roadworks (${Object.keys(currentRoadworks).length})`;
+    const count = Object.keys(currentRoadworks).length;
+    const statusText = statusEl?.textContent || "";
+    if (statusText) {
+        floatingTitleEl.textContent = `Roadworks (${count}) — ${statusText}`;
+    } else {
+        floatingTitleEl.textContent = `Roadworks (${count})`;
+    }
 }
 
 function updateFloatingTable() {
@@ -1735,7 +1742,10 @@ async function refreshViewport() {
         return;
     }
     try {
-        currentRoadworks = await queryRoadworksInViewport(bounds);
+        const bboxRoadworks = await queryRoadworksInViewport(bounds);
+        if (Object.keys(bboxRoadworks).length > 0 || Object.keys(currentRoadworks).length === 0) {
+            currentRoadworks = bboxRoadworks;
+        }
         applyStatusOverrides();
         if (selectedRoadworkId && !currentRoadworks[selectedRoadworkId]) {
             selectedRoadworkId = null;
@@ -3409,6 +3419,7 @@ async function init() {
         const cached = await rpcCall("get_roadworks", [settings.service, false]);
         if (cached && cached.roadworks) {
             currentRoadworks = cached.roadworks || {};
+            allRoadworks = currentRoadworks;
             applyStatusOverrides();
         } else {
             await refreshData();
