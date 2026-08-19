@@ -2369,7 +2369,7 @@ function updateDataPanel() {
                 const opt = document.createElement("option");
                 opt.value = name;
                 const total = opendataTotals[name];
-                opt.textContent = total !== undefined ? `${name} (${total})` : name;
+                opt.textContent = total === undefined ? name : `${name} (${total})`;
                 dataSourceSelectEl.appendChild(opt);
             }
             if (!names.includes(dataSource)) {
