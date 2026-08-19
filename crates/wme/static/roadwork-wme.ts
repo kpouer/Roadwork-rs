@@ -150,7 +150,7 @@ let opendataFeatureIndex: Record<string, any> = {};
 let servicesData = [];
 let panelEl: HTMLDivElement | null = null;
 let statusEl: HTMLDivElement | null = null;
-let lastRefreshEl = null;
+let lastRefreshEl: HTMLSpanElement | null = null;
 let floatingPanelEl: HTMLDivElement | null = null;
 let floatingTableBody: HTMLDivElement | null = null;
 let floatingToggleBtn: HTMLButtonElement | null = null;
@@ -182,22 +182,18 @@ let roadworkPage = 0;
 let roadworkPageSize = 100;
 let roadworkOnlyVisible = false;
 let allRoadworks: Record<string, any> = {};
-let floatingPageSizeEl: HTMLSelectElement | null = null;
 let floatingPageLabel: HTMLSpanElement | null = null;
 let floatingPrevBtn: HTMLButtonElement | null = null;
 let floatingNextBtn: HTMLButtonElement | null = null;
-let floatingVisibleCheck: HTMLInputElement | null = null;
 
 // Opendata pagination
 let dataPage = 0;
 let dataPageSize = 100;
 let dataOnlyVisible = false;
 let allOpendata: Record<string, any> = {};
-let dataPageSizeEl: HTMLSelectElement | null = null;
 let dataPageLabel: HTMLSpanElement | null = null;
 let dataPrevBtn: HTMLButtonElement | null = null;
 let dataNextBtn: HTMLButtonElement | null = null;
-let dataVisibleCheck: HTMLInputElement | null = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -773,6 +769,11 @@ function createFloatingPanel() {
     statusDiv.className = "roadwork-status rw-floating-status";
     statusEl = statusDiv;
 
+    const lastRefreshSpan = document.createElement("span");
+    lastRefreshSpan.style.cssText = "font-size:11px;color:#999;margin-left:8px;";
+    lastRefreshEl = lastRefreshSpan;
+    statusDiv.appendChild(lastRefreshSpan);
+
     floatingPanelEl.appendChild(header);
     floatingPanelEl.appendChild(controls);
     floatingPanelEl.appendChild(statusDiv);
@@ -859,6 +860,7 @@ function createFloatingPanel() {
     floatingPanelEl.appendChild(resizeHandle);
 
     document.body.appendChild(floatingPanelEl);
+    updateLastRefreshDisplay();
 
     async function populateServices() {
         const services = await fetchServices();
