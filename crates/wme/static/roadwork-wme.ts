@@ -147,7 +147,6 @@ let currentOpendata: Record<string, any> = {};
 let opendataTotals: Record<string, number> = {};
 let dataSource: string = "";
 let opendataFeatureIndex: Record<string, any> = {};
-let opendataListEl = null;
 let servicesData = [];
 let panelEl: HTMLDivElement | null = null;
 let statusEl: HTMLDivElement | null = null;
@@ -1985,7 +1984,6 @@ async function refreshOpendata() {
     }
     renderOpendataToMap();
     setStatus(t("status.loaded_opendata", { count: String(count) }), "success");
-    renderOpendataList();
     refreshOpendataTotals();
 }
 
@@ -2131,7 +2129,6 @@ function setOpendataServiceVisible(name: string, visible: boolean) {
         console.warn(`[Roadwork] Failed to update opendata flags for ${name}:`, e);
     });
     renderOpendataToMap();
-    renderOpendataList();
 }
 
 async function refreshOpendataService(name: string) {
@@ -2149,7 +2146,6 @@ async function refreshOpendataService(name: string) {
         const count = Object.keys(data.opendata || {}).length;
         setDataStatus(t("status.loaded_opendata_svc", { count: String(count), name }), "success");
         renderOpendataToMap();
-        renderOpendataList();
         refreshOpendataTotals();
     } catch (e) {
         setDataStatus(t("status.refresh_failed", { name, error: e.message }), "error");
@@ -2163,7 +2159,6 @@ async function removeOpendataService(name: string) {
     delete currentOpendata[name];
     delete allOpendata[name];
     renderOpendataToMap();
-    renderOpendataList();
     refreshOpendataTotals();
 }
 
@@ -2200,7 +2195,6 @@ async function saveOpendataDescriptorFromHelper(
     }
     services[name] = svc;
     setStatus(t("status.svc_saved", { name }), "success");
-    renderOpendataList();
     try {
         postHelperMessage({
             type: "ROADWORK_SAVE_PROGRESS",
@@ -2264,72 +2258,6 @@ async function saveOpendataDescriptorFromHelper(
     }
     const count = Object.keys(currentOpendata[name]?.opendata ?? {}).length;
     return { ok: true, name, count };
-}
-
-async function renderOpendataList() {
-    if (!opendataListEl) return;
-    opendataListEl.replaceChildren();
-    const services = getOpendataServices();
-    const names = Object.keys(services).sort();
-    if (names.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "roadwork-opendata-empty";
-        empty.textContent = t("empty.no_opendata");
-        opendataListEl.appendChild(empty);
-        return;
-    }
-    for (const name of names) {
-        const svc = services[name];
-        const row = document.createElement("div");
-        row.className = "roadwork-opendata-row";
-
-        const displayCheck = document.createElement("input");
-        displayCheck.type = "checkbox";
-        displayCheck.checked = svc.visible !== false;
-        displayCheck.title = t("btn.display_on_map");
-        displayCheck.addEventListener("change", () => setOpendataServiceVisible(name, displayCheck.checked));
-        row.appendChild(displayCheck);
-
-        const loadBtn = document.createElement("button");
-        loadBtn.className = "roadwork-btn roadwork-btn-icon";
-        loadBtn.textContent = "\u21bb";
-        const svcUrl = getOpendataDescriptorUrl(svc);
-        loadBtn.disabled = !svcUrl;
-        loadBtn.title = svcUrl
-            ? t("btn.reload_data")
-            : t("btn.no_url_tooltip");
-        loadBtn.addEventListener("click", () => refreshOpendataService(name));
-        row.appendChild(loadBtn);
-
-        const nameSpan = document.createElement("span");
-        nameSpan.textContent = name;
-        nameSpan.style.flex = "1";
-        nameSpan.style.wordBreak = "break-all";
-        row.appendChild(nameSpan);
-
-        const exportBtn = document.createElement("button");
-        exportBtn.className = "roadwork-btn roadwork-btn-icon";
-        exportBtn.textContent = "\u21e1";
-        exportBtn.title = t("btn.export_descriptor");
-        exportBtn.addEventListener("click", () => showOpendataExport(name));
-        row.appendChild(exportBtn);
-
-        const editBtn = document.createElement("button");
-        editBtn.className = "roadwork-btn roadwork-btn-icon";
-        editBtn.textContent = "\u270e";
-        editBtn.title = t("btn.edit_descriptor");
-        editBtn.addEventListener("click", () => editOpendataService(name));
-        row.appendChild(editBtn);
-
-        const delBtn = document.createElement("button");
-        delBtn.className = "roadwork-btn roadwork-btn-icon";
-        delBtn.textContent = "\u00d7";
-        delBtn.title = t("btn.remove");
-        delBtn.addEventListener("click", () => removeOpendataService(name));
-        row.appendChild(delBtn);
-
-        opendataListEl.appendChild(row);
-    }
 }
 
 function showOpendataExport(name: string) {
