@@ -35,6 +35,6 @@ pub fn sync_config(settings: &Settings) -> Option<SyncConfig> {
 
 fn store_in_cache(key: &str, json: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(key, &json);
+        let _ = storage.set_item(key, json);
     }
 }
