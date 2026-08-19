@@ -221,14 +221,13 @@ impl OpendataService {
     fn validate_date(
         &self,
         report: &mut Vec<PathValidation>,
-        elements: &Vec<Value>,
+        elements: &[Value],
         count: usize,
         locale: Tz,
         label: &'static str,
         date: &DateParser,
     ) {
-        if date.path.trim().is_empty() {}
-        let failures = self.optional_path_failures(&elements, |element| {
+        let failures = self.optional_path_failures(elements, |element| {
             element
                 .get_path(&date.path)
                 .map(|value| date.parse(&value, locale).is_ok())
