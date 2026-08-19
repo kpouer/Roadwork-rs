@@ -139,6 +139,25 @@ const ROADWORK_VISIBLE_KEY = "roadwork-wme-rw-visible";
 const DATA_PAGE_SIZE_KEY = "roadwork-wme-data-page-size";
 const DATA_VISIBLE_KEY = "roadwork-wme-data-visible";
 
+interface PaginationState {
+    page: number;
+    pageSize: number;
+    onlyVisible: boolean;
+    allItems: Record<string, any>;
+    pageLabel: HTMLSpanElement | null;
+    prevBtn: HTMLButtonElement | null;
+    nextBtn: HTMLButtonElement | null;
+    pageSizeKey: string;
+    visibleKey: string;
+}
+
+function createPaginationState(pageSizeKey: string, visibleKey: string): PaginationState {
+    return { page: 0, pageSize: 100, onlyVisible: false, allItems: {}, pageLabel: null, prevBtn: null, nextBtn: null, pageSizeKey, visibleKey };
+}
+
+const roadworksPagination = createPaginationState(ROADWORK_PAGE_SIZE_KEY, ROADWORK_VISIBLE_KEY);
+const dataPagination = createPaginationState(DATA_PAGE_SIZE_KEY, DATA_VISIBLE_KEY);
+
 let wmeSDK: WmeSDK | null = null;
 let settings = {...DEFAULTS};
 let opendataServices: Record<string, any> = {};
@@ -177,23 +196,7 @@ let viewportRefreshTimer = null;
 let viewportRefreshInFlight = false;
 let viewportRefreshPending = false;
 
-// Roadworks pagination
-let roadworkPage = 0;
-let roadworkPageSize = 100;
-let roadworkOnlyVisible = false;
-let allRoadworks: Record<string, any> = {};
-let floatingPageLabel: HTMLSpanElement | null = null;
-let floatingPrevBtn: HTMLButtonElement | null = null;
-let floatingNextBtn: HTMLButtonElement | null = null;
 
-// Opendata pagination
-let dataPage = 0;
-let dataPageSize = 100;
-let dataOnlyVisible = false;
-let allOpendata: Record<string, any> = {};
-let dataPageLabel: HTMLSpanElement | null = null;
-let dataPrevBtn: HTMLButtonElement | null = null;
-let dataNextBtn: HTMLButtonElement | null = null;
 
 async function initScript() {
     console.log("Roadwork tryInit");
@@ -309,23 +312,20 @@ function loadSortState() {
     } catch (_) {}
 }
 
+function loadPaginationState(p: PaginationState) {
+    try {
+        const v = localStorage.getItem(p.pageSizeKey);
+        if (v !== null) p.pageSize = JSON.parse(v);
+    } catch (_) {}
+    try {
+        const v = localStorage.getItem(p.visibleKey);
+        if (v !== null) p.onlyVisible = JSON.parse(v);
+    } catch (_) {}
+}
+
 function loadPaginationSettings() {
-    try {
-        const v = localStorage.getItem(ROADWORK_PAGE_SIZE_KEY);
-        if (v !== null) roadworkPageSize = JSON.parse(v);
-    } catch (_) {}
-    try {
-        const v = localStorage.getItem(ROADWORK_VISIBLE_KEY);
-        if (v !== null) roadworkOnlyVisible = JSON.parse(v);
-    } catch (_) {}
-    try {
-        const v = localStorage.getItem(DATA_PAGE_SIZE_KEY);
-        if (v !== null) dataPageSize = JSON.parse(v);
-    } catch (_) {}
-    try {
-        const v = localStorage.getItem(DATA_VISIBLE_KEY);
-        if (v !== null) dataOnlyVisible = JSON.parse(v);
-    } catch (_) {}
+    loadPaginationState(roadworksPagination);
+    loadPaginationState(dataPagination);
 }
 
 function changeRoadworkStatus(rwId, newStatus) {
@@ -802,11 +802,11 @@ function createFloatingPanel() {
     visibleLabel.className = "rw-visible-label";
     const visibleCheck = document.createElement("input");
     visibleCheck.type = "checkbox";
-    visibleCheck.checked = roadworkOnlyVisible;
+    visibleCheck.checked = roadworksPagination.onlyVisible;
     visibleCheck.addEventListener("change", () => {
-        roadworkOnlyVisible = visibleCheck.checked;
-        localStorage.setItem(ROADWORK_VISIBLE_KEY, JSON.stringify(roadworkOnlyVisible));
-        roadworkPage = 0;
+        roadworksPagination.onlyVisible = visibleCheck.checked;
+        localStorage.setItem(ROADWORK_VISIBLE_KEY, JSON.stringify(roadworksPagination.onlyVisible));
+        roadworksPagination.page = 0;
         updateFloatingTable();
     });
     const visibleText = document.createElement("span");
@@ -822,35 +822,35 @@ function createFloatingPanel() {
         opt.textContent = String(size);
         pageSizeSelect.appendChild(opt);
     }
-    pageSizeSelect.value = String(roadworkPageSize);
+    pageSizeSelect.value = String(roadworksPagination.pageSize);
     pageSizeSelect.addEventListener("change", () => {
-        roadworkPageSize = parseInt(pageSizeSelect.value, 10);
-        localStorage.setItem(ROADWORK_PAGE_SIZE_KEY, String(roadworkPageSize));
-        roadworkPage = 0;
+        roadworksPagination.pageSize = parseInt(pageSizeSelect.value, 10);
+        localStorage.setItem(ROADWORK_PAGE_SIZE_KEY, String(roadworksPagination.pageSize));
+        roadworksPagination.page = 0;
         updateFloatingTable();
     });
     paginationRow.appendChild(pageSizeSelect);
 
-    floatingPrevBtn = document.createElement("button");
-    floatingPrevBtn.textContent = "\u25c0";
-    floatingPrevBtn.title = t("pagination.prev");
-    floatingPrevBtn.addEventListener("click", () => {
-        if (roadworkPage > 0) { roadworkPage--; updateFloatingTable(); }
+    roadworksPagination.prevBtn = document.createElement("button");
+    roadworksPagination.prevBtn.textContent = "\u25c0";
+    roadworksPagination.prevBtn.title = t("pagination.prev");
+    roadworksPagination.prevBtn.addEventListener("click", () => {
+        if (roadworksPagination.page > 0) { roadworksPagination.page--; updateFloatingTable(); }
     });
-    paginationRow.appendChild(floatingPrevBtn);
+    paginationRow.appendChild(roadworksPagination.prevBtn);
 
-    floatingPageLabel = document.createElement("span");
-    floatingPageLabel.className = "rw-page-label";
-    paginationRow.appendChild(floatingPageLabel);
+    roadworksPagination.pageLabel = document.createElement("span");
+    roadworksPagination.pageLabel.className = "rw-page-label";
+    paginationRow.appendChild(roadworksPagination.pageLabel);
 
-    floatingNextBtn = document.createElement("button");
-    floatingNextBtn.textContent = "\u25b6";
-    floatingNextBtn.title = t("pagination.next");
-    floatingNextBtn.addEventListener("click", () => {
-        roadworkPage++;
+    roadworksPagination.nextBtn = document.createElement("button");
+    roadworksPagination.nextBtn.textContent = "\u25b6";
+    roadworksPagination.nextBtn.title = t("pagination.next");
+    roadworksPagination.nextBtn.addEventListener("click", () => {
+        roadworksPagination.page++;
         updateFloatingTable();
     });
-    paginationRow.appendChild(floatingNextBtn);
+    paginationRow.appendChild(roadworksPagination.nextBtn);
 
     floatingPanelEl.appendChild(paginationRow);
     floatingPanelEl.appendChild(tableWrap);
@@ -884,18 +884,18 @@ function createFloatingPanel() {
         saveSettings();
 
         currentRoadworks = {};
-        allRoadworks = {};
+        roadworksPagination.allItems = {};
         selectedRoadworkId = null;
         hideDetailPanel();
         clearMapFeatures();
-        roadworkPage = 0;
+        roadworksPagination.page = 0;
         updateFloatingTable();
 
         setStatus(t("status.loading"));
         try {
             const data = await fetchRoadworks(true);
-            allRoadworks = data.roadworks || {};
-            currentRoadworks = allRoadworks;
+            roadworksPagination.allItems = data.roadworks || {};
+            currentRoadworks = roadworksPagination.allItems;
             applyStatusOverrides();
             const now = Date.now();
             try {
@@ -1003,7 +1003,7 @@ function updateFloatingTable() {
     if (!floatingTableBody) return;
     updateFloatingCount();
     floatingTableBody.replaceChildren();
-    const source = roadworkOnlyVisible ? currentRoadworks : allRoadworks;
+    const source = roadworksPagination.onlyVisible ? currentRoadworks : roadworksPagination.allItems;
     let entries = Object.entries(source as Record<string, any>);
 
     if (hideFinished) {
@@ -1036,15 +1036,15 @@ function updateFloatingTable() {
     }
 
     const totalCount = entries.length;
-    const totalPages = Math.max(1, Math.ceil(totalCount / roadworkPageSize));
-    if (roadworkPage >= totalPages) roadworkPage = totalPages - 1;
-    if (roadworkPage < 0) roadworkPage = 0;
-    const start = roadworkPage * roadworkPageSize;
-    const pageEntries = entries.slice(start, start + roadworkPageSize);
+    const totalPages = Math.max(1, Math.ceil(totalCount / roadworksPagination.pageSize));
+    if (roadworksPagination.page >= totalPages) roadworksPagination.page = totalPages - 1;
+    if (roadworksPagination.page < 0) roadworksPagination.page = 0;
+    const start = roadworksPagination.page * roadworksPagination.pageSize;
+    const pageEntries = entries.slice(start, start + roadworksPagination.pageSize);
 
-    if (floatingPageLabel) floatingPageLabel.textContent = t("pagination.page", { current: String(roadworkPage + 1), total: String(totalPages) });
-    if (floatingPrevBtn) floatingPrevBtn.disabled = roadworkPage <= 0;
-    if (floatingNextBtn) floatingNextBtn.disabled = roadworkPage >= totalPages - 1;
+    if (roadworksPagination.pageLabel) roadworksPagination.pageLabel.textContent = t("pagination.page", { current: String(roadworksPagination.page + 1), total: String(totalPages) });
+    if (roadworksPagination.prevBtn) roadworksPagination.prevBtn.disabled = roadworksPagination.page <= 0;
+    if (roadworksPagination.nextBtn) roadworksPagination.nextBtn.disabled = roadworksPagination.page >= totalPages - 1;
 
     if (totalCount === 0) {
         const tr = document.createElement("tr");
@@ -1053,7 +1053,7 @@ function updateFloatingTable() {
         td.style.textAlign = "center";
         td.style.color = "#999";
         td.style.padding = "16px";
-        td.textContent = entries.length === 0 && roadworkOnlyVisible
+        td.textContent = entries.length === 0 && roadworksPagination.onlyVisible
             ? t("empty.no_roadwork_visible")
             : t("empty.no_roadwork");
         tr.appendChild(td);
@@ -1838,8 +1838,8 @@ async function refreshData() {
     setStatus(t("status.loading"));
     try {
         const data = await fetchRoadworks(true);
-        allRoadworks = data.roadworks || {};
-        currentRoadworks = allRoadworks;
+        roadworksPagination.allItems = data.roadworks || {};
+        currentRoadworks = roadworksPagination.allItems;
         applyStatusOverrides();
         console.info("[Roadwork] refreshData: currentRoadworks count", Object.keys(currentRoadworks).length);
         if (selectedRoadworkId && !currentRoadworks[selectedRoadworkId]) {
@@ -1963,7 +1963,7 @@ async function loadOpendataServices() {
 
 async function fetchOpendataData(name: string, forceRefresh = false) {
     const data = await rpcCall("get_opendata", [name, forceRefresh]);
-    allOpendata[name] = data;
+    dataPagination.allItems[name] = data;
     currentOpendata[name] = data;
     return data;
 }
@@ -1994,7 +1994,7 @@ async function loadAllOpendataCaches() {
     for (const name of Object.keys(services)) {
         const cached = await loadOpendataCache(name);
         if (cached) {
-            allOpendata[name] = cached;
+            dataPagination.allItems[name] = cached;
             currentOpendata[name] = cached;
         }
     }
@@ -2159,7 +2159,7 @@ async function removeOpendataService(name: string) {
     delete services[name];
     await clearOpendataCache(name);
     delete currentOpendata[name];
-    delete allOpendata[name];
+    delete dataPagination.allItems[name];
     renderOpendataToMap();
     refreshOpendataTotals();
 }
@@ -2218,7 +2218,7 @@ async function saveOpendataDescriptorFromHelper(
         if (data) {
             try {
                 const parsed = JSON.parse(data);
-                allOpendata[name] = parsed;
+                dataPagination.allItems[name] = parsed;
                 currentOpendata[name] = parsed;
                 postHelperMessage({
                     type: "ROADWORK_SAVE_PROGRESS",
@@ -2369,21 +2369,21 @@ function updateDataPanel() {
         const filter = dataSource;
         let allEntries: [string, any][] = [];
         if (filter) {
-            const source = dataOnlyVisible ? currentOpendata[filter] : allOpendata[filter];
+            const source = dataPagination.onlyVisible ? currentOpendata[filter] : dataPagination.allItems[filter];
             if (source && source.opendata) {
                 allEntries = Object.entries(source.opendata as Record<string, any>);
             }
         }
         const totalCount = allEntries.length;
-        const totalPages = Math.max(1, Math.ceil(totalCount / dataPageSize));
-        if (dataPage >= totalPages) dataPage = totalPages - 1;
-        if (dataPage < 0) dataPage = 0;
-        const start = dataPage * dataPageSize;
-        const pageEntries = allEntries.slice(start, start + dataPageSize);
+        const totalPages = Math.max(1, Math.ceil(totalCount / dataPagination.pageSize));
+        if (dataPagination.page >= totalPages) dataPagination.page = totalPages - 1;
+        if (dataPagination.page < 0) dataPagination.page = 0;
+        const start = dataPagination.page * dataPagination.pageSize;
+        const pageEntries = allEntries.slice(start, start + dataPagination.pageSize);
 
-        if (dataPageLabel) dataPageLabel.textContent = t("pagination.page", { current: String(dataPage + 1), total: String(totalPages) });
-        if (dataPrevBtn) dataPrevBtn.disabled = dataPage <= 0;
-        if (dataNextBtn) dataNextBtn.disabled = dataPage >= totalPages - 1;
+        if (dataPagination.pageLabel) dataPagination.pageLabel.textContent = t("pagination.page", { current: String(dataPagination.page + 1), total: String(totalPages) });
+        if (dataPagination.prevBtn) dataPagination.prevBtn.disabled = dataPagination.page <= 0;
+        if (dataPagination.nextBtn) dataPagination.nextBtn.disabled = dataPagination.page >= totalPages - 1;
 
         for (const [id, od] of pageEntries) {
             const tr = document.createElement("tr");
@@ -2427,7 +2427,7 @@ function updateDataPanel() {
             td.style.color = "#999";
             td.style.padding = "16px";
             td.textContent = dataSource
-                ? (dataOnlyVisible ? t("empty.no_data_visible") : t("empty.no_data"))
+                ? (dataPagination.onlyVisible ? t("empty.no_data_visible") : t("empty.no_data"))
                 : t("empty.no_source");
             tr.appendChild(td);
             dataTableBody.appendChild(tr);
@@ -2543,7 +2543,7 @@ function createDataPanel() {
     dataSourceSelectEl.addEventListener("change", () => {
         dataSource = dataSourceSelectEl.value;
         saveDataSource();
-        dataPage = 0;
+        dataPagination.page = 0;
         updateDataPanel();
         refreshDataPanelFromViewport();
     });
@@ -2612,11 +2612,11 @@ function createDataPanel() {
     visibleLabel.className = "rw-visible-label";
     const visibleCheck = document.createElement("input");
     visibleCheck.type = "checkbox";
-    visibleCheck.checked = dataOnlyVisible;
+    visibleCheck.checked = dataPagination.onlyVisible;
     visibleCheck.addEventListener("change", () => {
-        dataOnlyVisible = visibleCheck.checked;
-        localStorage.setItem(DATA_VISIBLE_KEY, JSON.stringify(dataOnlyVisible));
-        dataPage = 0;
+        dataPagination.onlyVisible = visibleCheck.checked;
+        localStorage.setItem(DATA_VISIBLE_KEY, JSON.stringify(dataPagination.onlyVisible));
+        dataPagination.page = 0;
         updateDataPanel();
     });
     const visibleText = document.createElement("span");
@@ -2632,35 +2632,35 @@ function createDataPanel() {
         opt.textContent = String(size);
         pageSizeSelect.appendChild(opt);
     }
-    pageSizeSelect.value = String(dataPageSize);
+    pageSizeSelect.value = String(dataPagination.pageSize);
     pageSizeSelect.addEventListener("change", () => {
-        dataPageSize = parseInt(pageSizeSelect.value, 10);
-        localStorage.setItem(DATA_PAGE_SIZE_KEY, String(dataPageSize));
-        dataPage = 0;
+        dataPagination.pageSize = parseInt(pageSizeSelect.value, 10);
+        localStorage.setItem(DATA_PAGE_SIZE_KEY, String(dataPagination.pageSize));
+        dataPagination.page = 0;
         updateDataPanel();
     });
     paginationRow.appendChild(pageSizeSelect);
 
-    dataPrevBtn = document.createElement("button");
-    dataPrevBtn.textContent = "\u25c0";
-    dataPrevBtn.title = t("pagination.prev");
-    dataPrevBtn.addEventListener("click", () => {
-        if (dataPage > 0) { dataPage--; updateDataPanel(); }
+    dataPagination.prevBtn = document.createElement("button");
+    dataPagination.prevBtn.textContent = "\u25c0";
+    dataPagination.prevBtn.title = t("pagination.prev");
+    dataPagination.prevBtn.addEventListener("click", () => {
+        if (dataPagination.page > 0) { dataPagination.page--; updateDataPanel(); }
     });
-    paginationRow.appendChild(dataPrevBtn);
+    paginationRow.appendChild(dataPagination.prevBtn);
 
-    dataPageLabel = document.createElement("span");
-    dataPageLabel.className = "rw-page-label";
-    paginationRow.appendChild(dataPageLabel);
+    dataPagination.pageLabel = document.createElement("span");
+    dataPagination.pageLabel.className = "rw-page-label";
+    paginationRow.appendChild(dataPagination.pageLabel);
 
-    dataNextBtn = document.createElement("button");
-    dataNextBtn.textContent = "\u25b6";
-    dataNextBtn.title = t("pagination.next");
-    dataNextBtn.addEventListener("click", () => {
-        dataPage++;
+    dataPagination.nextBtn = document.createElement("button");
+    dataPagination.nextBtn.textContent = "\u25b6";
+    dataPagination.nextBtn.title = t("pagination.next");
+    dataPagination.nextBtn.addEventListener("click", () => {
+        dataPagination.page++;
         updateDataPanel();
     });
-    paginationRow.appendChild(dataNextBtn);
+    paginationRow.appendChild(dataPagination.nextBtn);
 
     dataPanelEl.appendChild(paginationRow);
     dataPanelEl.appendChild(tableWrap);
@@ -3419,7 +3419,7 @@ async function init() {
         const cached = await rpcCall("get_roadworks", [settings.service, false]);
         if (cached && cached.roadworks) {
             currentRoadworks = cached.roadworks || {};
-            allRoadworks = currentRoadworks;
+            roadworksPagination.allItems = currentRoadworks;
             applyStatusOverrides();
         } else {
             await refreshData();
