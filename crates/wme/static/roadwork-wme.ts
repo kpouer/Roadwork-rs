@@ -328,6 +328,84 @@ function loadPaginationSettings() {
     loadPaginationState(dataPagination);
 }
 
+function paginate<T>(p: PaginationState, entries: T[]): T[] {
+    const totalPages = Math.max(1, Math.ceil(entries.length / p.pageSize));
+    if (p.page >= totalPages) p.page = totalPages - 1;
+    if (p.page < 0) p.page = 0;
+    const start = p.page * p.pageSize;
+    return entries.slice(start, start + p.pageSize);
+}
+
+function updatePaginationUI(p: PaginationState, totalCount: number) {
+    const totalPages = Math.max(1, Math.ceil(totalCount / p.pageSize));
+    if (p.pageLabel) p.pageLabel.textContent = t("pagination.page", { current: String(p.page + 1), total: String(totalPages) });
+    if (p.prevBtn) p.prevBtn.disabled = p.page <= 0;
+    if (p.nextBtn) p.nextBtn.disabled = p.page >= totalPages - 1;
+}
+
+function createPaginationRow(p: PaginationState, onUpdate: () => void, extraBeforeVisible?: HTMLElement): HTMLDivElement {
+    const paginationRow = document.createElement("div");
+    paginationRow.className = "rw-pagination";
+
+    if (extraBeforeVisible) paginationRow.appendChild(extraBeforeVisible);
+
+    const visibleLabel = document.createElement("label");
+    visibleLabel.className = "rw-visible-label";
+    const visibleCheck = document.createElement("input");
+    visibleCheck.type = "checkbox";
+    visibleCheck.checked = p.onlyVisible;
+    visibleCheck.addEventListener("change", () => {
+        p.onlyVisible = visibleCheck.checked;
+        localStorage.setItem(p.visibleKey, JSON.stringify(p.onlyVisible));
+        p.page = 0;
+        onUpdate();
+    });
+    const visibleText = document.createElement("span");
+    visibleText.textContent = t("pagination.visible");
+    visibleLabel.appendChild(visibleCheck);
+    visibleLabel.appendChild(visibleText);
+    paginationRow.appendChild(visibleLabel);
+
+    const pageSizeSelect = document.createElement("select");
+    for (const size of PAGE_SIZE_OPTIONS) {
+        const opt = document.createElement("option");
+        opt.value = String(size);
+        opt.textContent = String(size);
+        pageSizeSelect.appendChild(opt);
+    }
+    pageSizeSelect.value = String(p.pageSize);
+    pageSizeSelect.addEventListener("change", () => {
+        p.pageSize = parseInt(pageSizeSelect.value, 10);
+        localStorage.setItem(p.pageSizeKey, String(p.pageSize));
+        p.page = 0;
+        onUpdate();
+    });
+    paginationRow.appendChild(pageSizeSelect);
+
+    p.prevBtn = document.createElement("button");
+    p.prevBtn.textContent = "\u25c0";
+    p.prevBtn.title = t("pagination.prev");
+    p.prevBtn.addEventListener("click", () => {
+        if (p.page > 0) { p.page--; onUpdate(); }
+    });
+    paginationRow.appendChild(p.prevBtn);
+
+    p.pageLabel = document.createElement("span");
+    p.pageLabel.className = "rw-page-label";
+    paginationRow.appendChild(p.pageLabel);
+
+    p.nextBtn = document.createElement("button");
+    p.nextBtn.textContent = "\u25b6";
+    p.nextBtn.title = t("pagination.next");
+    p.nextBtn.addEventListener("click", () => {
+        p.page++;
+        onUpdate();
+    });
+    paginationRow.appendChild(p.nextBtn);
+
+    return paginationRow;
+}
+
 function changeRoadworkStatus(rwId, newStatus) {
     const rw = currentRoadworks[rwId];
     if (!rw) return;
@@ -778,9 +856,6 @@ function createFloatingPanel() {
     floatingPanelEl.appendChild(controls);
     floatingPanelEl.appendChild(statusDiv);
 
-    const paginationRow = document.createElement("div");
-    paginationRow.className = "rw-pagination";
-
     const filterLabel = document.createElement("label");
     filterLabel.className = "rw-visible-label";
     filterLabel.title = t("pagination.hide_finished_title");
@@ -796,63 +871,8 @@ function createFloatingPanel() {
     filterText.textContent = t("pagination.hide_finished");
     filterLabel.appendChild(filterCheck);
     filterLabel.appendChild(filterText);
-    paginationRow.appendChild(filterLabel);
 
-    const visibleLabel = document.createElement("label");
-    visibleLabel.className = "rw-visible-label";
-    const visibleCheck = document.createElement("input");
-    visibleCheck.type = "checkbox";
-    visibleCheck.checked = roadworksPagination.onlyVisible;
-    visibleCheck.addEventListener("change", () => {
-        roadworksPagination.onlyVisible = visibleCheck.checked;
-        localStorage.setItem(ROADWORK_VISIBLE_KEY, JSON.stringify(roadworksPagination.onlyVisible));
-        roadworksPagination.page = 0;
-        updateFloatingTable();
-    });
-    const visibleText = document.createElement("span");
-    visibleText.textContent = t("pagination.visible");
-    visibleLabel.appendChild(visibleCheck);
-    visibleLabel.appendChild(visibleText);
-    paginationRow.appendChild(visibleLabel);
-
-    const pageSizeSelect = document.createElement("select");
-    for (const size of PAGE_SIZE_OPTIONS) {
-        const opt = document.createElement("option");
-        opt.value = String(size);
-        opt.textContent = String(size);
-        pageSizeSelect.appendChild(opt);
-    }
-    pageSizeSelect.value = String(roadworksPagination.pageSize);
-    pageSizeSelect.addEventListener("change", () => {
-        roadworksPagination.pageSize = parseInt(pageSizeSelect.value, 10);
-        localStorage.setItem(ROADWORK_PAGE_SIZE_KEY, String(roadworksPagination.pageSize));
-        roadworksPagination.page = 0;
-        updateFloatingTable();
-    });
-    paginationRow.appendChild(pageSizeSelect);
-
-    roadworksPagination.prevBtn = document.createElement("button");
-    roadworksPagination.prevBtn.textContent = "\u25c0";
-    roadworksPagination.prevBtn.title = t("pagination.prev");
-    roadworksPagination.prevBtn.addEventListener("click", () => {
-        if (roadworksPagination.page > 0) { roadworksPagination.page--; updateFloatingTable(); }
-    });
-    paginationRow.appendChild(roadworksPagination.prevBtn);
-
-    roadworksPagination.pageLabel = document.createElement("span");
-    roadworksPagination.pageLabel.className = "rw-page-label";
-    paginationRow.appendChild(roadworksPagination.pageLabel);
-
-    roadworksPagination.nextBtn = document.createElement("button");
-    roadworksPagination.nextBtn.textContent = "\u25b6";
-    roadworksPagination.nextBtn.title = t("pagination.next");
-    roadworksPagination.nextBtn.addEventListener("click", () => {
-        roadworksPagination.page++;
-        updateFloatingTable();
-    });
-    paginationRow.appendChild(roadworksPagination.nextBtn);
-
-    floatingPanelEl.appendChild(paginationRow);
+    floatingPanelEl.appendChild(createPaginationRow(roadworksPagination, updateFloatingTable, filterLabel));
     floatingPanelEl.appendChild(tableWrap);
 
     const resizeHandle = document.createElement("div");
@@ -1035,18 +1055,10 @@ function updateFloatingTable() {
         });
     }
 
-    const totalCount = entries.length;
-    const totalPages = Math.max(1, Math.ceil(totalCount / roadworksPagination.pageSize));
-    if (roadworksPagination.page >= totalPages) roadworksPagination.page = totalPages - 1;
-    if (roadworksPagination.page < 0) roadworksPagination.page = 0;
-    const start = roadworksPagination.page * roadworksPagination.pageSize;
-    const pageEntries = entries.slice(start, start + roadworksPagination.pageSize);
+    const pageEntries = paginate(roadworksPagination, entries);
+    updatePaginationUI(roadworksPagination, entries.length);
 
-    if (roadworksPagination.pageLabel) roadworksPagination.pageLabel.textContent = t("pagination.page", { current: String(roadworksPagination.page + 1), total: String(totalPages) });
-    if (roadworksPagination.prevBtn) roadworksPagination.prevBtn.disabled = roadworksPagination.page <= 0;
-    if (roadworksPagination.nextBtn) roadworksPagination.nextBtn.disabled = roadworksPagination.page >= totalPages - 1;
-
-    if (totalCount === 0) {
+    if (entries.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
         td.colSpan = 7;
@@ -2374,16 +2386,8 @@ function updateDataPanel() {
                 allEntries = Object.entries(source.opendata as Record<string, any>);
             }
         }
-        const totalCount = allEntries.length;
-        const totalPages = Math.max(1, Math.ceil(totalCount / dataPagination.pageSize));
-        if (dataPagination.page >= totalPages) dataPagination.page = totalPages - 1;
-        if (dataPagination.page < 0) dataPagination.page = 0;
-        const start = dataPagination.page * dataPagination.pageSize;
-        const pageEntries = allEntries.slice(start, start + dataPagination.pageSize);
-
-        if (dataPagination.pageLabel) dataPagination.pageLabel.textContent = t("pagination.page", { current: String(dataPagination.page + 1), total: String(totalPages) });
-        if (dataPagination.prevBtn) dataPagination.prevBtn.disabled = dataPagination.page <= 0;
-        if (dataPagination.nextBtn) dataPagination.nextBtn.disabled = dataPagination.page >= totalPages - 1;
+        const pageEntries = paginate(dataPagination, allEntries);
+        updatePaginationUI(dataPagination, allEntries.length);
 
         for (const [id, od] of pageEntries) {
             const tr = document.createElement("tr");
@@ -2419,7 +2423,7 @@ function updateDataPanel() {
 
             dataTableBody.appendChild(tr);
         }
-        if (totalCount === 0) {
+        if (allEntries.length === 0) {
             const tr = document.createElement("tr");
             const td = document.createElement("td");
             td.colSpan = 4;
@@ -2432,8 +2436,8 @@ function updateDataPanel() {
             tr.appendChild(td);
             dataTableBody.appendChild(tr);
         }
-        const total = opendataTotals[filter] ?? totalCount;
-        const label = dataSource ? t("panel.data_count", { count: String(totalCount), total: String(total) }) : t("panel.data");
+        const total = opendataTotals[filter] ?? allEntries.length;
+        const label = dataSource ? t("panel.data_count", { count: String(allEntries.length), total: String(total) }) : t("panel.data");
         const titleEl = document.getElementById("rw-data-title");
         if (titleEl) titleEl.textContent = label;
         if (dataToggleBtn) dataToggleBtn.textContent = label;
@@ -2605,64 +2609,7 @@ function createDataPanel() {
     dataDropzoneEl.textContent = t("dropzone.json");
     dataPanelEl.appendChild(dataDropzoneEl);
 
-    const paginationRow = document.createElement("div");
-    paginationRow.className = "rw-pagination";
-
-    const visibleLabel = document.createElement("label");
-    visibleLabel.className = "rw-visible-label";
-    const visibleCheck = document.createElement("input");
-    visibleCheck.type = "checkbox";
-    visibleCheck.checked = dataPagination.onlyVisible;
-    visibleCheck.addEventListener("change", () => {
-        dataPagination.onlyVisible = visibleCheck.checked;
-        localStorage.setItem(DATA_VISIBLE_KEY, JSON.stringify(dataPagination.onlyVisible));
-        dataPagination.page = 0;
-        updateDataPanel();
-    });
-    const visibleText = document.createElement("span");
-    visibleText.textContent = t("pagination.visible");
-    visibleLabel.appendChild(visibleCheck);
-    visibleLabel.appendChild(visibleText);
-    paginationRow.appendChild(visibleLabel);
-
-    const pageSizeSelect = document.createElement("select");
-    for (const size of PAGE_SIZE_OPTIONS) {
-        const opt = document.createElement("option");
-        opt.value = String(size);
-        opt.textContent = String(size);
-        pageSizeSelect.appendChild(opt);
-    }
-    pageSizeSelect.value = String(dataPagination.pageSize);
-    pageSizeSelect.addEventListener("change", () => {
-        dataPagination.pageSize = parseInt(pageSizeSelect.value, 10);
-        localStorage.setItem(DATA_PAGE_SIZE_KEY, String(dataPagination.pageSize));
-        dataPagination.page = 0;
-        updateDataPanel();
-    });
-    paginationRow.appendChild(pageSizeSelect);
-
-    dataPagination.prevBtn = document.createElement("button");
-    dataPagination.prevBtn.textContent = "\u25c0";
-    dataPagination.prevBtn.title = t("pagination.prev");
-    dataPagination.prevBtn.addEventListener("click", () => {
-        if (dataPagination.page > 0) { dataPagination.page--; updateDataPanel(); }
-    });
-    paginationRow.appendChild(dataPagination.prevBtn);
-
-    dataPagination.pageLabel = document.createElement("span");
-    dataPagination.pageLabel.className = "rw-page-label";
-    paginationRow.appendChild(dataPagination.pageLabel);
-
-    dataPagination.nextBtn = document.createElement("button");
-    dataPagination.nextBtn.textContent = "\u25b6";
-    dataPagination.nextBtn.title = t("pagination.next");
-    dataPagination.nextBtn.addEventListener("click", () => {
-        dataPagination.page++;
-        updateDataPanel();
-    });
-    paginationRow.appendChild(dataPagination.nextBtn);
-
-    dataPanelEl.appendChild(paginationRow);
+    dataPanelEl.appendChild(createPaginationRow(dataPagination, updateDataPanel));
     dataPanelEl.appendChild(tableWrap);
     document.body.appendChild(dataPanelEl);
 
