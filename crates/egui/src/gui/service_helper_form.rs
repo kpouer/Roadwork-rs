@@ -43,6 +43,8 @@ pub(crate) struct FieldsValues {
 #[derive(Default, Clone)]
 pub struct PathCandidates {
     pub scalars: Vec<(String, String)>,
+    pub latitudes: Vec<(String, String)>,
+    pub longitudes: Vec<(String, String)>,
     pub arrays: Vec<(String, usize)>,
 }
 
@@ -88,6 +90,16 @@ pub(crate) fn show(
         scalars: &path_candidates.scalars,
         arrays: None,
         hint: "Fetch the JSON first and make sure data_array points to the array of roadworks.",
+    };
+    let latitude_wand = Wand {
+        scalars: &path_candidates.latitudes,
+        arrays: None,
+        hint: "Fetch the JSON first and make sure data_array points to the array of roadworks. Only numeric fields between -90 and 90 are listed.",
+    };
+    let longitude_wand = Wand {
+        scalars: &path_candidates.longitudes,
+        arrays: None,
+        hint: "Fetch the JSON first and make sure data_array points to the array of roadworks. Only numeric fields between -180 and 180 are listed.",
     };
     let polygon_wand = Wand {
         scalars: &path_candidates.scalars,
@@ -135,14 +147,14 @@ pub(crate) fn show(
     changed |= validated(
         ui,
         validation.latitude,
-        "latitude must point to a scalar value in the fetched JSON",
+        "latitude must point to a number between -90 and 90 in the fetched JSON",
         |ui, tooltip| {
             optional_text_row(
                 ui,
                 "latitude",
                 &mut descriptor.latitude,
                 tooltip,
-                Some(&scalar_wand),
+                Some(&latitude_wand),
             )
         },
         values.latitude.as_deref(),
@@ -150,14 +162,14 @@ pub(crate) fn show(
     changed |= validated(
         ui,
         validation.longitude,
-        "longitude must point to a scalar value in the fetched JSON",
+        "longitude must point to a number between -180 and 180 in the fetched JSON",
         |ui, tooltip| {
             optional_text_row(
                 ui,
                 "longitude",
                 &mut descriptor.longitude,
                 tooltip,
-                Some(&scalar_wand),
+                Some(&longitude_wand),
             )
         },
         values.longitude.as_deref(),

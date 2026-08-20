@@ -164,9 +164,24 @@ pub fn find_json_arrays_value(value: &Value) -> Vec<(String, usize)> {
 
 pub fn element_scalar_paths(element: &Value) -> Vec<(String, String)> {
     let mut scalars = Vec::new();
-    collect_scalar_leaves(element, "$", &mut scalars);
+    collect_scalar_leaves(element, "$", &mut scalars, &|_| true);
     scalars.sort();
     scalars
+}
+
+pub fn element_number_paths_between(element: &Value, min: f64, max: f64) -> Vec<(String, String)> {
+    let mut numbers = Vec::new();
+    collect_scalar_leaves(element, "$", &mut numbers, &|value| {
+        is_number_between(value, min, max)
+    });
+    numbers.sort();
+    numbers
+}
+
+pub fn is_number_between(value: &Value, min: f64, max: f64) -> bool {
+    value
+        .as_f64()
+        .is_some_and(|number| (min..=max).contains(&number))
 }
 
 pub fn element_array_paths(element: &Value) -> Vec<(String, usize)> {
@@ -176,7 +191,12 @@ pub fn element_array_paths(element: &Value) -> Vec<(String, usize)> {
     arrays
 }
 
-fn collect_scalar_leaves(value: &Value, path: &str, out: &mut Vec<(String, String)>) {
+fn collect_scalar_leaves(
+    value: &Value,
+    path: &str,
+    out: &mut Vec<(String, String)>,
+    filter: &dyn Fn(&Value) -> bool,
+) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
@@ -188,7 +208,7 @@ fn collect_scalar_leaves(value: &Value, path: &str, out: &mut Vec<(String, Strin
                 } else {
                     format!("{path}[\"{key}\"]")
                 };
-                collect_scalar_leaves(child, &child_path, out);
+                collect_scalar_leaves(child, &child_path, out, filter);
             }
         }
         Value::Array(elements) => {
@@ -196,10 +216,14 @@ fn collect_scalar_leaves(value: &Value, path: &str, out: &mut Vec<(String, Strin
                 if out.len() >= MAX_SCALAR_PATHS {
                     return;
                 }
-                collect_scalar_leaves(element, &format!("{path}[{i}]"), out);
+                collect_scalar_leaves(element, &format!("{path}[{i}]"), out, filter);
             }
         }
-        _ => out.push((path.to_string(), format_fetched_value(value))),
+        _ => {
+            if filter(value) {
+                out.push((path.to_string(), format_fetched_value(value)));
+            }
+        }
     }
 }
 
@@ -259,6 +283,9 @@ pub fn format_fetched_value(value: &Value) -> String {
 const MAX_ARRAY_INDEX: usize = 8;
 const MAX_ARRAY_DEPTH: usize = 4;
 const MAX_SCALAR_PATHS: usize = 200;
+
+pub const LATITUDE_RANGE: (f64, f64) = (-90.0, 90.0);
+pub const LONGITUDE_RANGE: (f64, f64) = (-180.0, 180.0);
 
 /// An incremental, cooperative JSON scanner.
 ///

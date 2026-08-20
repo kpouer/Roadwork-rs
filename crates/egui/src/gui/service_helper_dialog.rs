@@ -1843,6 +1843,16 @@ impl ServiceHelperDialog {
         };
         PathCandidates {
             scalars: roadwork_core::json_tools::element_scalar_paths(&element),
+            latitudes: roadwork_core::json_tools::element_number_paths_between(
+                &element,
+                roadwork_core::json_tools::LATITUDE_RANGE.0,
+                roadwork_core::json_tools::LATITUDE_RANGE.1,
+            ),
+            longitudes: roadwork_core::json_tools::element_number_paths_between(
+                &element,
+                roadwork_core::json_tools::LONGITUDE_RANGE.0,
+                roadwork_core::json_tools::LONGITUDE_RANGE.1,
+            ),
             arrays: roadwork_core::json_tools::element_array_paths(&element),
         }
     }
@@ -1860,6 +1870,11 @@ impl ServiceHelperDialog {
                 .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true)
         };
+        let number_in = |path: &Option<String>, range: (f64, f64)| {
+            path.as_deref()
+                .map(|path| ods.path_points_to_number_in(&element, path, range.0, range.1))
+                .unwrap_or(true)
+        };
         FieldsValidation {
             data_array: self.opendata_array_is_valid(),
             id: descriptor
@@ -1868,8 +1883,14 @@ impl ServiceHelperDialog {
                 .map(|path| ods.path_points_to_scalar_in(&element, path))
                 .unwrap_or(true),
             reference: scalar(&descriptor.reference),
-            latitude: scalar(&descriptor.latitude),
-            longitude: scalar(&descriptor.longitude),
+            latitude: number_in(
+                &descriptor.latitude,
+                roadwork_core::json_tools::LATITUDE_RANGE,
+            ),
+            longitude: number_in(
+                &descriptor.longitude,
+                roadwork_core::json_tools::LONGITUDE_RANGE,
+            ),
             polygon: descriptor
                 .polygon
                 .as_deref()

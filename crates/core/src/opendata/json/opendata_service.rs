@@ -370,6 +370,18 @@ impl OpendataService {
         })
     }
 
+    pub fn path_points_to_number_in(
+        &self,
+        element: &Value,
+        path: &str,
+        min: f64,
+        max: f64,
+    ) -> bool {
+        self.path_matches_in(element, path, |value| {
+            json_tools::is_number_between(value, min, max)
+        })
+    }
+
     fn path_matches<F>(&self, json: &str, path: &str, matches: F) -> bool
     where
         F: Fn(&Value) -> bool,
