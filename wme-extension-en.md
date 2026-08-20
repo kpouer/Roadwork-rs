@@ -8,16 +8,10 @@ The plugin is presented as a toolbar:
 ![media/toolbar.png](media/toolbar.png).
 Click on the button you are interested in to display the corresponding tool.
 
-### Roadworks
-
-The plugin can display roadworks on the WME map, sourced from Open Data.
-It is possible to manage statuses, for example to mark roadworks as *Processed* or *Ignored*.
-Some cities and departments are already supported, others will follow, as well as the ability to extend it yourself.
-Status synchronization should be available in a future version.
-
 ### Polygons
 
 In the Polygons window, you can drop a WKT (Well-Known Text) file to display custom polygons.
+![polygon.png](media/polygon.png)
 
 ### Data
 
@@ -35,6 +29,15 @@ The tool will attempt to detect appropriate data fields, and you can adjust them
 
 Example: traffic lights in Paris
 ![media/feutricolore.png](media/feutricolore.png)
+
+### Roadworks
+
+The plugin can display roadworks on the WME map, sourced from Open Data.
+It is possible to manage statuses, for example to mark roadworks as *Processed* or *Ignored*.
+Some cities and departments are already supported, others will follow, as well as the ability to extend it yourself.
+Status synchronization should be available in a future version.
+![data/roadwork1.png](data/roadwork1.png)
+![data/roadwork2.png](data/roadwork2.png)
 
 ## Architecture
 

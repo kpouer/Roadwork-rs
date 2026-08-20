@@ -9,18 +9,10 @@ Le plugin se présente sous forme d'une toolbar
 ![media/toolbar.png](media/toolbar.png).
 Cliquez sur le bouton qui vous intéresse pour afficher l'outil correspondant.
 
-### Travaux
-
-Le plugin peut afficher des travaux routiers sur la carte WME, issu de sources Open Data.
-Il est possible de gérer un status, par exemple pour marquer les chantiers comme *Traité* ou *Ignoré*.
-Certaines villes et départements sont déjà prises en charge, d'autres suivront ainsi que la possibilité de l'étendre
-soi même.
-La synchronisation des statuts devrait être possible dans une version ultérieure.
-
 ### Polygones
 
 Sur la fenêtre Polygones vous pouvez dropper un fichier WKT (Well-Known Text) pour afficher des polygones personnalisés.
-
+![polygon.png](media/polygon.png)
 ### Données
 
 - Il est possible d'importer n'importe quel fichier json contenant des informations géographiques. Feux rouges, passages à niveau ...
@@ -37,6 +29,16 @@ L'outil tentera de détecter les données adéquates, et vous pouvez les ajuster
 
 Exemple, feux  tricolores à Paris
 ![media/feutricolore.png](media/feutricolore.png)
+
+### Travaux
+
+Le plugin peut afficher des travaux routiers sur la carte WME, issu de sources Open Data.
+Il est possible de gérer un status, par exemple pour marquer les chantiers comme *Traité* ou *Ignoré*.
+Certaines villes et départements sont déjà prises en charge, d'autres suivront ainsi que la possibilité de l'étendre
+soi même.
+La synchronisation des statuts devrait être possible dans une version ultérieure.
+![data/roadwork1.png](data/roadwork1.png)
+![data/roadwork2.png](data/roadwork2.png)
 
 ## Architecture
 
