@@ -14,7 +14,7 @@ use crate::{MyError, json_tools};
 use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
-use log::{error, info, warn};
+use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -608,7 +608,7 @@ impl OpendataService {
                         warn!("{roadwork:?} is invalid");
                     }
                 }
-                Err(e) => warn!("Unable to build roadwork {}", e),
+                Err(e) => info!("Unable to build roadwork {e}"),
             }
         }
         Ok(RoadworkData::new(&self.service_name, roadworks))
@@ -737,7 +737,7 @@ impl OpendataService {
         let start_time = self
             .parse_date(node, &self.service_descriptor.from)
             .map(|date_result| date_result.date)
-            .inspect_err(|e| error!("Error parsing start date {}", e))?;
+            .inspect_err(|e| info!("Error parsing start date {}", e))?;
         match self.parse_date(node, &self.service_descriptor.to) {
             Ok(end) => {
                 let mut end_date = end.date;
@@ -759,7 +759,7 @@ impl OpendataService {
                 })
             }
             Err(e) => {
-                error!("Error parsing end date {}", e);
+                info!("Error parsing end date {}", e);
                 Ok(DateRange {
                     from: start_time,
                     to: None,
