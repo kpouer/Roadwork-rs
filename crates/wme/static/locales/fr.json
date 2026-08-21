@@ -119,6 +119,9 @@
   "grip.title": "Déplacer",
   "grip.aria": "Déplacer la barre d'outils",
 
+  "toolbar.collapse": "Réduire la barre d'outils",
+  "toolbar.expand": "Développer la barre d'outils",
+
   "opendata.title": "Descriptor — {name}",
   "opendata.source_select": "Choisir la source de données à afficher",
   "opendata.service_select": "Choisir le service",

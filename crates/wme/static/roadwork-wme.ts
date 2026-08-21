@@ -595,6 +595,7 @@ const HIDE_FINISHED_KEY = "roadwork-wme-hide-finished";
 const PANEL_SIZE_KEY = "roadwork-wme-panel-size";
 const SORT_STATE_KEY = "roadwork-wme-sort-state";
 const TOOLBAR_POSITION_KEY = "roadwork-wme-toolbar-position";
+const TOOLBAR_COLLAPSED_KEY = "roadwork-wme-toolbar-collapsed";
 
 function isFloatingPanelVisible() {
     try {
@@ -954,7 +955,10 @@ function createFloatingPanel() {
     if (isFloatingPanelVisible()) {
         floatingToggleBtn.style.display = "none";
     }
-    if (toolbarEl) toolbarEl.appendChild(floatingToggleBtn);
+    if (toolbarEl) {
+        toolbarEl.appendChild(floatingToggleBtn);
+        syncToolbarButtonVisibility(floatingToggleBtn);
+    }
 
     let isDragging = false;
     let dragOffsetX = 0;
@@ -2482,7 +2486,10 @@ function createDataPanel() {
         updateDataPanel();
         refreshDataPanelFromViewport();
     });
-    if (toolbarEl) toolbarEl.appendChild(dataToggleBtn);
+    if (toolbarEl) {
+        toolbarEl.appendChild(dataToggleBtn);
+        syncToolbarButtonVisibility(dataToggleBtn);
+    }
 
     dataPanelEl = document.createElement("div");
     dataPanelEl.className = "rw-data-panel rw-hidden";
@@ -2640,6 +2647,13 @@ function createDataPanel() {
 }
 
 let toolbarEl = null;
+
+function syncToolbarButtonVisibility(btn: HTMLElement) {
+    if (toolbarEl && toolbarEl.classList.contains("rw-collapsed")) {
+        btn.style.display = "none";
+    }
+}
+
 let polygonesPanelEl: HTMLDivElement | null = null;
 let polygonesToggleBtn: HTMLButtonElement | null = null;
 let polygonesPanelBody: HTMLDivElement | null = null;
@@ -2777,7 +2791,10 @@ function createPolygonesUI() {
         polygonesToggleBtn.style.display = "none";
         updatePolygonesPanel();
     });
-    if (toolbarEl) toolbarEl.appendChild(polygonesToggleBtn);
+    if (toolbarEl) {
+        toolbarEl.appendChild(polygonesToggleBtn);
+        syncToolbarButtonVisibility(polygonesToggleBtn);
+    }
 
     polygonesPanelEl = document.createElement("div");
     polygonesPanelEl.className = "rw-polygones-panel rw-hidden";
@@ -3163,7 +3180,33 @@ async function init() {
     grip.title = t("grip.title");
     grip.setAttribute("aria-label", t("grip.aria"));
     toolbarEl.appendChild(grip);
+    const collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.className = "rw-toolbar-collapse-btn";
+    const applyToolbarCollapsed = (collapsed: boolean) => {
+        toolbarEl.classList.toggle("rw-collapsed", collapsed);
+        for (const child of Array.from(toolbarEl.children)) {
+            if (child === grip || child === collapseBtn) continue;
+            (child as HTMLElement).style.display = collapsed ? "none" : "";
+        }
+        collapseBtn.textContent = collapsed ? "\u00bb" : "\u00ab";
+        collapseBtn.title = t(collapsed ? "toolbar.expand" : "toolbar.collapse");
+        collapseBtn.setAttribute("aria-label", collapseBtn.title);
+    };
+    collapseBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    collapseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const collapsed = !toolbarEl.classList.contains("rw-collapsed");
+        applyToolbarCollapsed(collapsed);
+        try {
+            localStorage.setItem(TOOLBAR_COLLAPSED_KEY, String(collapsed));
+        } catch (_) {}
+    });
+    toolbarEl.appendChild(collapseBtn);
     document.body.appendChild(toolbarEl);
+    try {
+        applyToolbarCollapsed(localStorage.getItem(TOOLBAR_COLLAPSED_KEY) === "true");
+    } catch (_) {}
     try {
         const p = JSON.parse(localStorage.getItem(TOOLBAR_POSITION_KEY));
         if (typeof p?.x === "number" && typeof p?.y === "number") {

@@ -119,6 +119,9 @@
   "grip.title": "Move",
   "grip.aria": "Move the toolbar",
 
+  "toolbar.collapse": "Collapse the toolbar",
+  "toolbar.expand": "Expand the toolbar",
+
   "opendata.title": "Descriptor — {name}",
   "opendata.source_select": "Choose data source to display",
   "opendata.service_select": "Choose service",

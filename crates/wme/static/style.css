@@ -349,6 +349,25 @@
     background-color: rgba(255,255,255,0.12);
 }
 
+.rw-toolbar-collapse-btn {
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+}
+
+.rw-toolbar-collapse-btn:hover {
+    background-color: rgba(255,255,255,0.12);
+}
+
+.rw-toolbar.rw-collapsed > *:not(.rw-toolbar-grip):not(.rw-toolbar-collapse-btn) {
+    display: none;
+}
+
 .rw-toggle-btn {
     background: #4a90d9;
     color: #fff;
