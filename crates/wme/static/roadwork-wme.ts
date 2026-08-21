@@ -594,6 +594,7 @@ const PANEL_STORAGE_KEY = "roadwork-wme-panel-visible";
 const HIDE_FINISHED_KEY = "roadwork-wme-hide-finished";
 const PANEL_SIZE_KEY = "roadwork-wme-panel-size";
 const SORT_STATE_KEY = "roadwork-wme-sort-state";
+const TOOLBAR_POSITION_KEY = "roadwork-wme-toolbar-position";
 
 function isFloatingPanelVisible() {
     try {
@@ -3163,6 +3164,19 @@ async function init() {
     grip.setAttribute("aria-label", t("grip.aria"));
     toolbarEl.appendChild(grip);
     document.body.appendChild(toolbarEl);
+    try {
+        const p = JSON.parse(localStorage.getItem(TOOLBAR_POSITION_KEY));
+        if (typeof p?.x === "number" && typeof p?.y === "number") {
+            const w = toolbarEl.offsetWidth;
+            const h = toolbarEl.offsetHeight;
+            if (p.x + w > 0 && p.y + h > 0 && p.x < window.innerWidth && p.y < window.innerHeight) {
+                toolbarEl.style.left = p.x + "px";
+                toolbarEl.style.top = p.y + "px";
+                toolbarEl.style.right = "auto";
+                toolbarEl.style.bottom = "auto";
+            }
+        }
+    } catch (_) {}
     (() => {
         let isDragging = false;
         let dragOffsetX = 0;
@@ -3190,7 +3204,13 @@ async function init() {
             toolbarEl.style.bottom = "auto";
         });
         document.addEventListener("mouseup", () => {
+            if (!isDragging) return;
             isDragging = false;
+            const rect = toolbarEl.getBoundingClientRect();
+            localStorage.setItem(
+                TOOLBAR_POSITION_KEY,
+                JSON.stringify({ x: Math.round(rect.left), y: Math.round(rect.top) }),
+            );
         });
     })();
     createFloatingPanel();
