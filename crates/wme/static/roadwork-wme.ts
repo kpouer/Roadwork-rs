@@ -2911,6 +2911,7 @@ function updatePolygonesPanel() {
             }
         });
 
+        row.appendChild(toggleCheck);
         row.appendChild(nameInput);
         row.appendChild(countSpan);
         row.appendChild(deleteBtn);
