@@ -98,6 +98,10 @@
   "dropzone.json": "Déposez un fichier .json ici (descripteur ou données)",
   "dropzone.polygon": "polygon",
 
+  "wkt.create_title": "Nouveau groupe WKT",
+  "wkt.name_label": "Titre",
+  "wkt.paste_placeholder": "Collez le WKT ici",
+
   "pagination.page": "Page {current} / {total}",
   "pagination.prev": "Page précédente",
   "pagination.next": "Page suivante",

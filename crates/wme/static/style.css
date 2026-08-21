@@ -797,6 +797,43 @@
     border-top-color: #8b5cf6;
 }
 
+.rw-polygones-header .rw-polygones-new-btn {
+    background: #8b5cf6;
+    color: #fff;
+    border-color: #7c3aed;
+}
+
+.rw-polygones-header .rw-polygones-new-btn:hover {
+    background: #7c3aed;
+}
+
+.rw-wkt-create-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.rw-wkt-create-body label {
+    font-size: 12px;
+    color: #333;
+    font-weight: 600;
+}
+
+.rw-wkt-create-name {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.rw-wkt-create-name:focus,
+.rw-wkt-create-textarea:focus {
+    outline: none;
+    border-color: #8b5cf6;
+}
+
 .roadwork-opendata-list {
     margin-top: 8px;
 }

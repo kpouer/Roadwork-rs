@@ -98,6 +98,10 @@
   "dropzone.json": "Drop a .json file here (descriptor or data)",
   "dropzone.polygon": "polygon",
 
+  "wkt.create_title": "New WKT group",
+  "wkt.name_label": "Title",
+  "wkt.paste_placeholder": "Paste WKT here",
+
   "pagination.page": "Page {current} / {total}",
   "pagination.prev": "Previous page",
   "pagination.next": "Next page",

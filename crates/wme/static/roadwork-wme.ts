@@ -2679,6 +2679,94 @@ function renamePolygonGroup(id, newName: string) {
     updatePolygonesPanel();
 }
 
+function centerOnFirstFeature(features) {
+    if (features.length === 0 || !wmeSDK?.Map) return;
+    const first = features[0];
+    if (first.geometry.type === 'Point') {
+        const [lon, lat] = first.geometry.coordinates;
+        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+    } else {
+        const coords = first.geometry.type === 'Polygon' ? first.geometry.coordinates[0] : first.geometry.coordinates;
+        if (coords && coords.length > 0) {
+            const mid = Math.floor(coords.length / 2);
+            const [lon, lat] = coords[mid];
+            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+        }
+    }
+}
+
+function showWktCreateDialog() {
+    const overlay = document.createElement("div");
+    overlay.className = "rw-opendata-export-overlay";
+
+    const box = document.createElement("div");
+    box.className = "rw-opendata-export-box";
+
+    const header = document.createElement("div");
+    header.className = "rw-opendata-export-header";
+    const title = document.createElement("h4");
+    title.textContent = t("wkt.create_title");
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "roadwork-btn roadwork-btn-icon";
+    closeBtn.textContent = "\u00d7";
+    closeBtn.addEventListener("click", () => overlay.remove());
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    box.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "rw-wkt-create-body";
+
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = t("wkt.name_label");
+    body.appendChild(nameLabel);
+
+    const nameInput = document.createElement("input");
+    nameInput.className = "rw-wkt-create-name";
+    nameInput.type = "text";
+    body.appendChild(nameInput);
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "rw-opendata-export-textarea rw-wkt-create-textarea";
+    textarea.placeholder = t("wkt.paste_placeholder");
+    body.appendChild(textarea);
+    box.appendChild(body);
+
+    const actions = document.createElement("div");
+    actions.className = "rw-opendata-export-actions";
+
+    const createBtn = document.createElement("button");
+    createBtn.className = "roadwork-btn";
+    createBtn.textContent = t("btn.create");
+    createBtn.disabled = true;
+    const onCreate = () => {
+        const features = parseWkt(textarea.value);
+        if (features.length === 0) {
+            alert(t("import.no_valid_geometry"));
+            return;
+        }
+        overlay.remove();
+        addPolygonGroup(nameInput.value.trim(), features);
+        centerOnFirstFeature(features);
+    };
+    createBtn.addEventListener("click", onCreate);
+    nameInput.addEventListener("input", () => {
+        createBtn.disabled = nameInput.value.trim().length === 0;
+    });
+    nameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !createBtn.disabled) onCreate();
+    });
+    actions.appendChild(createBtn);
+    box.appendChild(actions);
+
+    overlay.appendChild(box);
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+    nameInput.focus();
+}
+
 function createPolygonesUI() {
     polygonesToggleBtn = document.createElement("button");
     polygonesToggleBtn.className = "rw-polygones-toggle-btn";
@@ -2711,6 +2799,12 @@ function createPolygonesUI() {
         }
     });
 
+    const newBtn = document.createElement("button");
+    newBtn.className = "rw-polygones-new-btn";
+    newBtn.textContent = t("btn.create");
+    newBtn.title = t("wkt.create_title");
+    newBtn.addEventListener("click", () => showWktCreateDialog());
+
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
     closeBtn.title = t("btn.close");
@@ -2720,6 +2814,7 @@ function createPolygonesUI() {
     });
 
     headerBtns.appendChild(resetBtn);
+    headerBtns.appendChild(newBtn);
     headerBtns.appendChild(closeBtn);
     header.appendChild(title);
     header.appendChild(headerBtns);
@@ -2890,20 +2985,7 @@ function setupPolygonesDragDrop() {
             const fileName = file.name.replace(/\.[^/.]+$/, "");
             addPolygonGroup(fileName, features);
             updatePolygonesPanel();
-            if (features.length > 0 && wmeSDK?.Map) {
-                const first = features[0];
-                if (first.geometry.type === 'Point') {
-                    const [lon, lat] = first.geometry.coordinates;
-                    wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
-                } else {
-                    const coords = first.geometry.type === 'Polygon' ? first.geometry.coordinates[0] : first.geometry.coordinates;
-                    if (coords && coords.length > 0) {
-                        const mid = Math.floor(coords.length / 2);
-                        const [lon, lat] = coords[mid];
-                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
-                    }
-                }
-            }
+            centerOnFirstFeature(features);
         };
         reader.readAsText(file);
     });
