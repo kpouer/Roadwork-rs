@@ -149,11 +149,35 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
-        workspace_root.join("crates/egui/src").display()
+        workspace_root.join("crates/core").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
-        workspace_root.join("crates/egui/Cargo.toml").display()
+        workspace_root.join("crates/service").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("crates/db").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("crates/sync").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("crates/egui").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("opendata/json").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("Cargo.lock").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("Cargo.toml").display()
     );
 
     fs::create_dir_all(&out_dir).unwrap();
