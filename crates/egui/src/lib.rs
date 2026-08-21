@@ -5,7 +5,6 @@ pub mod roadwork_app;
 mod tools;
 mod waze_livemap;
 
-pub use roadwork_core::MyError;
 pub use roadwork_core::http_service;
 pub use roadwork_core::json_tools;
 pub use roadwork_core::model;

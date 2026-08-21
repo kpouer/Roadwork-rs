@@ -9,5 +9,8 @@ members = [
     "crates/wme"
 ]
 
+[workspace.dependencies]
+thiserror = "2.0"
+
 [profile.dev.package."*"]
 opt-level = 2

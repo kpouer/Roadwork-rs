@@ -7,15 +7,15 @@
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use log::info;
-use roadwork_core::MyError;
 use roadwork_core::http_service::HttpService;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
-use roadwork_core::opendata::json::opendata_service::OpendataService;
+use roadwork_core::opendata::json::opendata_service::{OpendataError, OpendataService};
 use roadwork_sync::SyncData;
 use serde::Deserialize;
 use std::collections::HashMap;
+use thiserror::Error;
 
 include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
 
@@ -54,17 +54,18 @@ pub fn get_descriptor(service_name: &str) -> Option<ServiceDescriptor> {
 }
 
 /// Fetches and parses roadworks for a built-in service.
-pub async fn get_roadworks(service_name: &str) -> Result<RoadworkData, MyError> {
-    let descriptor = get_descriptor(service_name)
-        .ok_or_else(|| MyError::ParsingError(format!("Unknown service: {service_name}")))?;
-    fetch_roadworks(service_name, &descriptor).await
+pub async fn get_roadworks(service_name: &str) -> Result<RoadworkData, ServiceError> {
+    match get_descriptor(service_name) {
+        None => Err(ServiceError::UnknownService(service_name.to_string())),
+        Some(descriptor) => Ok(fetch_roadworks(service_name, &descriptor).await?),
+    }
 }
 
 /// Fetches and parses roadworks for the given descriptor.
 pub async fn fetch_roadworks(
     service_name: &str,
     descriptor: &ServiceDescriptor,
-) -> Result<RoadworkData, MyError> {
+) -> Result<RoadworkData, OpendataError> {
     let ods = OpendataService {
         service_name: service_name.to_string(),
         service_descriptor: descriptor.clone(),
@@ -125,4 +126,12 @@ pub async fn synchronize(sync_config: &SyncConfig, roadwork_data: &mut RoadworkD
         }
         Err(e) => log::warn!("Synchronization failed: {e}"),
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ServiceError {
+    #[error("Unknown service descriptor {0}")]
+    UnknownService(String),
+    #[error(transparent)]
+    OpendataError(#[from] OpendataError),
 }

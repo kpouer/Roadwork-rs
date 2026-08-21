@@ -1,22 +1,24 @@
 use crate::http_service::HttpService;
-use crate::json_tools::JsonTools;
+use crate::json_tools;
+use crate::json_tools::{JsonError, JsonTools};
 use crate::model::date_range::DateRange;
 use crate::model::opendata::Opendata;
 use crate::model::opendata_data::OpendataData;
 use crate::model::roadwork::Roadwork;
 use crate::model::roadwork_data::RoadworkData;
-use crate::opendata::json::model::date_parser::DateParser;
+use crate::opendata::json::model::date_parser::{DateError, DateParser};
 use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::metadata::Metadata;
 use crate::opendata::json::model::service_descriptor::ServiceDescriptor;
 use crate::opendata::json::path_validation::PathValidation;
-use crate::{MyError, json_tools};
 use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 use jsonpath_rust::JsonPath;
+use jsonpath_rust::parser::errors::JsonPathError;
 use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct OpendataService {
@@ -34,14 +36,14 @@ impl From<&ServiceDescriptor> for OpendataService {
 }
 
 impl OpendataService {
-    pub async fn get_data(&self) -> Result<OpendataData, MyError> {
+    pub async fn get_data(&self) -> Result<OpendataData, OpendataError> {
         let url = self.build_url();
         info!("getData {url}");
         let json = HttpService.get_url(&url).await?;
         self.parse_json(&json)
     }
 
-    pub async fn get_roadworks_data(&self) -> Result<RoadworkData, MyError> {
+    pub async fn get_roadworks_data(&self) -> Result<RoadworkData, OpendataError> {
         let url = self.build_url();
         info!("getData {url}");
         let json = HttpService.get_url(&url).await?;
@@ -327,7 +329,7 @@ impl OpendataService {
     /// This performs a single `jsonpath` query, avoiding the full-element cloning
     /// done by [`Self::roadwork_elements_value`]. It is safe to reuse the returned
     /// slice while the document stays alive.
-    pub fn roadwork_array<'a>(&self, value: &'a Value) -> Result<Vec<&'a Value>, MyError> {
+    pub fn roadwork_array<'a>(&self, value: &'a Value) -> Result<Vec<&'a Value>, OpendataError> {
         Ok(value.query(&self.service_descriptor.data_array)?)
     }
 
@@ -411,12 +413,12 @@ impl OpendataService {
             .unwrap_or(false)
     }
 
-    pub fn parse_json(&self, json: &str) -> Result<OpendataData, MyError> {
+    pub fn parse_json(&self, json: &str) -> Result<OpendataData, OpendataError> {
         let value: serde_json::Value = serde_json::from_str(json)?;
         self.parse_value(&value)
     }
 
-    pub fn parse_value(&self, value: &Value) -> Result<OpendataData, MyError> {
+    pub fn parse_value(&self, value: &Value) -> Result<OpendataData, OpendataError> {
         self.parse_value_preview(value, usize::MAX)
     }
 
@@ -425,7 +427,7 @@ impl OpendataService {
         &self,
         value: &Value,
         limit: usize,
-    ) -> Result<OpendataData, MyError> {
+    ) -> Result<OpendataData, OpendataError> {
         let data_array = value.query(&self.service_descriptor.data_array)?;
         info!("Found {} items", data_array.len());
         let mut opendata = Vec::with_capacity(limit.min(data_array.len()));
@@ -444,7 +446,7 @@ impl OpendataService {
         Ok(OpendataData::new(&self.service_name, opendata))
     }
 
-    pub fn parse_json_preview(&self, json: &str) -> Result<OpendataData, MyError> {
+    pub fn parse_json_preview(&self, json: &str) -> Result<OpendataData, OpendataError> {
         let value: serde_json::Value = serde_json::from_str(json)?;
         let data_array = value.query(&self.service_descriptor.data_array)?;
         let mut items = Vec::with_capacity(data_array.len());
@@ -458,12 +460,12 @@ impl OpendataService {
         Ok(OpendataData::new(&self.service_name, items))
     }
 
-    pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, MyError> {
+    pub fn extract_roadwork_array(&self, json: &str) -> Result<Value, OpendataError> {
         let value: Value = serde_json::from_str(json)?;
         self.extract_value(&value)
     }
 
-    pub fn extract_value(&self, value: &Value) -> Result<Value, MyError> {
+    pub fn extract_value(&self, value: &Value) -> Result<Value, OpendataError> {
         let results = value.query(&self.service_descriptor.data_array)?;
         Ok(Value::Array(results.into_iter().cloned().collect()))
     }
@@ -509,7 +511,7 @@ impl OpendataService {
         format!("{}?{}", base, segments.join("&"))
     }
 
-    pub fn build_opendata(&self, node: &Value) -> Result<Opendata, MyError> {
+    pub fn build_opendata(&self, node: &Value) -> Result<Opendata, OpendataError> {
         let (id, reference) = self.extract_id_and_reference(node);
         let mut opendata = Opendata {
             id,
@@ -594,7 +596,7 @@ impl OpendataService {
         true
     }
 
-    pub fn parse_roadworks(&self, json: &str) -> Result<RoadworkData, MyError> {
+    pub fn parse_roadworks(&self, json: &str) -> Result<RoadworkData, OpendataError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let data_array = json.query(&self.service_descriptor.data_array)?;
         info!("Found {} items", data_array.len());
@@ -614,7 +616,7 @@ impl OpendataService {
         Ok(RoadworkData::new(&self.service_name, roadworks))
     }
 
-    pub fn parse_roadworks_preview(&self, json: &str) -> Result<RoadworkData, MyError> {
+    pub fn parse_roadworks_preview(&self, json: &str) -> Result<RoadworkData, OpendataError> {
         let json: serde_json::Value = serde_json::from_str(json)?;
         let data_array = json.query(&self.service_descriptor.data_array)?;
         let mut items = Vec::with_capacity(data_array.len());
@@ -636,15 +638,13 @@ impl OpendataService {
         true
     }
 
-    fn build_roadwork(&self, node: &Value) -> Result<Roadwork, MyError> {
+    fn build_roadwork(&self, node: &Value) -> Result<Roadwork, OpendataError> {
         let mut roadwork_builder = Roadwork {
             opendata: self.build_opendata(node)?,
             ..Roadwork::default()
         };
         if roadwork_builder.opendata.id.is_empty() {
-            return Err(MyError::ParsingError(
-                "Cannot build roadwork as id is empty".to_string(),
-            ));
+            return Err(OpendataError::MissingId);
         }
         self.fill_roadwork_fields(node, &mut roadwork_builder);
         let date_range = self.get_date_range(node)?;
@@ -692,11 +692,9 @@ impl OpendataService {
         &self,
         node: &Value,
         date_parser: &Option<DateParser>,
-    ) -> Result<DateResult, MyError> {
+    ) -> Result<DateResult, OpendataError> {
         if date_parser.is_none() {
-            return Err(MyError::ParsingError(
-                "Cannot parse date as dateParse is null".to_string(),
-            ));
+            return Err(OpendataError::MissingDateParser);
         }
         let current_year = chrono::Utc::now().year();
         let date_parser = date_parser.as_ref().unwrap();
@@ -732,7 +730,7 @@ impl OpendataService {
             .with_nanosecond(0)
     }
 
-    fn get_date_range(&self, node: &Value) -> Result<DateRange, MyError> {
+    fn get_date_range(&self, node: &Value) -> Result<DateRange, OpendataError> {
         let current_year = chrono::Utc::now().year();
         let start_time = self
             .parse_date(node, &self.service_descriptor.from)
@@ -767,4 +765,22 @@ impl OpendataService {
             }
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum OpendataError {
+    #[error(transparent)]
+    JsonParseError(#[from] serde_json::Error),
+    #[error(transparent)]
+    JsonPathError(#[from] JsonPathError),
+    #[error(transparent)]
+    HttpError(#[from] reqwest::Error),
+    #[error("Cannot parse date as dateParse is null")]
+    MissingDateParser,
+    #[error("Cannot build roadwork as id is empty")]
+    MissingId,
+    #[error(transparent)]
+    SerdeError(#[from] JsonError),
+    #[error(transparent)]
+    ParsingError(#[from] DateError),
 }

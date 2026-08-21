@@ -2,6 +2,7 @@ use crate::opendata::json::model::date_result::DateResult;
 use crate::opendata::json::model::parser::Parser;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct DateParser {
@@ -10,16 +11,14 @@ pub struct DateParser {
 }
 
 impl DateParser {
-    pub fn parse(&self, value: &str, locale: Tz) -> Result<DateResult, crate::MyError> {
-        use crate::MyError::ParsingError;
+    pub fn parse(&self, value: &str, locale: Tz) -> Result<DateResult, DateError> {
         self.parsers
             .iter()
             .find_map(|parser| parser.parse(value, locale))
-            .ok_or(ParsingError(format!(
-                "Unable to parse date '{}' with parsers :{}",
-                value,
-                self.to_string_parsers()
-            )))
+            .ok_or(DateError::ParsingError(
+                value.to_string(),
+                self.to_string_parsers(),
+            ))
     }
 
     fn to_string_parsers(&self) -> String {
@@ -31,4 +30,10 @@ impl DateParser {
         }
         formats.join("|")
     }
+}
+
+#[derive(Debug, Error)]
+pub enum DateError {
+    #[error("Unable to parse date '{0}' with parsers '{1}'")]
+    ParsingError(String, String),
 }

@@ -1,50 +1,52 @@
-use crate::MyError;
-use crate::MyError::JsonParsingError;
 use crate::model::wkt::polygon::Polygon;
 use jsonpath_rust::JsonPath;
+use jsonpath_rust::parser::errors::JsonPathError;
 use log::{debug, error};
 use serde_json::Value;
+use thiserror::Error;
 
 pub trait JsonTools {
-    fn get_path(&self, path: &str) -> Result<String, MyError>;
-    fn get_path_as_double(&self, path: &str) -> Result<f64, MyError>;
+    fn get_path(&self, path: &str) -> Result<String, JsonError>;
+    fn get_path_as_double(&self, path: &str) -> Result<f64, JsonError>;
     fn get_path_as_polygons(&self, path: &str) -> Option<Vec<Polygon>>;
     fn collect_arrays(&self, path: &str) -> Vec<(String, usize)>;
 }
 
 impl JsonTools for &Value {
-    fn get_path(&self, path: &str) -> Result<String, MyError> {
+    fn get_path(&self, path: &str) -> Result<String, JsonError> {
         debug!("get_path path:{path}");
         let result = self.query(path)?;
         if result.is_empty() {
-            return Err(JsonParsingError(format!(
-                "Unable to get path {path} from {self}"
-            )));
+            return Err(JsonError::InvalidJsonPath(
+                path.to_string(),
+                self.to_string(),
+            ));
         }
         result[0]
             .as_str()
             .map(|s| s.to_string())
             .or_else(|| result[0].as_number().map(|n| n.to_string()))
-            .ok_or_else(|| JsonParsingError(format!("Unable to get path {path} from {self}")))
+            .ok_or_else(|| JsonError::InvalidJsonPath(path.to_string(), self.to_string()))
     }
 
-    fn get_path_as_double(&self, path: &str) -> Result<f64, MyError> {
+    fn get_path_as_double(&self, path: &str) -> Result<f64, JsonError> {
         let result = self.query(path)?;
         if result.is_empty() {
-            return Err(JsonParsingError(format!(
-                "Unable to get path {path} from {self}"
-            )));
+            return Err(JsonError::InvalidJsonPath(
+                path.to_string(),
+                self.to_string(),
+            ));
         }
         let value = result[0];
         match value {
             Value::Number(number) => Ok(number.as_f64().unwrap()),
-            Value::String(string) => string.parse::<f64>().or(Err(JsonParsingError(format!(
-                "Unable to parse {} as a double",
-                string
-            )))),
-            _ => Err(JsonParsingError(format!(
-                "Unable to get path {path} from {self}"
-            ))),
+            Value::String(string) => string
+                .parse::<f64>()
+                .or(Err(JsonError::NotADouble(string.into()))),
+            _ => Err(JsonError::InvalidJsonPath(
+                path.to_string(),
+                self.to_string(),
+            )),
         }
     }
 
@@ -97,7 +99,7 @@ impl JsonTools for &Value {
     }
 }
 
-fn get_multipolygon(value: &Vec<&Value>) -> Result<Vec<Polygon>, MyError> {
+fn get_multipolygon(value: &Vec<&Value>) -> Result<Vec<Polygon>, JsonError> {
     let mut polygons = Vec::new();
     for polygon_array in value {
         if let Value::Array(polygon_array) = polygon_array {
@@ -118,27 +120,19 @@ fn is_multi_polygon(value: &Vec<&Value>) -> bool {
     false
 }
 
-fn get_polygon(polygon: &Value) -> Result<Polygon, MyError> {
+fn get_polygon(polygon: &Value) -> Result<Polygon, JsonError> {
     let Value::Array(rings) = polygon else {
-        return Err(MyError::JsonParsingError("Invalid polygon".to_string()));
+        return Err(JsonError::InvalidPolygon);
     };
-    let ring = rings
-        .first()
-        .ok_or(MyError::JsonParsingError("Empty polygon".to_string()))?;
+    let ring = rings.first().ok_or(JsonError::EmptyPolygon)?;
     let Value::Array(ring) = ring else {
-        return Err(MyError::JsonParsingError(
-            "Invalid polygon ring".to_string(),
-        ));
+        return Err(JsonError::InvalidPolygonRing);
     };
     let mut xpoints = Vec::with_capacity(ring.len());
     let mut ypoints = Vec::with_capacity(ring.len());
     for point in ring {
-        xpoints.push(point[0].as_f64().ok_or(MyError::JsonParsingError(
-            "Unable to get point from polygon".to_string(),
-        ))?);
-        ypoints.push(point[1].as_f64().ok_or(MyError::JsonParsingError(
-            "Unable to get point from polygon".to_string(),
-        ))?);
+        xpoints.push(point[0].as_f64().ok_or(JsonError::MissingPointInPolygon)?);
+        ypoints.push(point[1].as_f64().ok_or(JsonError::MissingPointInPolygon)?);
     }
     Ok(Polygon { xpoints, ypoints })
 }
@@ -602,4 +596,22 @@ fn hex_digit(b: u8) -> u8 {
 
 fn is_scalar_end(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b',' | b'}' | b']')
+}
+
+#[derive(Error, Debug)]
+pub enum JsonError {
+    #[error("Unable to get path {0} from {1}")]
+    InvalidJsonPath(String, String),
+    #[error("Unable to parse {0} as a double")]
+    NotADouble(String),
+    #[error(transparent)]
+    JsonPathError(#[from] JsonPathError),
+    #[error("Invalid polygon")]
+    InvalidPolygon,
+    #[error("Unable to get point from polygon")]
+    MissingPointInPolygon,
+    #[error("Invalid polygon ring")]
+    InvalidPolygonRing,
+    #[error("Empty polygon")]
+    EmptyPolygon,
 }
