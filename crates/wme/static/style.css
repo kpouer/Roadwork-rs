@@ -316,8 +316,8 @@
 
 .rw-toolbar {
     position: fixed;
-    bottom: 50px;
-    left: 50px;
+    top: 50px;
+    right: 60px;
     z-index: 100001;
     display: flex;
     justify-content: flex-start;
