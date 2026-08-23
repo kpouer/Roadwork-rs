@@ -1134,3 +1134,125 @@
     cursor: pointer;
 }
 
+.rw-about-window {
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    width: 400px;
+    max-height: 70vh;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    z-index: 100000;
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.rw-about-window.rw-hidden {
+    display: none;
+}
+
+.rw-about-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    cursor: move;
+    user-select: none;
+}
+
+.rw-about-header h4 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+}
+
+.rw-about-header button {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #555;
+}
+
+.rw-about-header button:hover {
+    background: #eee;
+}
+
+.rw-about-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+}
+
+.rw-about-loading {
+    padding: 20px;
+    text-align: center;
+    color: #999;
+}
+
+.rw-about-country {
+    margin: 12px 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 3px;
+}
+
+.rw-about-country:first-child {
+    margin-top: 0;
+}
+
+.rw-about-source {
+    padding: 4px 0 8px;
+}
+
+.rw-about-source-name {
+    font-weight: 600;
+    color: #222;
+}
+
+.rw-about-service-key {
+    font-weight: 400;
+    color: #888;
+    margin-left: 6px;
+    font-size: 11px;
+}
+
+.rw-about-source-details {
+    color: #555;
+    margin-top: 2px;
+}
+
+.rw-about-links {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 3px;
+}
+
+.rw-about-links a {
+    color: #1a73e8;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.rw-about-links a:hover {
+    text-decoration: underline;
+}
+
+.rw-about-link-disabled {
+    color: #999 !important;
+    pointer-events: none;
+}
+

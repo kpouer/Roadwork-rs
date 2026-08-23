@@ -28,6 +28,8 @@
   "btn.launch_title": "Open the Roadwork app",
   "btn.explore_db": "Explore DB",
   "btn.explore_db_title": "Explore local database",
+  "btn.about": "About",
+  "btn.about_title": "About Roadwork and its opendata sources",
   "btn.hide": "Hide",
   "btn.close": "Close",
   "btn.copy": "Copy",
@@ -131,5 +133,12 @@
   "opendata.delete_title": "Delete",
 
   "language.label": "Language",
-  "language.auto": "Automatic"
+  "language.auto": "Automatic",
+
+  "about.title": "About Roadwork — opendata sources",
+  "about.loading": "Loading sources...",
+  "about.error": "Failed to load the embedded sources.",
+  "about.producer": "Producer",
+  "about.licence": "Licence",
+  "about.source_page": "Source page"
 }

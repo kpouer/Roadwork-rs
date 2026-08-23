@@ -144,6 +144,47 @@ pub fn get_services() -> JsValue {
     serde_wasm_bindgen::to_value(&services).unwrap()
 }
 
+/// Display information about an embedded opendata source, as shown in the
+/// extension About window.
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceInfo {
+    /// Service key of the embedded descriptor (e.g. `France-Paris`).
+    pub name: String,
+    pub country: Option<String>,
+    pub source_name: String,
+    pub producer: Option<String>,
+    pub licence_name: Option<String>,
+    pub licence_url: Option<String>,
+    pub source_url: Option<String>,
+}
+
+/// Returns the display information of every built-in opendata source,
+/// sorted by country then service name.
+#[wasm_bindgen]
+pub fn get_sources_info() -> JsValue {
+    info!("[wasm] get_sources_info");
+    let mut sources: Vec<SourceInfo> = roadwork_service::load_descriptors()
+        .into_iter()
+        .map(|(name, desc)| SourceInfo {
+            name,
+            country: desc.metadata.country,
+            source_name: desc.metadata.name,
+            producer: desc.metadata.producer,
+            licence_name: desc.metadata.licence_name,
+            licence_url: desc.metadata.licence_url,
+            source_url: desc.metadata.source_url,
+        })
+        .collect();
+    sources.sort_by(|a, b| {
+        a.country
+            .as_deref()
+            .unwrap_or_default()
+            .cmp(b.country.as_deref().unwrap_or_default())
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    serde_wasm_bindgen::to_value(&sources).unwrap()
+}
+
 #[wasm_bindgen]
 pub async fn get_roadworks(service_name: &str, force_refresh: bool) -> Result<JsValue, JsValue> {
     info!("[wasm] get_roadworks force_refresh={force_refresh}");
