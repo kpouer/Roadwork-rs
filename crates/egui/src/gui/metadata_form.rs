@@ -1,4 +1,5 @@
 use crate::gui::center_picker_dialog::CenterPickerDialog;
+use crate::gui::service_helper_dialog::DataType;
 use crate::gui::service_helper_form::{LABEL_WIDTH, center_row, optional_text_row, text_row};
 use eframe::epaint::Color32;
 use egui::{RichText, Ui};
@@ -6,14 +7,14 @@ use roadwork_core::opendata::json::model::metadata::Metadata;
 
 pub struct MetadataForm<'a> {
     metadata: &'a mut Metadata,
-    opendata_mode: bool,
+    data_type: DataType,
 }
 
 impl<'a> MetadataForm<'a> {
-    pub const fn new(metadata: &'a mut Metadata, opendata_mode: bool) -> Self {
+    pub const fn new(metadata: &'a mut Metadata, data_type: DataType) -> Self {
         Self {
             metadata,
-            opendata_mode,
+            data_type,
         }
     }
 
@@ -33,7 +34,7 @@ impl<'a> MetadataForm<'a> {
             center_picker_open,
         );
 
-        if !self.opendata_mode {
+        if matches!(self.data_type, DataType::Roadwork) {
             changed |= ui
                 .collapsing("Optional parameters", |ui| {
                     let mut changed = false;

@@ -89,6 +89,13 @@ enum FetchState {
     Done(Result<String, String>),
 }
 
+#[derive(Default, Copy, Clone)]
+pub enum DataType {
+    #[default]
+    Roadwork,
+    Opendata,
+}
+
 #[derive(Default)]
 pub(crate) struct ServiceHelperDialog {
     mode: HelperMode,
@@ -118,6 +125,7 @@ pub(crate) struct ServiceHelperDialog {
     processing: Arc<Mutex<ImportProgress>>,
     importing: bool,
     import_runner: Option<ImportRunner>,
+    pub data_type: DataType,
 }
 
 struct DropScan {
@@ -619,13 +627,6 @@ impl ServiceHelperDialog {
         matches!(self.mode, HelperMode::Builtin { .. })
     }
 
-    /// The helper edits either a built-in roadwork service (full Roadwork model:
-    /// road, location_details, impact_circulation_detail, dates) or a plain opendata
-    /// source (only id/latitude/longitude/polygon/description).
-    fn is_opendata_mode(&self) -> bool {
-        !self.is_builtin()
-    }
-
     fn creating(&self) -> bool {
         matches!(self.mode, HelperMode::Custom { creating: true, .. })
     }
@@ -764,10 +765,9 @@ impl ServiceHelperDialog {
         ui.horizontal(|ui| {
             self.show_source_combo(ui, custom_services);
             ui.separator();
-            let (mode_text, mode_color) = if self.is_builtin() {
-                ("Mode: Roadwork", ui.visuals().hyperlink_color)
-            } else {
-                ("Mode: Opendata", ui.visuals().warn_fg_color)
+            let (mode_text, mode_color) = match self.data_type {
+                DataType::Roadwork => ("Mode: Roadwork", ui.visuals().hyperlink_color),
+                DataType::Opendata => ("Mode: Opendata", ui.visuals().warn_fg_color),
             };
             ui.label(RichText::new(mode_text).strong().color(mode_color));
             ui.separator();
@@ -1124,7 +1124,6 @@ impl ServiceHelperDialog {
         let field_validation = self.field_validation();
         let field_values = self.field_values();
         let path_candidates = self.path_candidates();
-        let opendata_mode = self.is_opendata_mode();
         let Self {
             descriptor,
             descriptor_json,
@@ -1154,7 +1153,7 @@ impl ServiceHelperDialog {
                         &field_values,
                         &self.array_paths,
                         &path_candidates,
-                        opendata_mode,
+                        self.data_type,
                     );
                     if changed {
                         let params: HashMap<String, String> = url_params
@@ -1636,10 +1635,14 @@ impl ServiceHelperDialog {
             return Err("A service name is required".to_string());
         }
         let object = js_sys::Object::new();
+        let message_type = match self.data_type {
+            DataType::Roadwork => "ROADWORK_SAVE_ROADWORK_DESCRIPTOR",
+            DataType::Opendata => "ROADWORK_SAVE_OPENDATA_DESCRIPTOR",
+        };
         js_sys::Reflect::set(
             &object,
             &wasm_bindgen::JsValue::from_str("type"),
-            &wasm_bindgen::JsValue::from_str("ROADWORK_SAVE_OPENDATA_DESCRIPTOR"),
+            &wasm_bindgen::JsValue::from_str(message_type),
         )
         .map_err(|e| format!("{e:?}"))?;
         js_sys::Reflect::set(

@@ -51,6 +51,17 @@ window.addEventListener("message", async (e) => {
         } else {
             postHelperMessage({ type: "ROADWORK_SAVE_ERROR", error: result.error });
         }
+    } else if (e.data?.type === "ROADWORK_SAVE_ROADWORK_DESCRIPTOR") {
+        const result = await saveRoadworkDescriptorFromHelper(
+            e.data.name,
+            e.data.descriptor,
+            e.data.oldName,
+        );
+        if (result.ok) {
+            postHelperMessage({ type: "ROADWORK_SAVE_DONE", name: result.name, target: "roadwork" });
+        } else {
+            postHelperMessage({ type: "ROADWORK_SAVE_ERROR", error: result.error });
+        }
     } else if (e.data?.type === "ROADWORK_DELETE_OPENDATA_SERVICE") {
         removeOpendataService(e.data.name);
     } else if (e.data?.type === "ROADWORK_WASM_READY") {
@@ -113,6 +124,7 @@ const SCRIPT_NAME = "Roadwork for WME";
 const STORAGE_KEY = "roadwork-wme-settings";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
 const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
+const LOCAL_DESCRIPTORS_KEY = "roadwork-wme-local-descriptors";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
 const DATA_SOURCE_KEY = "roadwork-wme-data-source";
 const MAX_WAIT = 120000;
@@ -168,6 +180,7 @@ let dataSource: string = "";
 let opendataFeatureIndex: Record<string, any> = {};
 let servicesData = [];
 let panelEl: HTMLDivElement | null = null;
+let deleteRoadworkBtnEl: HTMLButtonElement | null = null;
 let statusEl: HTMLDivElement | null = null;
 let lastRefreshEl: HTMLSpanElement | null = null;
 let floatingPanelEl: HTMLDivElement | null = null;
@@ -495,6 +508,23 @@ function saveCustomDescriptorsCache(pairs: Array<any>) {
     } catch (_) {}
 }
 
+function loadLocalDescriptors(): Record<string, any> {
+    try {
+        const raw = localStorage.getItem(LOCAL_DESCRIPTORS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function saveLocalDescriptors(descriptors: Record<string, any>) {
+    try {
+        localStorage.setItem(LOCAL_DESCRIPTORS_KEY, JSON.stringify(descriptors));
+    } catch (_) {}
+}
+
 async function fetchCustomDescriptors() {
     const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
     const pairs = [];
@@ -536,11 +566,17 @@ async function fetchCustomDescriptors() {
 
 async function syncCustomDescriptorsToWasm(forceRefresh = false) {
     const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
+    const localPairs: Array<any> = Object.entries(loadLocalDescriptors());
     if (sources.length === 0) {
-        await rpcCall("set_custom_descriptors", [[]]);
+        await rpcCall("set_custom_descriptors", [localPairs]);
         try {
             localStorage.removeItem(CUSTOM_SOURCES_CACHE_KEY);
         } catch (_) {}
+        if (localPairs.length > 0) {
+            try {
+                localStorage.removeItem(SERVICES_CACHE_KEY);
+            } catch (_) {}
+        }
         return;
     }
     let pairs = null;
@@ -551,6 +587,7 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
         pairs = await fetchCustomDescriptors();
         saveCustomDescriptorsCache(pairs);
     }
+    pairs = pairs.concat(localPairs);
     await rpcCall("set_custom_descriptors", [pairs]);
     try {
         localStorage.removeItem(SERVICES_CACHE_KEY);
@@ -621,6 +658,26 @@ function setFloatingPanelVisible(visible: boolean) {
 
 function openOpendataHelper() {
     openHelper("opendata", true);
+}
+
+function openRoadworkHelper() {
+    openHelper("roadwork", true);
+}
+
+function editRoadworkService() {
+    const name = serviceSelectEl?.value || settings.service;
+    const local = loadLocalDescriptors()[name];
+    if (local !== undefined) {
+        openHelper("roadwork", false, name, local);
+        return;
+    }
+    const pairs = loadCustomDescriptorsCache();
+    const remote = Array.isArray(pairs) ? pairs.find((p) => p[0] === name) : null;
+    if (remote && remote[1]) {
+        openHelper("roadwork", false, name, remote[1]);
+        return;
+    }
+    openHelper("builtin", false, name);
 }
 
 function editOpendataService(name: string) {
@@ -844,6 +901,29 @@ function createFloatingPanel() {
     controls.appendChild(refreshBtn);
     controls.appendChild(resetBtn);
 
+    const createBtn = document.createElement("button");
+    createBtn.textContent = t("btn.create");
+    createBtn.title = t("btn.create_opendata_title");
+    createBtn.addEventListener("click", openRoadworkHelper);
+    controls.appendChild(createBtn);
+
+    const editBtn = document.createElement("button");
+    editBtn.textContent = t("btn.edit");
+    editBtn.title = t("btn.edit_roadwork_title");
+    editBtn.addEventListener("click", () => {
+        editRoadworkService();
+    });
+    controls.appendChild(editBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = t("btn.delete");
+    deleteBtn.title = t("btn.delete_roadwork_title");
+    deleteBtn.addEventListener("click", () => {
+        void deleteSelectedRoadworkService();
+    });
+    controls.appendChild(deleteBtn);
+    deleteRoadworkBtnEl = deleteBtn;
+
     const statusDiv = document.createElement("div");
     statusDiv.id = "rw-status";
     statusDiv.className = "roadwork-status rw-floating-status";
@@ -898,46 +978,9 @@ function createFloatingPanel() {
     }
     populateServices();
 
-    serviceSelectEl.addEventListener("change", async () => {
-        const newService = serviceSelectEl.value;
-        if (newService === settings.service) return;
-
-        settings.service = newService;
-        saveSettings();
-
-        currentRoadworks = {};
-        roadworksPagination.allItems = {};
-        selectedRoadworkId = null;
-        hideDetailPanel();
-        clearMapFeatures();
-        roadworksPagination.page = 0;
-        updateFloatingTable();
-
-        setStatus(t("status.loading"));
-        try {
-            const data = await fetchRoadworks(true);
-            roadworksPagination.allItems = data.roadworks || {};
-            currentRoadworks = roadworksPagination.allItems;
-            applyStatusOverrides();
-            const now = Date.now();
-            try {
-                localStorage.setItem(LAST_REFRESH_KEY, String(now));
-            } catch (_) {}
-            if (lastRefreshEl) {
-                lastRefreshEl.textContent = new Date(now).toLocaleString(getLocale());
-            }
-            await refreshViewport();
-        } catch (e) {
-            setStatus(e.message, "error");
-        }
-
-        const svcInfo = servicesData.find((s) => s.name === newService);
-        if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
-            wmeSDK.Map.setMapCenter({
-                lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
-                zoomLevel: 12,
-            });
-        }
+    serviceSelectEl.addEventListener("change", () => {
+        updateDeleteRoadworkBtnState();
+        void switchToService(serviceSelectEl.value);
     });
 
     try {
@@ -1135,7 +1178,7 @@ function updateFloatingTable() {
     }
 }
 
-function buildCircleIcon(color, size = 20) {
+function buildCircleIcon(color: string, size = 20) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
             <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1}" fill="${color}" stroke="#ffffff" stroke-width="2" />
         </svg>`;
@@ -1514,7 +1557,7 @@ function renderAllGroupsToMap() {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
     const allFeatures = [];
-                for (const group of Object.values(polygonGroups as Record<string, any>)) {
+    for (const group of Object.values(polygonGroups as Record<string, any>)) {
         if (!group.visible) continue;
         for (const feature of group.features) {
             allFeatures.push(feature);
@@ -2279,6 +2322,103 @@ async function saveOpendataDescriptorFromHelper(
     return { ok: true, name, count };
 }
 
+async function saveRoadworkDescriptorFromHelper(
+    name,
+    descriptor,
+    oldName,
+): Promise<SaveDescriptorResult> {
+    if (!name || !descriptor) {
+        return { ok: false, error: "Missing name or descriptor" };
+    }
+    try {
+        const parsed = JSON.parse(descriptor);
+        const svcName = parsed?.metadata?.name;
+        if (svcName) name = svcName;
+    } catch (_) {}
+    const locals = loadLocalDescriptors();
+    if (oldName && oldName !== name && locals[oldName] !== undefined) {
+        delete locals[oldName];
+    }
+    locals[name] = descriptor;
+    setStatus(t("status.svc_saved", { name }), "success");
+    try {
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: t("progress.saving_descriptor"),
+            fraction: 0.1,
+        });
+        saveLocalDescriptors(locals);
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: t("progress.syncing_engine"),
+            fraction: 0.3,
+        });
+        await syncCustomDescriptorsToWasm(false);
+        const services = await fetchServices(true);
+        servicesData = services;
+        postHelperMessage({
+            type: "ROADWORK_SAVE_PROGRESS",
+            stage: t("progress.updating_map"),
+            fraction: 0.9,
+        });
+        try {
+            await switchToService(name);
+        } catch (e) {
+            console.warn("[Roadwork] Failed to select the new service", e);
+        }
+        if (serviceSelectEl) {
+            populateServiceSelect(serviceSelectEl, services);
+            serviceSelectEl.value = name;
+            updateDeleteRoadworkBtnState();
+        }
+    } catch (e) {
+        const msg = e.message ? `${e.message}` : String(e);
+        setStatus(msg, "error");
+        return { ok: false, error: msg };
+    }
+    return { ok: true, name };
+}
+
+async function deleteSelectedRoadworkService() {
+    const name = serviceSelectEl?.value || settings.service;
+    const locals = loadLocalDescriptors();
+    if (locals[name] === undefined) {
+        setStatus(t("status.not_deletable"), "info");
+        return;
+    }
+    if (!confirm(t("confirm.delete_source", { name }))) return;
+    delete locals[name];
+    saveLocalDescriptors(locals);
+    try {
+        await rpcCall("clear_roadworks_cache", [name]);
+    } catch (_) {}
+    await syncCustomDescriptorsToWasm(false);
+    setStatus(t("status.svc_deleted", { name }), "success");
+    const services = await fetchServices(true);
+    servicesData = services;
+    if (settings.service === name) {
+        currentRoadworks = {};
+        roadworksPagination.allItems = {};
+        selectedRoadworkId = null;
+        hideDetailPanel();
+        clearMapFeatures();
+        roadworksPagination.page = 0;
+        updateFloatingTable();
+        const fallback = services.find((s) => s.name !== name);
+        if (fallback && serviceSelectEl) {
+            serviceSelectEl.value = fallback.name;
+            await switchToService(fallback.name);
+        }
+    }
+    if (serviceSelectEl) {
+        populateServiceSelect(serviceSelectEl, services);
+        if (!services.some((s) => s.name === settings.service) && services.length > 0) {
+            serviceSelectEl.value = services[0].name;
+        }
+        updateDeleteRoadworkBtnState();
+    }
+}
+
 function showOpendataExport(name: string) {
     const services = getOpendataServices();
     const svc = services[name];
@@ -2342,6 +2482,58 @@ function populateServiceSelect(selectEl, services) {
             opt.selected = true;
         }
         selectEl.appendChild(opt);
+    }
+    updateDeleteRoadworkBtnState();
+}
+
+function updateDeleteRoadworkBtnState() {
+    if (!deleteRoadworkBtnEl) return;
+    const name = serviceSelectEl?.value || settings.service;
+    const deletable = loadLocalDescriptors()[name] !== undefined;
+    deleteRoadworkBtnEl.disabled = !deletable;
+    deleteRoadworkBtnEl.title = deletable
+        ? t("btn.delete_roadwork_title")
+        : t("status.not_deletable");
+}
+
+async function switchToService(newService: string) {
+    if (!newService || newService === settings.service) return;
+
+    settings.service = newService;
+    saveSettings();
+
+    currentRoadworks = {};
+    roadworksPagination.allItems = {};
+    selectedRoadworkId = null;
+    hideDetailPanel();
+    clearMapFeatures();
+    roadworksPagination.page = 0;
+    updateFloatingTable();
+
+    setStatus(t("status.loading"));
+    try {
+        const data = await fetchRoadworks(true);
+        roadworksPagination.allItems = data.roadworks || {};
+        currentRoadworks = roadworksPagination.allItems;
+        applyStatusOverrides();
+        const now = Date.now();
+        try {
+            localStorage.setItem(LAST_REFRESH_KEY, String(now));
+        } catch (_) {}
+        if (lastRefreshEl) {
+            lastRefreshEl.textContent = new Date(now).toLocaleString(getLocale());
+        }
+        await refreshViewport();
+    } catch (e) {
+        setStatus(e.message, "error");
+    }
+
+    const svcInfo = servicesData.find((s) => s.name === newService);
+    if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
+        wmeSDK.Map.setMapCenter({
+            lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
+            zoomLevel: 12,
+        });
     }
 }
 

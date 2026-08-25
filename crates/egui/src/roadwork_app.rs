@@ -2,7 +2,7 @@ use crate::gui::about_dialog::AboutDialog;
 use crate::gui::db_explorer_dialog::DbExplorerDialog;
 use crate::gui::metada_dialog::MetadataDialog;
 use crate::gui::roadwork_marker::RoadworkMarker;
-use crate::gui::service_helper_dialog::ServiceHelperDialog;
+use crate::gui::service_helper_dialog::{DataType, ServiceHelperDialog};
 use crate::gui::settings_dialog::SettingsDialog;
 use crate::gui::status_panel::StatusPanel;
 use crate::tools::{latlng_to_position, position_to_latlng};
@@ -31,6 +31,10 @@ pub struct StartupParams {
     pub open_service_helper: bool,
     pub open_opendata_service_helper: bool,
     pub create_opendata_service: bool,
+    /// Save the helper's descriptor as a roadwork service (custom local
+    /// descriptor) instead of an opendata source.
+    /// todo maybe change type
+    pub save_as_roadwork: bool,
     pub opendata_descriptor: Option<String>,
     pub db_explorer_only: bool,
 }
@@ -229,6 +233,9 @@ pub fn setup_save_progress_listener() {
                     .ok()
                     .and_then(|v| v.as_f64())
                     .map(|f| f as u64);
+                let target = js_sys::Reflect::get(&obj, &js_sys::JsString::from("target"))
+                    .ok()
+                    .and_then(|v| v.as_string());
                 SAVE_PROGRESS.with(|cell| {
                     let mut state = cell.borrow_mut();
                     state.active = false;
@@ -237,7 +244,9 @@ pub fn setup_save_progress_listener() {
                     state.count = count;
                     state.last_update = js_sys::Date::now();
                 });
-                if let Some(name) = name {
+                if target.as_deref() != Some("roadwork")
+                    && let Some(name) = name
+                {
                     PENDING_OPENDATA_REFRESH.with(|cell| *cell.borrow_mut() = Some(name));
                 }
             }
@@ -316,7 +325,7 @@ impl RoadworkApp {
             .find(|s| s.name == selected_service)
             .map(|s| s.center)
             .unwrap_or_default();
-        let service_helper = if params.opendata_descriptor.is_some()
+        let mut service_helper = if params.opendata_descriptor.is_some()
             || params.create_opendata_service
             || params.open_opendata_service_helper
         {
@@ -328,7 +337,13 @@ impl RoadworkApp {
         } else {
             ServiceHelperDialog::for_builtin(&selected_service)
         };
-        let helper_only = params.open_service_helper || params.open_opendata_service_helper;
+        service_helper.data_type = match params.save_as_roadwork {
+            true => DataType::Roadwork,
+            false => DataType::Opendata,
+        };
+        let helper_only = params.open_service_helper
+            || params.open_opendata_service_helper
+            || params.save_as_roadwork;
 
         let app = Self {
             ctx: egui_ctx.clone(),
@@ -347,7 +362,8 @@ impl RoadworkApp {
             show_settings_dialog: false,
             show_info_dialog: false,
             show_service_helper_dialog: params.open_service_helper
-                || params.open_opendata_service_helper,
+                || params.open_opendata_service_helper
+                || params.save_as_roadwork,
             service_helper,
             show_opendata_panel: false,
             confirm_delete_opendata: None,
@@ -992,6 +1008,9 @@ impl App for RoadworkApp {
                     );
                 }
             });
+            if !self.show_service_helper_dialog {
+                close_helper_overlay();
+            }
         } else {
             self.show_top_panel(ui);
             self.show_roadwork_detail();

@@ -1,5 +1,6 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use crate::gui::metadata_form::MetadataForm;
+use crate::gui::service_helper_dialog::DataType;
 use egui::{DragValue, Grid, RichText, TextEdit, Ui};
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
@@ -84,7 +85,7 @@ pub(crate) fn show(
     values: &FieldsValues,
     array_paths: &[(String, usize)],
     path_candidates: &PathCandidates,
-    opendata_mode: bool,
+    data_type: DataType,
 ) -> bool {
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
@@ -107,7 +108,7 @@ pub(crate) fn show(
         hint: scalar_wand.hint,
     };
 
-    let mut changed = MetadataForm::new(&mut descriptor.metadata, opendata_mode).show(
+    let mut changed = MetadataForm::new(&mut descriptor.metadata, data_type).show(
         ui,
         center_picker,
         center_picker_open,
@@ -189,7 +190,7 @@ pub(crate) fn show(
         },
         values.polygon.as_deref(),
     );
-    if !opendata_mode {
+    if matches!(data_type, DataType::Roadwork) {
         changed |= validated(
             ui,
             validation.road,
@@ -252,7 +253,7 @@ pub(crate) fn show(
         values.description.as_deref(),
     );
 
-    if !opendata_mode {
+    if matches!(data_type, DataType::Roadwork) {
         ui.add_space(8.0);
         ui.heading("Dates");
         changed |= date_section(

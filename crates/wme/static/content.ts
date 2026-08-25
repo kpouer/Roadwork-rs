@@ -186,6 +186,8 @@
         }
         if (e.data.helper === 'opendata') {
             params.set('opendata', '1');
+        } else if (e.data.helper === 'roadwork') {
+            params.set('roadwork', '1');
         } else {
             params.set('serviceHelper', '1');
         }

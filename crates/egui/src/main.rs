@@ -97,6 +97,9 @@ fn read_startup_params() -> StartupParams {
             "opendata" if value == "1" => {
                 params.open_opendata_service_helper = true;
             }
+            "roadwork" if value == "1" => {
+                params.save_as_roadwork = true;
+            }
             "create" if value == "1" => {
                 params.create_opendata_service = true;
             }
