@@ -419,7 +419,7 @@ function createPaginationRow(p: PaginationState, onUpdate: () => void, extraBefo
     return paginationRow;
 }
 
-function changeRoadworkStatus(rwId, newStatus) {
+function changeRoadworkStatus(rwId: string, newStatus: string) {
     const rw = currentRoadworks[rwId];
     if (!rw) return;
 
@@ -1416,12 +1416,12 @@ function showDetailPanel(rw) {
     if (!body) return;
 
     const status = rw.sync_data?.status || "New";
-    const color = STATUS_COLORS[status] || "#9ca3af";
-    const road = rw.road || "";
+    const color: string = STATUS_COLORS[status] || "#9ca3af";
+    const road: string = rw.road || "";
     const start = formatTimestamp(rw.start);
     const end = formatTimestamp(rw.end);
-    const desc = rw.opendata?.description || "";
-    const impact = rw.impact_circulation_detail || "";
+    const desc: string = rw.opendata?.description || "";
+    const impact: string = rw.impact_circulation_detail || "";
 
     body.replaceChildren();
 
