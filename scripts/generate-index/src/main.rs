@@ -1,5 +1,6 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,8 @@ struct IndexEntry {
     name: String,
     size: u64,
     modified: String,
+    #[serde(rename = "sha256")]
+    sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +72,13 @@ fn walk_json(dir: &Path, base: &Path, entries: &mut Vec<IndexEntry>) {
                 continue;
             }
             let content = fs::read_to_string(&path).expect("Failed to read descriptor");
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            let result = hasher.finalize();
+            let hash = result
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
             let descriptor: Descriptor =
                 serde_json::from_str(&content).expect("Failed to parse descriptor");
 
@@ -90,6 +100,7 @@ fn walk_json(dir: &Path, base: &Path, entries: &mut Vec<IndexEntry>) {
                 name: descriptor.metadata.name,
                 size: meta.len(),
                 modified: iso_timestamp(&meta),
+                sha256: hash,
             });
         }
     }
