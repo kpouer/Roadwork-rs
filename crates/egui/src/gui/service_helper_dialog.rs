@@ -1,6 +1,7 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use super::service_helper_form::{FieldsValidation, FieldsValues, PathCandidates};
 use crate::tools::{format_bytes, url_params_to_vec};
+use chrono_tz::Tz;
 use egui::{Context, RichText, Ui};
 use egui_notify::Toasts;
 use roadwork_core::json_tools::{JsonScan, JsonTools};
@@ -800,10 +801,24 @@ impl ServiceHelperDialog {
             ui.separator();
             let can_save = {
                 let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
+                let validation = self.field_validation();
+                let all_fields_valid = validation.data_array
+                    && validation.id
+                    && validation.latitude
+                    && validation.longitude
+                    && validation.polygon
+                    && validation.road
+                    && validation.description
+                    && validation.location_details
+                    && validation.impact_circulation_detail
+                    && validation.from_path
+                    && validation.to_path
+                    && validation.dates_parse_ok;
                 !self.is_builtin()
                     && !self.descriptor_json.trim().is_empty()
                     && has_data
                     && self.has_name()
+                    && all_fields_valid
             };
             if ui
                 .add_enabled(can_save, egui::Button::new("Save to extension"))
@@ -1878,6 +1893,8 @@ impl ServiceHelperDialog {
                 .map(|path| ods.path_points_to_number_in(&element, path, range.0, range.1))
                 .unwrap_or(true)
         };
+        let locale = descriptor.metadata.get_locale();
+        let dates_parse_ok = self.date_parsers_parse_ok(descriptor, &element, locale);
         FieldsValidation {
             data_array: self.opendata_array_is_valid(),
             id: descriptor
@@ -1917,7 +1934,29 @@ impl ServiceHelperDialog {
                     !date.path.is_empty() && ods.path_points_to_scalar_in(&element, &date.path)
                 })
                 .unwrap_or(false),
+            dates_parse_ok,
         }
+    }
+
+    /// Returns `true` when every configured date parser (from/to) can parse the
+    /// raw value extracted from `element`. When no dates are configured or no
+    /// element is available, returns `true` (nothing to check).
+    fn date_parsers_parse_ok(
+        &self,
+        descriptor: &ServiceDescriptor,
+        element: &serde_json::Value,
+        locale: Tz,
+    ) -> bool {
+        let check = |date: &DateParser| -> bool {
+            if date.path.is_empty() || date.parsers.is_empty() {
+                return true;
+            }
+            match element.get_path(&date.path) {
+                Ok(value) => date.parse(&value, locale).is_ok(),
+                Err(_) => false,
+            }
+        };
+        descriptor.from.as_ref().is_none_or(check) && descriptor.to.as_ref().is_none_or(check)
     }
 
     fn recompute_if_dirty(&mut self) {

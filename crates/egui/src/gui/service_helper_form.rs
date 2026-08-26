@@ -24,6 +24,7 @@ pub(crate) struct FieldsValidation {
     pub impact_circulation_detail: bool,
     pub from_path: bool,
     pub to_path: bool,
+    pub dates_parse_ok: bool,
 }
 
 #[derive(Default, Clone)]
@@ -71,6 +72,7 @@ impl FieldsValidation {
             impact_circulation_detail: true,
             from_path: true,
             to_path: true,
+            dates_parse_ok: true,
         }
     }
 }
@@ -653,6 +655,13 @@ fn parsers_grid(ui: &mut Ui, parsers: &mut Vec<Parser>) -> bool {
                     };
                     changed = true;
                 }
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(LABEL_WIDTH);
+                ui.hyperlink_to(
+                    "format syntax",
+                    "https://docs.rs/chrono/latest/chrono/format/strftime/index.html",
+                );
             });
             ui.horizontal(|ui| {
                 changed |= ui.checkbox(&mut parser.add_year, "addYear").changed();

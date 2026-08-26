@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Parser {
     pub matcher: String,
+    /// The parser format string is a naive date see https://docs.rs/chrono/latest/chrono/format/strftime/index.html.
+    /// If not provided, then it is parsed as a number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     #[serde(default)]
