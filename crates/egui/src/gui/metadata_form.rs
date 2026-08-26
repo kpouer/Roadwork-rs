@@ -35,11 +35,20 @@ impl<'a> MetadataForm<'a> {
         );
 
         if matches!(self.data_type, DataType::Roadwork) {
+            let mut url_text = self.metadata.url.clone().unwrap_or_default();
+            let url_changed = text_row(ui, "URL", &mut url_text, None, None);
+            if url_changed {
+                self.metadata.url = if url_text.is_empty() {
+                    None
+                } else {
+                    Some(url_text)
+                };
+                changed = true;
+            }
+
             changed |= ui
                 .collapsing("Optional parameters", |ui| {
                     let mut changed = false;
-                    changed |= optional_text_row(ui, "URL", &mut self.metadata.url, None, None);
-
                     changed |=
                         optional_text_row(ui, "Country", &mut self.metadata.country, None, None);
                     changed |=
