@@ -1097,7 +1097,7 @@ impl ServiceHelperDialog {
                 ui.separator();
                 if self.fields_chosen() {
                     self.show_preview_table(ui);
-                } else {
+                } else if matches!(self.data_type, DataType::Opendata) {
                     self.show_data_drop_zone(ui);
                 }
             });
@@ -1906,13 +1906,17 @@ impl ServiceHelperDialog {
             from_path: descriptor
                 .from
                 .as_ref()
-                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
-                .unwrap_or(true),
+                .map(|date| {
+                    !date.path.is_empty() && ods.path_points_to_scalar_in(&element, &date.path)
+                })
+                .unwrap_or(false),
             to_path: descriptor
                 .to
                 .as_ref()
-                .map(|date| ods.path_points_to_scalar_in(&element, &date.path))
-                .unwrap_or(true),
+                .map(|date| {
+                    !date.path.is_empty() && ods.path_points_to_scalar_in(&element, &date.path)
+                })
+                .unwrap_or(false),
         }
     }
 

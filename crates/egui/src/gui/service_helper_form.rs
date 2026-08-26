@@ -1,6 +1,7 @@
 use super::center_picker_dialog::CenterPickerDialog;
 use crate::gui::metadata_form::MetadataForm;
 use crate::gui::service_helper_dialog::DataType;
+use chrono_tz::Tz;
 use egui::{DragValue, Grid, RichText, TextEdit, Ui};
 use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
@@ -262,6 +263,8 @@ pub(crate) fn show(
             &mut descriptor.from,
             validation.from_path,
             values.from_path.as_deref(),
+            Some(&scalar_wand),
+            descriptor.metadata.get_locale(),
         );
         changed |= date_section(
             ui,
@@ -269,6 +272,8 @@ pub(crate) fn show(
             &mut descriptor.to,
             validation.to_path,
             values.to_path.as_deref(),
+            Some(&scalar_wand),
+            descriptor.metadata.get_locale(),
         );
     }
 
@@ -521,51 +526,97 @@ fn date_section(
     date: &mut Option<DateParser>,
     path_valid: bool,
     path_tooltip: Option<&str>,
+    wand: Option<&Wand>,
+    locale: Tz,
 ) -> bool {
     let mut changed = false;
-    let mut present = date.is_some();
+    if date.is_none() {
+        *date = Some(DateParser::default());
+        changed = true;
+    }
+    let date = date.as_mut().unwrap();
     ui.horizontal(|ui| {
         ui.add_sized(
             [LABEL_WIDTH, 20.0],
             egui::Label::new(RichText::new(title).strong()),
         );
-        if ui.checkbox(&mut present, "enabled").changed() {
-            *date = if present {
-                Some(DateParser::default())
-            } else {
-                None
-            };
-            changed = true;
-        }
     });
-    if let Some(date) = date {
-        ui.push_id(title, |ui| {
-            changed |= validated(
-                ui,
-                path_valid,
-                &format!("{title} path must point to a scalar value in the fetched JSON"),
-                |ui, tooltip| {
-                    ui.horizontal(|ui| {
-                        let label = ui.add_sized(
-                            [LABEL_WIDTH, 20.0],
-                            egui::Label::new(RichText::new("path").strong()),
-                        );
-                        let width = ui.available_width();
-                        let mut response =
-                            ui.add(TextEdit::singleline(&mut date.path).desired_width(width));
-                        if let Some(tooltip) = tooltip {
-                            label.on_hover_text(tooltip);
-                            response = response.on_hover_text(tooltip);
+    ui.push_id(title, |ui| {
+        changed |= validated(
+            ui,
+            path_valid,
+            &format!(
+                "{title} path is required and must point to a scalar value in the fetched JSON"
+            ),
+            |ui, tooltip| {
+                ui.horizontal(|ui| {
+                    let label = ui.add_sized(
+                        [LABEL_WIDTH, 20.0],
+                        egui::Label::new(RichText::new("path").strong()),
+                    );
+                    let width = if wand.is_some() {
+                        ui.available_width() - 30.0
+                    } else {
+                        ui.available_width()
+                    };
+                    let mut response =
+                        ui.add(TextEdit::singleline(&mut date.path).desired_width(width));
+                    if let Some(tooltip) = tooltip {
+                        label.on_hover_text(tooltip);
+                        response = response.on_hover_text(tooltip);
+                    }
+                    let mut changed = response.changed();
+                    if let Some(wand) = wand {
+                        let mut picked = None;
+                        wand_button(ui, "path", wand, &mut picked);
+                        if let Some(path) = picked {
+                            date.path = path;
+                            if date.parsers.is_empty()
+                                && let Some((_, sample)) =
+                                    wand.scalars.iter().find(|(p, _)| *p == date.path)
+                                && sample.parse::<i64>().is_err()
+                            {
+                                date.parsers.push(Parser {
+                                    matcher: ".*".to_string(),
+                                    format: Some("%Y-%m-%d".to_string()),
+                                    add_year: false,
+                                    reset_hour: false,
+                                });
+                            }
+                            changed = true;
                         }
-                        response.changed()
-                    })
-                    .inner
-                },
-                path_tooltip,
-            );
-            changed |= parsers_grid(ui, &mut date.parsers);
-        });
-    }
+                    }
+                    changed
+                })
+                .inner
+            },
+            path_tooltip,
+        );
+        if !date.path.is_empty() {
+            let sample = wand.and_then(|w| {
+                w.scalars
+                    .iter()
+                    .find(|(p, _)| *p == date.path)
+                    .map(|(_, s)| s.as_str())
+            });
+            if let Some(sample) = sample {
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new(""));
+                    ui.label(format!("Sample: \"{sample}\""));
+                    if !date.parsers.is_empty() {
+                        let parse_ok = date.parse(sample, locale).is_ok();
+                        let (icon, color) = if parse_ok {
+                            ("\u{2705}", egui::Color32::GREEN)
+                        } else {
+                            ("\u{274C}", egui::Color32::RED)
+                        };
+                        ui.label(RichText::new(icon).color(color));
+                    }
+                });
+            }
+        }
+        changed |= parsers_grid(ui, &mut date.parsers);
+    });
     changed
 }
 
