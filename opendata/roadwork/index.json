@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-26T21:19:22.928759+00:00",
+  "generatedAt": "2026-08-26T21:26:45.957320+00:00",
   "count": 8,
   "files": [
     {
@@ -9,7 +9,8 @@
       "country": "Belgium",
       "name": "Liège",
       "size": 1265,
-      "modified": "2026-08-20T20:56:45.855392001+00:00"
+      "modified": "2026-08-20T20:56:45.855392001+00:00",
+      "sha256": "110fb712fbe3d100162eab30b4b56357ced37f39830e1a098f172b65d7c79520"
     },
     {
       "key": "France-44-Loire-Atlantique",
@@ -17,7 +18,8 @@
       "country": "France",
       "name": "Loire Atlantique",
       "size": 1524,
-      "modified": "2026-08-20T20:56:45.856257418+00:00"
+      "modified": "2026-08-20T20:56:45.856257418+00:00",
+      "sha256": "4a73cc2d1013ae4a85978a17a3d27800c777026e5ba93efcd8d91004cfb5c537"
     },
     {
       "key": "France-Bordeaux",
@@ -25,7 +27,8 @@
       "country": "France",
       "name": "Bordeaux",
       "size": 1220,
-      "modified": "2026-08-20T20:56:45.856967002+00:00"
+      "modified": "2026-08-20T20:56:45.856967002+00:00",
+      "sha256": "446d2cdc1dab848af0cc29cc27f8bb13c42bdf6fb20b85caa4892f8fa541dc86"
     },
     {
       "key": "France-Issy-les-Moulineaux",
@@ -33,7 +36,8 @@
       "country": "France",
       "name": "Issy-les-Moulineaux",
       "size": 1449,
-      "modified": "2026-08-20T20:56:45.857679210+00:00"
+      "modified": "2026-08-20T20:56:45.857679210+00:00",
+      "sha256": "8cbedec01cda9bf6d6e685114352e5a2fded203cb51a051d2169d0a7501fe2f0"
     },
     {
       "key": "France-Lyon",
@@ -41,7 +45,8 @@
       "country": "France",
       "name": "Lyon",
       "size": 1409,
-      "modified": "2026-08-20T20:56:45.858382752+00:00"
+      "modified": "2026-08-20T20:56:45.858382752+00:00",
+      "sha256": "9aa6fdea86525f5a2fe0b61c1addcc08cedbeaea6941234fb5c769db7d2ce427"
     },
     {
       "key": "France-Paris",
@@ -49,7 +54,8 @@
       "country": "France",
       "name": "Paris",
       "size": 1501,
-      "modified": "2026-08-20T20:56:45.859037044+00:00"
+      "modified": "2026-08-20T20:56:45.859037044+00:00",
+      "sha256": "5c0e42ebf2477ba1f3557688c4dfec5fdef7e7e29b878a7678f146e9d63f3811"
     },
     {
       "key": "France-Toulouse",
@@ -57,7 +63,8 @@
       "country": "France",
       "name": "Toulouse",
       "size": 1281,
-      "modified": "2026-08-20T20:56:45.859684044+00:00"
+      "modified": "2026-08-20T20:56:45.859684044+00:00",
+      "sha256": "edd6f8f2fff96efd8d90088703e916764bed8cad93dffabd9df36711f0abc523"
     },
     {
       "key": "Germany-Berlin",
@@ -65,7 +72,8 @@
       "country": "Germany",
       "name": "Berlin",
       "size": 1110,
-      "modified": "2026-08-20T20:56:45.860333128+00:00"
+      "modified": "2026-08-20T20:56:45.860333128+00:00",
+      "sha256": "d779df752c2c7491ccf3bf32ea48d9503d3f87c2a160424b475ad09ce4279c2b"
     }
   ]
 }
