@@ -8,6 +8,9 @@ members = [
     "crates/egui",
     "crates/wme"
 ]
+exclude = [
+    "scripts/generate-index"
+]
 
 [workspace.dependencies]
 thiserror = "2.0"

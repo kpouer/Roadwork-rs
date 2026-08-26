@@ -169,7 +169,7 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
-        workspace_root.join("opendata/json").display()
+        workspace_root.join("opendata/roadwork").display()
     );
     println!(
         "cargo:rerun-if-changed={}",

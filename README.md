@@ -53,6 +53,33 @@ So far most supported services are French, but there is no restriction to includ
 This app depends on a library [Roadwork-lib](https://github.com/kpouer/Roadwork-lib)
  that is intended to share data with the [Roadwork-server](https://github.com/kpouer/Roadwork-server)
 
+# Build
+
+## Prerequisites
+
+- Rust with `wasm32-unknown-unknown` target
+- `wasm-pack`
+- `wasm-bindgen-cli`
+- `tsc` (TypeScript compiler, via `npm install`)
+
+## Generate opendata index
+
+After adding or modifying descriptors in `opendata/roadwork/`, regenerate the index:
+
+```sh
+cargo run --manifest-path scripts/generate-index/Cargo.toml
+```
+
+This scans all `*.json` files in `opendata/roadwork/`, organizes them by country, and generates `opendata/roadwork/index.json`.
+
+## Build the WME extension
+
+```sh
+cargo build -p roadwork-wme
+```
+
+This assembles the Chrome extension into `target/wme/` (wasm-pack + wasm-bindgen + tsc + icons + webstore zip).
+
 # Adding Opendata service
 
 It is possible to add a new service by adding *code* (the initial method), or using the *json opendata descriptor*
@@ -64,8 +91,8 @@ to be documented
 ## json opendata descriptor
 
 If an opendata service provides a json, then it should be possible to describe it with a **json opendata descriptor**
-Those descriptors must be added to the *opendata/json* folder.
-Their naming convention is *country-city.json*. For example *France-Paris.json*
+Those descriptors must be added to the *opendata/roadwork/Country* folder (e.g. *opendata/roadwork/France/*).
+Their naming convention is *Country-City.json*. For example *France-Paris.json*
 
 A descriptor contains a first object called **metadata** that contains all information about the Opendata service
 

@@ -1,6 +1,6 @@
 //! Roadwork service crate — shared access to the opendata service descriptors.
 //!
-//! The built-in descriptors from `opendata/json/` are embedded at compile time
+//! The built-in descriptors from `opendata/roadwork/` are embedded at compile time
 //! by `build.rs` and exposed through [`load_descriptors`] and [`get_services`].
 //! This crate is used by the WME extension, the egui app and the webserver.
 
