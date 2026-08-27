@@ -3424,6 +3424,7 @@ interface SourceInfo {
     licence_name?: string | null;
     licence_url?: string | null;
     source_url?: string | null;
+    descriptor_url?: string | null;
 }
 
 async function openAboutWindow() {
@@ -3571,6 +3572,124 @@ function buildAboutLink(url: string | null | undefined, text: string): HTMLAncho
     return link;
 }
 
+let sourceDetailWindowEl: HTMLDivElement | null = null;
+
+function buildSourceDetailWindow() {
+    sourceDetailWindowEl = document.createElement("div");
+    sourceDetailWindowEl.className = "rw-about-window rw-source-detail-window rw-hidden";
+
+    const header = document.createElement("div");
+    header.className = "rw-about-header";
+
+    const title = document.createElement("h4");
+    title.textContent = t("sources.detail_title");
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = t("btn.close");
+    closeBtn.addEventListener("click", () => {
+        sourceDetailWindowEl.classList.add("rw-hidden");
+    });
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "rw-about-body";
+    body.id = "rw-source-detail-body";
+
+    sourceDetailWindowEl.appendChild(header);
+    sourceDetailWindowEl.appendChild(body);
+    document.body.appendChild(sourceDetailWindowEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    header.addEventListener("mousedown", (e) => {
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
+        isDragging = true;
+        const rect = sourceDetailWindowEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        sourceDetailWindowEl.style.left = e.clientX - dragOffsetX + "px";
+        sourceDetailWindowEl.style.top = e.clientY - dragOffsetY + "px";
+        sourceDetailWindowEl.style.right = "auto";
+        sourceDetailWindowEl.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+}
+
+function openSourceDetail(detail?: SourceDetail) {
+    try {
+        if (!sourceDetailWindowEl) {
+            buildSourceDetailWindow();
+        }
+        const body = sourceDetailWindowEl.querySelector<HTMLDivElement>("#rw-source-detail-body");
+        if (!body) return;
+
+        body.innerHTML = "";
+        if (!detail) {
+            body.textContent = t("sources.no_info");
+            sourceDetailWindowEl.classList.remove("rw-hidden");
+            return;
+        }
+        const title = sourceDetailWindowEl.querySelector<HTMLHeadingElement>(".rw-about-header h4");
+        if (title) title.textContent = t("sources.detail_title");
+
+        const nameLine = document.createElement("div");
+        nameLine.className = "rw-about-source-name";
+        nameLine.textContent = detail.displayName || detail.sourceName;
+
+        const serviceKey = document.createElement("span");
+        serviceKey.className = "rw-about-service-key";
+        serviceKey.textContent = detail.sourceName;
+        nameLine.appendChild(serviceKey);
+        body.appendChild(nameLine);
+
+        const details = document.createElement("div");
+        details.className = "rw-about-source-details";
+        const detailLines: string[] = [];
+        if (detail.country) {
+            detailLines.push(`${t("sources.country")}: ${detail.country}`);
+        }
+        if (detail.producer) {
+            detailLines.push(`${t("about.producer")}: ${detail.producer}`);
+        }
+        if (detailLines.length > 0) {
+            details.textContent = detailLines.join(" — ");
+            body.appendChild(details);
+        }
+
+        const links = document.createElement("div");
+        links.className = "rw-about-links";
+        if (!detail.isLocal && detail.descriptorUrl) {
+            links.appendChild(buildAboutLink(detail.descriptorUrl, t("sources.descriptor_url")));
+        }
+        if (detail.licenceName) {
+            links.appendChild(buildAboutLink(detail.licenceUrl, `${t("about.licence")}: ${detail.licenceName}`));
+        }
+        if (detail.sourceUrl) {
+            links.appendChild(buildAboutLink(detail.sourceUrl, t("about.source_page")));
+        }
+        if (links.childElementCount > 0) {
+            body.appendChild(links);
+        }
+
+        if (body.childElementCount === 0) {
+            body.textContent = t("sources.no_info");
+        }
+        sourceDetailWindowEl.classList.remove("rw-hidden");
+    } catch (e) {
+        console.error("[Roadwork] Failed to open source detail:", e);
+    }
+}
+
 let sourcesWindowEl: HTMLDivElement | null = null;
 
 async function openSourcesWindow() {
@@ -3584,12 +3703,25 @@ async function openSourcesWindow() {
     }
 }
 
+interface SourceDetail {
+    sourceName: string;
+    displayName: string;
+    country?: string;
+    producer?: string;
+    licenceName?: string;
+    licenceUrl?: string;
+    sourceUrl?: string;
+    descriptorUrl?: string;
+    isLocal?: boolean;
+}
+
 interface SourceRow {
     name: string;
     country: string;
     origin: string;
     originLabel: string;
     originTooltip?: string;
+    detail?: SourceDetail;
 }
 
 interface SourceColumn {
@@ -3683,6 +3815,19 @@ function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initia
                 td.textContent = col.key === "country" && !row.country ? "—" : row[col.key] as string;
                 tr.appendChild(td);
             }
+            const infoTd = document.createElement("td");
+            infoTd.className = "rw-sources-info";
+            const infoBtn = document.createElement("button");
+            infoBtn.type = "button";
+            infoBtn.className = "rw-sources-info-btn";
+            infoBtn.textContent = "?";
+            infoBtn.title = t("sources.info");
+            infoBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openSourceDetail(row.detail);
+            });
+            infoTd.appendChild(infoBtn);
+            tr.appendChild(infoTd);
             tbody.appendChild(tr);
         }
     };
@@ -3709,6 +3854,10 @@ function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initia
         headerElements.push(th);
         thr.appendChild(th);
     });
+    const infoTh = document.createElement("th");
+    infoTh.className = "rw-sources-info-th";
+    infoTh.textContent = "";
+    thr.appendChild(infoTh);
     thead.appendChild(thr);
     table.appendChild(thead);
     const tbody = document.createElement("tbody");
@@ -3813,6 +3962,17 @@ async function populateSourcesWindow(body: HTMLDivElement) {
             origin: token,
             originLabel: label,
             originTooltip: tooltip,
+            detail: {
+                sourceName: s.name,
+                displayName: s.source_name || s.name,
+                country: s.country || undefined,
+                producer: s.producer || undefined,
+                licenceName: s.licence_name || undefined,
+                licenceUrl: s.licence_url || undefined,
+                sourceUrl: s.source_url || undefined,
+                descriptorUrl: origin === "__official" ? s.descriptor_url || undefined : undefined,
+                isLocal: origin === "__local",
+            },
         };
     });
 
@@ -3846,19 +4006,28 @@ async function populateSourcesWindow(body: HTMLDivElement) {
         seen.add(name);
         let displayName = name;
         let country = "";
+        const detail: SourceDetail = { sourceName: name, displayName: name };
         if (svc && typeof svc.descriptor === "string") {
             try {
                 const parsed = JSON.parse(svc.descriptor);
                 const md = parsed?.metadata || {};
                 if (typeof md.name === "string" && md.name.trim()) displayName = md.name;
                 if (typeof md.country === "string") country = md.country;
+                detail.displayName = displayName;
+                if (country) detail.country = country;
+                if (typeof md.producer === "string" && md.producer.trim()) detail.producer = md.producer;
+                if (typeof md.licence_name === "string" && md.licence_name.trim()) detail.licenceName = md.licence_name;
+                if (typeof md.licence_url === "string" && md.licence_url.trim()) detail.licenceUrl = md.licence_url;
+                if (typeof md.source_url === "string" && md.source_url.trim()) detail.sourceUrl = md.source_url;
             } catch (_) {}
         }
+        detail.isLocal = false;
         odRows.push({
             name: displayName,
             country,
             origin: "\u0002opendata",
             originLabel: t("sources.opendata"),
+            detail,
         });
     }
     if (odRows.length === 0) {

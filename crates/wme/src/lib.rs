@@ -238,6 +238,7 @@ pub struct SourceInfo {
     pub licence_name: Option<String>,
     pub licence_url: Option<String>,
     pub source_url: Option<String>,
+    pub descriptor_url: Option<String>,
 }
 
 /// Returns the display information of every opendata source (built-in and
@@ -248,13 +249,19 @@ pub fn get_sources_info() -> JsValue {
     let mut sources: Vec<SourceInfo> = all_descriptors()
         .into_iter()
         .map(|(name, desc)| SourceInfo {
-            name,
+            name: name.clone(),
             country: desc.metadata.country,
             source_name: desc.metadata.name,
             producer: desc.metadata.producer,
             licence_name: desc.metadata.licence_name,
             licence_url: desc.metadata.licence_url,
             source_url: desc.metadata.source_url,
+            // Built-in descriptors live under the GitHub base URL with the
+            // descriptor key (file path without the `.json` extension).
+            descriptor_url: Some(format!(
+                "{}{name}.json",
+                roadwork_service::DESCRIPTORS_BASE_URL
+            )),
         })
         .collect();
     sources.sort_by(|a, b| {

@@ -158,5 +158,9 @@
   "sources.official": "Official",
   "sources.name": "Name",
   "sources.country": "Country",
-  "sources.origin": "Origin"
+  "sources.origin": "Origin",
+  "sources.detail_title": "Source details",
+  "sources.info": "About this source",
+  "sources.no_info": "No information available for this source.",
+  "sources.descriptor_url": "Descriptor URL"
 }

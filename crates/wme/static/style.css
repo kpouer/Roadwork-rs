@@ -1339,6 +1339,39 @@
     cursor: help;
 }
 
+.rw-sources-table .rw-sources-info {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.rw-sources-info-th {
+    width: 30px;
+}
+
+.rw-sources-info-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+}
+
+.rw-sources-info-btn:hover {
+    background: #1a73e8;
+    border-color: #1a73e8;
+    color: #fff;
+}
+
+.rw-source-detail-window {
+    width: 360px;
+}
+
 .rw-sources-empty {
     padding: 8px;
     color: #999;
