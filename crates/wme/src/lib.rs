@@ -41,6 +41,8 @@ pub fn set_log_level(level: &str) {
 thread_local! {
     static CUSTOM_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
         RefCell::new(HashMap::new());
+    static INDEX_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
+        RefCell::new(HashMap::new());
 }
 
 /// Maximum age of a cached roadworks snapshot before it is re-fetched (24h).
@@ -119,8 +121,88 @@ pub fn set_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
+/// Result of [`sync_index`]: the full services list, which keys are new or updated,
+/// and the full modified map to persist client-side.
+#[derive(Serialize)]
+struct SyncIndexResult {
+    services: Vec<ServiceInfo>,
+    new_or_updated: Vec<String>,
+    known_modified: HashMap<String, String>,
+}
+
+/// Fetches the remote roadwork index from GitHub, compares each entry's
+/// `modified` timestamp against `known_modified` (a map of key → ISO date),
+/// fetches descriptors for new/updated entries, stores them in
+/// `INDEX_DESCRIPTORS`, and returns the merged services list.
+#[wasm_bindgen]
+pub async fn sync_index(known_modified: JsValue) -> Result<JsValue, JsValue> {
+    info!("[wasm] sync_index");
+    let known: HashMap<String, String> = serde_wasm_bindgen::from_value(known_modified)
+        .map_err(|e| JsValue::from_str(&format!("Invalid known_modified: {e}")))?;
+
+    let index = roadwork_service::fetch_index()
+        .await
+        .map_err(|e| JsValue::from_str(&format!("Failed to fetch index: {e}")))?;
+
+    let mut new_or_updated = Vec::new();
+
+    for entry in &index.files {
+        let is_new_or_updated = match known.get(&entry.key) {
+            Some(known_mod) => match &entry.modified {
+                Some(modified) => modified != known_mod,
+                None => true,
+            },
+            None => true,
+        };
+        if is_new_or_updated {
+            match roadwork_service::fetch_descriptor(&entry.path).await {
+                Ok(descriptor) => {
+                    info!("[wasm] sync_index: fetched {}", entry.key);
+                    INDEX_DESCRIPTORS.with(|cell| {
+                        cell.borrow_mut().insert(entry.key.clone(), descriptor);
+                    });
+                    new_or_updated.push(entry.key.clone());
+                }
+                Err(e) => {
+                    log::warn!("[wasm] sync_index: failed to fetch {}: {e}", entry.key);
+                }
+            }
+        }
+    }
+
+    let descriptors = all_descriptors();
+    let mut services: Vec<ServiceInfo> = descriptors
+        .into_iter()
+        .map(|(name, desc)| ServiceInfo {
+            name,
+            center: desc.metadata.center,
+        })
+        .collect();
+    services.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Build the full known_modified map from the index so the client can persist it.
+    let mut known_modified = HashMap::new();
+    for entry in &index.files {
+        if let Some(modified) = &entry.modified {
+            known_modified.insert(entry.key.clone(), modified.clone());
+        }
+    }
+
+    let result = SyncIndexResult {
+        services,
+        new_or_updated,
+        known_modified,
+    };
+    serialize_data(&result)
+}
+
 fn all_descriptors() -> HashMap<String, ServiceDescriptor> {
     let mut map = roadwork_service::load_descriptors();
+    INDEX_DESCRIPTORS.with(|cell| {
+        for (name, descriptor) in cell.borrow().iter() {
+            map.insert(name.clone(), descriptor.clone());
+        }
+    });
     CUSTOM_DESCRIPTORS.with(|cell| {
         for (name, descriptor) in cell.borrow().iter() {
             map.insert(name.clone(), descriptor.clone());
@@ -158,12 +240,12 @@ pub struct SourceInfo {
     pub source_url: Option<String>,
 }
 
-/// Returns the display information of every built-in opendata source,
-/// sorted by country then service name.
+/// Returns the display information of every opendata source (built-in and
+/// index/custom roadwork descriptors), sorted by country then service name.
 #[wasm_bindgen]
 pub fn get_sources_info() -> JsValue {
     info!("[wasm] get_sources_info");
-    let mut sources: Vec<SourceInfo> = roadwork_service::load_descriptors()
+    let mut sources: Vec<SourceInfo> = all_descriptors()
         .into_iter()
         .map(|(name, desc)| SourceInfo {
             name,

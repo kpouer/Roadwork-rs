@@ -13,9 +13,63 @@ use roadwork_core::model::service_info::ServiceInfo;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::{OpendataError, OpendataService};
 use roadwork_sync::SyncData;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+
+/// Base URL for the GitHub-hosted opendata roadwork descriptors.
+pub const INDEX_URL: &str = "https://raw.githubusercontent.com/kpouer/Roadwork-rs/refs/heads/main/opendata/roadwork/index.json";
+
+/// Base URL for individual descriptor files (append the `path` from an [`IndexEntry`]).
+pub const DESCRIPTORS_BASE_URL: &str =
+    "https://raw.githubusercontent.com/kpouer/Roadwork-rs/refs/heads/main/opendata/roadwork/";
+
+/// A remote index of available roadwork service descriptors.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RoadworkIndex {
+    pub version: u32,
+    pub generated_at: Option<String>,
+    pub count: Option<usize>,
+    pub files: Vec<IndexEntry>,
+}
+
+/// One entry in the remote [`RoadworkIndex`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexEntry {
+    pub key: String,
+    pub path: String,
+    pub country: Option<String>,
+    pub name: Option<String>,
+    pub size: Option<u64>,
+    pub modified: Option<String>,
+    pub sha256: Option<String>,
+}
+
+/// Fetches and parses the remote roadwork index from GitHub.
+pub async fn fetch_index() -> Result<RoadworkIndex, ServiceError> {
+    let http = HttpService;
+    let json = http
+        .get_url(INDEX_URL)
+        .await
+        .map_err(|e| ServiceError::FetchError(format!("Failed to fetch index: {e}")))?;
+    let index: RoadworkIndex = serde_json::from_str(&json)
+        .map_err(|e| ServiceError::FetchError(format!("Invalid index JSON: {e}")))?;
+    Ok(index)
+}
+
+/// Fetches a single descriptor from GitHub by its relative `path`
+/// (e.g. `"France/France-Paris.json"`).
+pub async fn fetch_descriptor(path: &str) -> Result<ServiceDescriptor, ServiceError> {
+    let url = format!("{DESCRIPTORS_BASE_URL}{path}");
+    let http = HttpService;
+    let json = http
+        .get_url(&url)
+        .await
+        .map_err(|e| ServiceError::FetchError(format!("Failed to fetch descriptor {path}: {e}")))?;
+    let descriptor: ServiceDescriptor = serde_json::from_str(&json)
+        .map_err(|e| ServiceError::FetchError(format!("Invalid descriptor {path}: {e}")))?;
+    Ok(descriptor)
+}
 
 include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
 
@@ -134,4 +188,6 @@ pub enum ServiceError {
     UnknownService(String),
     #[error(transparent)]
     OpendataError(#[from] OpendataError),
+    #[error("{0}")]
+    FetchError(String),
 }

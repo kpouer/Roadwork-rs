@@ -1256,3 +1256,92 @@
     pointer-events: none;
 }
 
+.rw-sources-window {
+    width: 520px;
+}
+
+.rw-sources-section {
+    margin-bottom: 14px;
+}
+
+.rw-sources-section > h4 {
+    margin: 12px 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 3px;
+}
+
+.rw-sources-section > h4:first-child {
+    margin-top: 0;
+}
+
+.rw-sources-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.rw-sources-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 3px 6px;
+    user-select: none;
+}
+
+.rw-sources-table th.sortable {
+    cursor: pointer;
+}
+
+.rw-sources-table th.sortable:hover {
+    color: #1a73e8;
+}
+
+.rw-sources-table th.asc::after,
+.rw-sources-table th.desc::after {
+    content: "";
+    display: inline-block;
+    margin-left: 4px;
+    width: 0;
+    height: 0;
+}
+
+.rw-sources-table th.asc::after {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #555;
+}
+
+.rw-sources-table th.desc::after {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #555;
+}
+
+.rw-sources-table td {
+    padding: 3px 6px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+.rw-sources-table tbody tr:nth-child(even) {
+    background: #fafafa;
+}
+
+.rw-sources-table .rw-sources-origin {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: help;
+}
+
+.rw-sources-empty {
+    padding: 8px;
+    color: #999;
+    font-style: italic;
+}
+

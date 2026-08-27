@@ -124,7 +124,9 @@ const SCRIPT_NAME = "Roadwork for WME";
 const STORAGE_KEY = "roadwork-wme-settings";
 const SERVICES_CACHE_KEY = "roadwork-wme-services-cache";
 const CUSTOM_SOURCES_CACHE_KEY = "roadwork-wme-custom-sources-cache";
+const CUSTOM_ORIGINS_KEY = "roadwork-wme-custom-origins";
 const LOCAL_DESCRIPTORS_KEY = "roadwork-wme-local-descriptors";
+const KNOWN_MODIFIED_KEY = "roadwork-wme-known-modified";
 const STATUS_OVERRIDES_KEY = "roadwork-wme-status-overrides";
 const DATA_SOURCE_KEY = "roadwork-wme-data-source";
 const MAX_WAIT = 120000;
@@ -467,10 +469,14 @@ async function fetchServices(forceRefresh = false) {
         console.info("[Roadwork] fetchServices no cache, will refresh");
     }
     try {
-        const data = await rpcCall("get_services");
-        if (Array.isArray(data)) {
-            saveServicesCache(data);
-            return data;
+        const knownModified = loadKnownModified();
+        const result = await rpcCall("sync_index", [knownModified]);
+        if (result && Array.isArray(result.services)) {
+            if (result.known_modified && typeof result.known_modified === "object") {
+                saveKnownModified(result.known_modified);
+            }
+            saveServicesCache(result.services);
+            return result.services;
         }
         return [];
     } catch (_) {
@@ -525,9 +531,27 @@ function saveLocalDescriptors(descriptors: Record<string, any>) {
     } catch (_) {}
 }
 
-async function fetchCustomDescriptors() {
+function loadKnownModified(): Record<string, string> {
+    try {
+        const raw = localStorage.getItem(KNOWN_MODIFIED_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function saveKnownModified(known: Record<string, string>) {
+    try {
+        localStorage.setItem(KNOWN_MODIFIED_KEY, JSON.stringify(known));
+    } catch (_) {}
+}
+
+async function fetchCustomDescriptors(): Promise<{ pairs: Array<any>; origins: Record<string, string> }> {
     const sources = Array.isArray(settings.customSources) ? settings.customSources : [];
     const pairs = [];
+    const origins: Record<string, string> = {};
     for (const url of sources) {
         let index;
         try {
@@ -556,12 +580,30 @@ async function fetchCustomDescriptors() {
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const json = await resp.text();
                 pairs.push([name, json]);
+                origins[name] = url;
             } catch (e) {
                 console.warn(`[Roadwork] Failed to fetch descriptor ${descUrl}: ${e}`);
             }
         }
     }
-    return pairs;
+    return { pairs, origins };
+}
+
+function loadCustomOriginsCache(): Record<string, string> | null {
+    try {
+        const raw = localStorage.getItem(CUSTOM_ORIGINS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function saveCustomOriginsCache(origins: Record<string, string>) {
+    try {
+        localStorage.setItem(CUSTOM_ORIGINS_KEY, JSON.stringify(origins));
+    } catch (_) {}
 }
 
 async function syncCustomDescriptorsToWasm(forceRefresh = false) {
@@ -572,6 +614,9 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
         try {
             localStorage.removeItem(CUSTOM_SOURCES_CACHE_KEY);
         } catch (_) {}
+        try {
+            localStorage.removeItem(CUSTOM_ORIGINS_KEY);
+        } catch (_) {}
         if (localPairs.length > 0) {
             try {
                 localStorage.removeItem(SERVICES_CACHE_KEY);
@@ -580,12 +625,17 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
         return;
     }
     let pairs = null;
+    let customOrigins: Record<string, string> | null = null;
     if (!forceRefresh) {
         pairs = loadCustomDescriptorsCache();
+        customOrigins = loadCustomOriginsCache();
     }
     if (pairs === null) {
-        pairs = await fetchCustomDescriptors();
+        const fetched = await fetchCustomDescriptors();
+        pairs = fetched.pairs;
+        customOrigins = fetched.origins;
         saveCustomDescriptorsCache(pairs);
+        saveCustomOriginsCache(customOrigins);
     }
     pairs = pairs.concat(localPairs);
     await rpcCall("set_custom_descriptors", [pairs]);
@@ -3293,6 +3343,16 @@ async function buildPanel(tabPane: Element) {
     });
     panelEl.appendChild(aboutBtn);
 
+    const sourcesBtn = document.createElement("button");
+    sourcesBtn.className = "roadwork-btn";
+    sourcesBtn.textContent = t("btn.sources");
+    sourcesBtn.title = t("btn.sources_title");
+    sourcesBtn.addEventListener("click", () => {
+        console.log("[Roadwork] opening sources window");
+        void openSourcesWindow();
+    });
+    panelEl.appendChild(sourcesBtn);
+
     const logLevelDiv = document.createElement("div");
     logLevelDiv.className = "roadwork-field";
 
@@ -3509,6 +3569,312 @@ function buildAboutLink(url: string | null | undefined, text: string): HTMLAncho
     }
     link.textContent = text;
     return link;
+}
+
+let sourcesWindowEl: HTMLDivElement | null = null;
+
+async function openSourcesWindow() {
+    try {
+        if (!sourcesWindowEl) {
+            buildSourcesWindow();
+        }
+        sourcesWindowEl.classList.remove("rw-hidden");
+    } catch (e) {
+        console.error("[Roadwork] Failed to open sources window:", e);
+    }
+}
+
+interface SourceRow {
+    name: string;
+    country: string;
+    origin: string;
+    originLabel: string;
+    originTooltip?: string;
+}
+
+interface SourceColumn {
+    key: keyof SourceRow;
+    label: string;
+    sortKey?: keyof SourceRow;
+}
+
+function sortValue(row: SourceRow, key: keyof SourceRow): string {
+    const v = row[key];
+    return typeof v === "string" ? v : "";
+}
+
+function sortSourceRows(rows: SourceRow[], keys: Array<keyof SourceRow>, dirs: number[]) {
+    return rows.sort((a, b) => {
+        for (let i = 0; i < keys.length; i++) {
+            const c = sortValue(a, keys[i]).localeCompare(sortValue(b, keys[i]));
+            if (c !== 0) return c * dirs[i];
+        }
+        return 0;
+    });
+}
+
+function buildSourcesWindow() {
+    sourcesWindowEl = document.createElement("div");
+    sourcesWindowEl.className = "rw-about-window rw-sources-window rw-hidden";
+
+    const header = document.createElement("div");
+    header.className = "rw-about-header";
+
+    const title = document.createElement("h4");
+    title.textContent = t("sources.title");
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = t("btn.close");
+    closeBtn.addEventListener("click", () => {
+        sourcesWindowEl.classList.add("rw-hidden");
+    });
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "rw-about-body";
+
+    sourcesWindowEl.appendChild(header);
+    sourcesWindowEl.appendChild(body);
+    document.body.appendChild(sourcesWindowEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    header.addEventListener("mousedown", (e) => {
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
+        isDragging = true;
+        const rect = sourcesWindowEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        sourcesWindowEl.style.left = e.clientX - dragOffsetX + "px";
+        sourcesWindowEl.style.top = e.clientY - dragOffsetY + "px";
+        sourcesWindowEl.style.right = "auto";
+        sourcesWindowEl.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+
+    void populateSourcesWindow(body);
+}
+
+function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initialSort?: Array<keyof SourceRow>): HTMLElement {
+    const initialKeys = (initialSort || columns.map((c) => c.key)).slice();
+    const dirs: number[] = initialKeys.map(() => 1);
+    const sortedRows = rows.slice();
+
+    const render = () => {
+        tbody.innerHTML = "";
+        for (const row of sortedRows) {
+            const tr = document.createElement("tr");
+            for (const col of columns) {
+                const td = document.createElement("td");
+                if (col.sortKey === "origin" && row.originTooltip) {
+                    td.classList.add("rw-sources-origin");
+                    td.title = row.originTooltip;
+                }
+                td.textContent = col.key === "country" && !row.country ? "—" : row[col.key] as string;
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+    };
+
+    const table = document.createElement("table");
+    table.className = "rw-sources-table";
+    const thead = document.createElement("thead");
+    const thr = document.createElement("tr");
+    const headerElements: HTMLTableCellElement[] = [];
+    columns.forEach((col, i) => {
+        const sortKey = col.sortKey || col.key;
+        const th = document.createElement("th");
+        th.className = "sortable";
+        th.textContent = col.label;
+        th.addEventListener("click", () => {
+            for (let j = 0; j < dirs.length; j++) dirs[j] = 1;
+            const idx = initialKeys.indexOf(sortKey);
+            dirs[idx] = -dirs[idx];
+            sortSourceRows(sortedRows, [sortKey], [dirs[idx]]);
+            headerElements.forEach((h, j) => h.classList.toggle("asc", j === i && dirs[idx] === 1));
+            headerElements.forEach((h, j) => h.classList.toggle("desc", j === i && dirs[idx] === -1));
+            render();
+        });
+        headerElements.push(th);
+        thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    table.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
+    sortSourceRows(sortedRows, initialKeys, dirs);
+    const firstCol = columns.findIndex((c) => (c.sortKey || c.key) === initialKeys[0]);
+    if (firstCol >= 0) {
+        headerElements[firstCol].classList.add("asc");
+    }
+    render();
+    return table;
+}
+
+const ORIGIN_OFFICIAL = "__official";
+const ORIGIN_LOCAL = "__local";
+
+// Builds a human-readable label, an optional tooltip (full URL) and a sort
+// token for a roadwork source origin. Custom index URLs sort after the
+// built-in "Official" and "Local" origins.
+function originInfo(origin: string): { label: string; tooltip?: string; token: string } {
+    if (origin === ORIGIN_OFFICIAL) {
+        return { label: t("sources.official"), token: "\u0000official" };
+    }
+    if (origin === ORIGIN_LOCAL) {
+        return { label: t("sources.local"), token: "\u0001local" };
+    }
+    const cleaned = origin.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    let label = cleaned;
+    const segments = cleaned.split("/");
+    if (segments.length >= 2) {
+        label = segments.slice(0, 2).join("/");
+    }
+    if (label.length > 40) {
+        label = label.slice(0, 37) + "…";
+    }
+    return { label, tooltip: origin, token: "\u0002" + cleaned };
+}
+
+async function populateSourcesWindow(body: HTMLDivElement) {
+    const loading = document.createElement("div");
+    loading.className = "rw-about-loading";
+    loading.textContent = t("sources.loading");
+    body.appendChild(loading);
+
+    let info: SourceInfo[];
+    try {
+        info = await rpcCall("get_sources_info") as SourceInfo[];
+    } catch (e) {
+        console.warn("[Roadwork] Failed to load sources info:", e);
+        loading.textContent = t("sources.error");
+        return;
+    }
+    if (!sourcesWindowEl || loading.parentNode !== body) {
+        return;
+    }
+    body.removeChild(loading);
+
+    // Roadwork sources: one flat sortable table with an Origin column.
+    const rwSection = document.createElement("div");
+    rwSection.className = "rw-sources-section";
+    const rwTitle = document.createElement("h4");
+    rwTitle.textContent = t("sources.roadworks");
+    rwSection.appendChild(rwTitle);
+
+    const knownNames = new Set(info.map((s) => s.name));
+    const local = loadLocalDescriptors();
+    const customOrigins = loadCustomOriginsCache() || {};
+    const customUrls = Array.isArray(settings.customSources) ? settings.customSources : [];
+
+    // Per source, resolve the origin with a strict precedence: custom index
+    // URL, then local (an edited/imported descriptor overrides any other
+    // origin), then the built-in "Official" descriptors.
+    const originByKey: Record<string, string> = {};
+    const assigned = new Set<string>();
+    for (const url of customUrls) {
+        Object.keys(customOrigins).forEach((n) => {
+            if (customOrigins[n] === url && knownNames.has(n) && !assigned.has(n)) {
+                originByKey[n] = url;
+                assigned.add(n);
+            }
+        });
+    }
+    Object.keys(local).forEach((n) => {
+        if (knownNames.has(n) && !assigned.has(n)) {
+            originByKey[n] = "__local";
+            assigned.add(n);
+        }
+    });
+    info.forEach((s) => {
+        if (!assigned.has(s.name) && originByKey[s.name] === undefined) {
+            originByKey[s.name] = "__official";
+        }
+    });
+
+    const rwRows: SourceRow[] = info.map((s) => {
+        const origin = originByKey[s.name] || "__official";
+        const { label, tooltip, token } = originInfo(origin);
+        return {
+            name: s.source_name || s.name,
+            country: s.country || "",
+            origin: token,
+            originLabel: label,
+            originTooltip: tooltip,
+        };
+    });
+
+    const rwColumns: SourceColumn[] = [
+        { key: "name", label: t("sources.name") },
+        { key: "country", label: t("sources.country") },
+        { key: "originLabel", sortKey: "origin", label: t("sources.origin") },
+    ];
+    if (rwRows.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "rw-sources-empty";
+        empty.textContent = t("sources.none");
+        rwSection.appendChild(empty);
+    } else {
+        rwSection.appendChild(buildSourcesTableFor(rwRows, rwColumns, ["origin", "country", "name"]));
+    }
+    body.appendChild(rwSection);
+
+    // Opendata sources: same sortable table style as roadworks.
+    const odSection = document.createElement("div");
+    odSection.className = "rw-sources-section";
+    const odTitle = document.createElement("h4");
+    odTitle.textContent = t("sources.opendata");
+    odSection.appendChild(odTitle);
+
+    const odServices = getOpendataServices();
+    const odRows: SourceRow[] = [];
+    const seen = new Set<string>();
+    for (const [name, svc] of Object.entries(odServices) as [string, any][]) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        let displayName = name;
+        let country = "";
+        if (svc && typeof svc.descriptor === "string") {
+            try {
+                const parsed = JSON.parse(svc.descriptor);
+                const md = parsed?.metadata || {};
+                if (typeof md.name === "string" && md.name.trim()) displayName = md.name;
+                if (typeof md.country === "string") country = md.country;
+            } catch (_) {}
+        }
+        odRows.push({
+            name: displayName,
+            country,
+            origin: "\u0002opendata",
+            originLabel: t("sources.opendata"),
+        });
+    }
+    if (odRows.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "rw-sources-empty";
+        empty.textContent = t("sources.none");
+        odSection.appendChild(empty);
+    } else {
+        const odColumns: SourceColumn[] = [
+            { key: "name", label: t("sources.name") },
+            { key: "country", label: t("sources.country") },
+            { key: "originLabel", sortKey: "origin", label: t("sources.origin") },
+        ];
+        odSection.appendChild(buildSourcesTableFor(odRows, odColumns, ["origin", "name", "country"]));
+    }
+    body.appendChild(odSection);
 }
 
 async function init() {

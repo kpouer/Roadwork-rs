@@ -143,5 +143,20 @@
   "about.error": "Failed to load the embedded sources.",
   "about.producer": "Producer",
   "about.licence": "Licence",
-  "about.source_page": "Source page"
+  "about.source_page": "Source page",
+
+  "btn.sources": "Data sources",
+  "btn.sources_title": "List the roadwork and opendata sources",
+
+  "sources.title": "Data sources",
+  "sources.loading": "Loading sources...",
+  "sources.error": "Failed to load the sources.",
+  "sources.none": "No source.",
+  "sources.roadworks": "Roadwork sources",
+  "sources.opendata": "Opendata sources",
+  "sources.local": "Local",
+  "sources.official": "Official",
+  "sources.name": "Name",
+  "sources.country": "Country",
+  "sources.origin": "Origin"
 }

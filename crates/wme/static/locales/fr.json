@@ -143,5 +143,20 @@
   "about.error": "Impossible de charger les sources embarquées.",
   "about.producer": "Producteur",
   "about.licence": "Licence",
-  "about.source_page": "Page source"
+  "about.source_page": "Page source",
+
+  "btn.sources": "Data sources",
+  "btn.sources_title": "Lister les sources roadworks et opendata",
+
+  "sources.title": "Data sources",
+  "sources.loading": "Chargement des sources...",
+  "sources.error": "Impossible de charger les sources.",
+  "sources.none": "Aucune source.",
+  "sources.roadworks": "Sources roadworks",
+  "sources.opendata": "Sources opendata",
+  "sources.local": "Local",
+  "sources.official": "Officiel",
+  "sources.name": "Nom",
+  "sources.country": "Pays",
+  "sources.origin": "Origine"
 }

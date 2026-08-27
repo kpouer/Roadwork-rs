@@ -44,6 +44,8 @@ scope.onmessage = async (e: MessageEvent) => {
         } else if (method === 'set_custom_descriptors') {
             wasm_bindgen.set_custom_descriptors(args[0]);
             result = true;
+        } else if (method === 'sync_index') {
+            result = await wasm_bindgen.sync_index(args[0]);
         } else if (method === 'get_opendata_sources') {
             result = await wasm_bindgen.get_opendata_sources();
         } else if (method === 'save_opendata_source') {
