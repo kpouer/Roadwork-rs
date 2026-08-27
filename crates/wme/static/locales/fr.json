@@ -28,8 +28,6 @@
   "btn.launch_title": "Ouvrir l'appli Roadwork",
   "btn.explore_db": "Explore DB",
   "btn.explore_db_title": "Explorer la base de données locale",
-  "btn.about": "À propos",
-  "btn.about_title": "À propos de Roadwork et de ses sources opendata",
   "btn.hide": "Masquer",
   "btn.close": "Fermer",
   "btn.copy": "Copier",
@@ -138,9 +136,6 @@
   "language.label": "Langue",
   "language.auto": "Automatique",
 
-  "about.title": "À propos de Roadwork — sources opendata",
-  "about.loading": "Chargement des sources...",
-  "about.error": "Impossible de charger les sources embarquées.",
   "about.producer": "Producteur",
   "about.licence": "Licence",
   "about.source_page": "Page source",

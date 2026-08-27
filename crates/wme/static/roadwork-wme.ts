@@ -3333,16 +3333,6 @@ async function buildPanel(tabPane: Element) {
     });
     panelEl.appendChild(exploreBtn);
 
-    const aboutBtn = document.createElement("button");
-    aboutBtn.className = "roadwork-btn";
-    aboutBtn.textContent = t("btn.about");
-    aboutBtn.title = t("btn.about_title");
-    aboutBtn.addEventListener("click", () => {
-        console.log("[Roadwork] opening about window");
-        void openAboutWindow();
-    });
-    panelEl.appendChild(aboutBtn);
-
     const sourcesBtn = document.createElement("button");
     sourcesBtn.className = "roadwork-btn";
     sourcesBtn.textContent = t("btn.sources");
@@ -3414,8 +3404,6 @@ async function buildPanel(tabPane: Element) {
     tabPane.appendChild(panelEl);
 }
 
-let aboutWindowEl: HTMLDivElement | null = null;
-
 interface SourceInfo {
     name: string;
     country?: string | null;
@@ -3425,138 +3413,6 @@ interface SourceInfo {
     licence_url?: string | null;
     source_url?: string | null;
     descriptor_url?: string | null;
-}
-
-async function openAboutWindow() {
-    try {
-        if (!aboutWindowEl) {
-            buildAboutWindow();
-        }
-        aboutWindowEl.classList.remove("rw-hidden");
-    } catch (e) {
-        console.error("[Roadwork] Failed to open about window:", e);
-    }
-}
-
-function buildAboutWindow() {
-    aboutWindowEl = document.createElement("div");
-    aboutWindowEl.className = "rw-about-window rw-hidden";
-
-    const header = document.createElement("div");
-    header.className = "rw-about-header";
-
-    const title = document.createElement("h4");
-    title.textContent = t("about.title");
-
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "\u00d7";
-    closeBtn.title = t("btn.close");
-    closeBtn.addEventListener("click", () => {
-        aboutWindowEl.classList.add("rw-hidden");
-    });
-
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-
-    const body = document.createElement("div");
-    body.className = "rw-about-body";
-
-    aboutWindowEl.appendChild(header);
-    aboutWindowEl.appendChild(body);
-    document.body.appendChild(aboutWindowEl);
-
-    let isDragging = false;
-    let dragOffsetX = 0;
-    let dragOffsetY = 0;
-    header.addEventListener("mousedown", (e) => {
-        if ((e.target as HTMLElement).tagName === "BUTTON") return;
-        isDragging = true;
-        const rect = aboutWindowEl.getBoundingClientRect();
-        dragOffsetX = e.clientX - rect.left;
-        dragOffsetY = e.clientY - rect.top;
-        e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-        aboutWindowEl.style.left = e.clientX - dragOffsetX + "px";
-        aboutWindowEl.style.top = e.clientY - dragOffsetY + "px";
-        aboutWindowEl.style.right = "auto";
-        aboutWindowEl.style.bottom = "auto";
-    });
-    document.addEventListener("mouseup", () => {
-        isDragging = false;
-    });
-
-    void populateAboutWindow(body);
-}
-
-async function populateAboutWindow(body: HTMLDivElement) {
-    const loading = document.createElement("div");
-    loading.className = "rw-about-loading";
-    loading.textContent = t("about.loading");
-    body.appendChild(loading);
-
-    let sources: SourceInfo[];
-    try {
-        sources = await rpcCall("get_sources_info") as SourceInfo[];
-    } catch (e) {
-        console.warn("[Roadwork] Failed to load sources info:", e);
-        loading.textContent = t("about.error");
-        return;
-    }
-    if (!aboutWindowEl || loading.parentNode !== body) {
-        return;
-    }
-
-    let currentCountry: string | null = null;
-    for (const source of sources) {
-        if (source.country !== currentCountry) {
-            currentCountry = source.country ?? "";
-            const countryHeading = document.createElement("h5");
-            countryHeading.className = "rw-about-country";
-            countryHeading.textContent = currentCountry || "—";
-            body.appendChild(countryHeading);
-        }
-
-        const entry = document.createElement("div");
-        entry.className = "rw-about-source";
-
-        const nameLine = document.createElement("div");
-        nameLine.className = "rw-about-source-name";
-        nameLine.textContent = source.source_name || source.name;
-
-        const serviceKey = document.createElement("span");
-        serviceKey.className = "rw-about-service-key";
-        serviceKey.textContent = source.name;
-        nameLine.appendChild(serviceKey);
-        entry.appendChild(nameLine);
-
-        const details = document.createElement("div");
-        details.className = "rw-about-source-details";
-        const detailLines: string[] = [];
-        if (source.producer) {
-            detailLines.push(`${t("about.producer")}: ${source.producer}`);
-        }
-        if (detailLines.length > 0) {
-            details.textContent = detailLines.join(" — ");
-            entry.appendChild(details);
-        }
-
-        const links = document.createElement("div");
-        links.className = "rw-about-links";
-        if (source.licence_name) {
-            links.appendChild(buildAboutLink(source.licence_url, `${t("about.licence")}: ${source.licence_name}`));
-        }
-        if (source.source_url) {
-            links.appendChild(buildAboutLink(source.source_url, t("about.source_page")));
-        }
-        if (links.childElementCount > 0) {
-            entry.appendChild(links);
-        }
-
-        body.appendChild(entry);
-    }
-    body.removeChild(loading);
 }
 
 function buildAboutLink(url: string | null | undefined, text: string): HTMLAnchorElement {

@@ -1200,19 +1200,6 @@
     color: #999;
 }
 
-.rw-about-country {
-    margin: 12px 0 6px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #333;
-    border-bottom: 1px solid #e0e0e0;
-    padding-bottom: 3px;
-}
-
-.rw-about-country:first-child {
-    margin-top: 0;
-}
-
 .rw-about-source {
     padding: 4px 0 8px;
 }
