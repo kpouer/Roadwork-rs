@@ -170,6 +170,23 @@ pub async fn sync_index(known_modified: JsValue) -> Result<JsValue, JsValue> {
         }
     }
 
+    // Prune descriptors that no longer exist in the index, so stale sources
+    // (moved to broken/ or removed) disappear from the services list.
+    let valid_keys: std::collections::HashSet<&str> =
+        index.files.iter().map(|e| e.key.as_str()).collect();
+    INDEX_DESCRIPTORS.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let stale: Vec<String> = cell
+            .keys()
+            .filter(|k| !valid_keys.contains(k.as_str()))
+            .cloned()
+            .collect();
+        for key in stale {
+            log::warn!("[wasm] sync_index: removing stale descriptor {}", key);
+            cell.remove(&key);
+        }
+    });
+
     let descriptors = all_descriptors();
     let mut services: Vec<ServiceInfo> = descriptors
         .into_iter()

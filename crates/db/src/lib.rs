@@ -655,7 +655,7 @@ impl Store {
             Self::filter_clause(service, bbox, "rowid", Some((limit, offset)));
         let select_sql = format!("SELECT * FROM \"{table}\"{where_sql}");
         let mut stmt = self.conn.prepare(&select_sql)?;
-        let rows = stmt
+        let mut rows = stmt
             .query_map(rusqlite::params_from_iter(page_params), |row| {
                 let mut cells = Vec::with_capacity(columns.len());
                 for i in 0..columns.len() {
@@ -666,11 +666,64 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Error::from)?;
+        let columns = Self::with_roadwork_dates(table, columns, &mut rows);
         Ok(DbTableData {
             columns,
             rows,
             total,
         })
+    }
+
+    /// For the `roadwork` table, exposes the `start`/`end` dates (stored in the
+    /// `payload` JSON blob) as readable columns and reorders the columns so the
+    /// `payload` column comes last. Other tables are returned unchanged.
+    fn with_roadwork_dates(
+        table: &str,
+        columns: Vec<ColumnInfo>,
+        rows: &mut [Vec<Cell>],
+    ) -> Vec<ColumnInfo> {
+        if table != "roadwork" {
+            return columns;
+        }
+        let payload_index = columns.iter().position(|c| c.name == "payload");
+        let Some(payload_index) = payload_index else {
+            return columns;
+        };
+        // Remove the `payload` column from the tail of every row, remembering
+        // which column index it occupied so we can reinsert start/end before it.
+        let mut columns = columns;
+        let (start_column, end_column) = (
+            ColumnInfo {
+                name: "start".to_string(),
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "end".to_string(),
+                primary_key: false,
+            },
+        );
+        let insert_at = payload_index;
+        columns.remove(payload_index);
+        columns.insert(insert_at, end_column);
+        columns.insert(insert_at, start_column);
+        columns.push(ColumnInfo {
+            name: "payload".to_string(),
+            primary_key: false,
+        });
+        for row in rows.iter_mut() {
+            let payload = row.remove(payload_index);
+            let (start, end) = match &payload {
+                Cell::Blob(bytes) => match serde_json::from_slice::<Roadwork>(bytes) {
+                    Ok(rw) => (Cell::Integer(rw.start), Cell::Integer(rw.end)),
+                    Err(_) => (Cell::Null, Cell::Null),
+                },
+                _ => (Cell::Null, Cell::Null),
+            };
+            row.insert(insert_at, end);
+            row.insert(insert_at, start);
+            row.push(payload);
+        }
+        columns
     }
 
     /// Returns the number of rows of `table`, optionally filtered by `service`

@@ -9,7 +9,22 @@ use egui::{Context, RichText, Ui};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 
+use chrono::DateTime;
+
 use crate::roadwork_app::spawn_task;
+
+/// Renders a cell for the DB explorer table. The synthetic `start`/`end`
+/// columns of the `roadwork` table hold millisecond epochs, shown as dates.
+fn format_cell(column: &str, cell: &Cell) -> String {
+    if (column == "start" || column == "end")
+        && let Cell::Integer(millis) = cell
+    {
+        return DateTime::from_timestamp_millis(*millis)
+            .map(|dt| dt.format("%d/%m/%Y %H:%M").to_string())
+            .unwrap_or_else(|| cell.display());
+    }
+    cell.display()
+}
 
 /// Mirrors `roadwork_db::ColumnInfo`.
 #[derive(Debug, Clone, Deserialize)]
@@ -783,9 +798,10 @@ impl DbExplorerDialog {
                             }
                         });
                     }
-                    for cell in &rows[index] {
+                    for (index, cell) in rows[index].iter().enumerate() {
                         row.col(|ui| {
-                            ui.add(egui::Label::new(truncate(&cell.display(), 120)).truncate());
+                            let text = format_cell(&columns[index].name, cell);
+                            ui.add(egui::Label::new(truncate(&text, 120)).truncate());
                         });
                     }
                 });

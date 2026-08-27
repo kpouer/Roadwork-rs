@@ -644,6 +644,46 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
     } catch (_) {}
 }
 
+async function pruneStaleDescriptors() {
+    const oldKnown = loadKnownModified();
+    if (Object.keys(oldKnown).length === 0) return;
+    await fetchServices(true).catch(() => []);
+    const freshKnown = loadKnownModified();
+    const stale = Object.keys(oldKnown).filter((name) => !(name in freshKnown));
+    if (stale.length === 0) return;
+
+    let cleanedCustom = false;
+    for (const name of stale) {
+        console.warn("[Roadwork] Suppression du descriptor obsolète: " + name);
+        const local = loadLocalDescriptors();
+        if (Object.prototype.hasOwnProperty.call(local, name)) {
+            delete local[name];
+            saveLocalDescriptors(local);
+            cleanedCustom = true;
+        }
+        const pairs = loadCustomDescriptorsCache();
+        if (pairs) {
+            const filtered = pairs.filter((p) => p[0] !== name);
+            if (filtered.length !== pairs.length) {
+                saveCustomDescriptorsCache(filtered);
+                cleanedCustom = true;
+            }
+        }
+        const origins = loadCustomOriginsCache();
+        if (origins && Object.prototype.hasOwnProperty.call(origins, name)) {
+            delete origins[name];
+            saveCustomOriginsCache(origins);
+        }
+        await rpcCall("clear_roadworks_cache", [name]).catch(() => {});
+    }
+    if (cleanedCustom) {
+        await syncCustomDescriptorsToWasm(false).catch(() => {});
+        try {
+            localStorage.removeItem(SERVICES_CACHE_KEY);
+        } catch (_) {}
+    }
+}
+
 function setStatus(text: string, type?) {
     if (!statusEl) {
         return;
@@ -871,11 +911,6 @@ function createFloatingPanel() {
     refreshBtn.title = t("btn.refresh");
     refreshBtn.addEventListener("click", () => refreshData());
 
-    const resetBtn = document.createElement("button");
-    resetBtn.textContent = t("btn.reset");
-    resetBtn.title = t("btn.reset");
-    resetBtn.addEventListener("click", () => clearExtensionStorage());
-
     const closeBtn = document.createElement("button");
     closeBtn.className = "rw-floating-close";
     closeBtn.textContent = "\u00d7";
@@ -949,7 +984,6 @@ function createFloatingPanel() {
     controls.appendChild(centerBtn);
 
     controls.appendChild(refreshBtn);
-    controls.appendChild(resetBtn);
 
     const createBtn = document.createElement("button");
     createBtn.textContent = t("btn.create");
@@ -1861,7 +1895,7 @@ async function queryRoadworksInViewport(bounds) {
     return data?.roadworks || {};
 }
 
-async function queryOpendataInViewport(name, bounds) {
+async function queryOpendataInViewport(name: string, bounds) {
     const args = [name, bounds.latMin, bounds.lonMin, bounds.latMax, bounds.lonMax, null];
     let data = await rpcCall("get_opendata_in_bbox", args);
     if (!data || !data.opendata) {
@@ -3343,6 +3377,16 @@ async function buildPanel(tabPane: Element) {
     });
     panelEl.appendChild(sourcesBtn);
 
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "roadwork-btn roadwork-btn-danger";
+    resetBtn.textContent = t("btn.reset");
+    resetBtn.title = t("btn.reset");
+    resetBtn.addEventListener("click", () => clearExtensionStorage());
+    const dangerDiv = document.createElement("div");
+    dangerDiv.style.cssText = "margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;";
+    dangerDiv.appendChild(resetBtn);
+    panelEl.appendChild(dangerDiv);
+
     const logLevelDiv = document.createElement("div");
     logLevelDiv.className = "roadwork-field";
 
@@ -3915,6 +3959,9 @@ async function init() {
     });
     await syncCustomDescriptorsToWasm(false).catch((e) => {
         console.warn("[Roadwork] Failed to sync custom descriptors:", e);
+    });
+    await pruneStaleDescriptors().catch((e) => {
+        console.warn("[Roadwork] Failed to prune stale descriptors:", e);
     });
 
     document.addEventListener("click", () => {

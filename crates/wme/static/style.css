@@ -90,6 +90,15 @@
     background: #f0f5ff;
 }
 
+.roadwork-btn-danger {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+.roadwork-btn-danger:hover {
+    background: #b91c1c;
+}
+
 .roadwork-status {
     margin-top: 10px;
     padding: 6px 8px;
