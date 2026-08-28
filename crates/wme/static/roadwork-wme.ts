@@ -2962,6 +2962,13 @@ function togglePolygonGroup(id) {
     updatePolygonesPanel();
 }
 
+function hidePolygonGroup(group) {
+    group.visible = false;
+    savePolygonGroups();
+    renderAllGroupsToMap();
+    updatePolygonesPanel();
+}
+
 function renamePolygonGroup(id, newName: string) {
     const g = polygonGroups[id];
     if (!g) return;
@@ -3020,6 +3027,7 @@ function createMapCommentFromGroup(group) {
             clearMapCommentEndDate(created.id);
         }
         setStatus(t("polygones.comment_created", { count: String(polys.length) }), "success");
+        hidePolygonGroup(group);
     } catch (e) {
         setStatus(t("polygones.create_failed", { error: (e as any)?.message || String(e) }), "error");
     }
@@ -3040,6 +3048,7 @@ function createPoiFromGroup(group) {
             wmeSDK.DataModel.Venues.addVenue({ category: "OTHER", geometry: f.geometry });
         }
         setStatus(t("polygones.poi_created", { count: String(polys.length) }), "success");
+        hidePolygonGroup(group);
     } catch (e) {
         setStatus(t("polygones.create_failed", { error: (e as any)?.message || String(e) }), "error");
     }
