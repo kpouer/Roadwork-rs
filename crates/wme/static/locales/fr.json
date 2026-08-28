@@ -105,6 +105,13 @@
   "wkt.name_label": "Titre",
   "wkt.paste_placeholder": "Collez le WKT ici",
 
+  "polygones.add_comment": "Ajouter un commentaire carte",
+  "polygones.add_poi": "Ajouter un POI",
+  "polygones.comment_created": "Commentaire(s) carte créé(s) : {count}",
+  "polygones.poi_created": "POI(s) créé(s) : {count}",
+  "polygones.no_polygon": "Le groupe ne contient aucun polygone",
+  "polygones.create_failed": "Échec de création : {error}",
+
   "pagination.page": "Page {current} / {total}",
   "pagination.prev": "Page précédente",
   "pagination.next": "Page suivante",

@@ -2970,6 +2970,81 @@ function renamePolygonGroup(id, newName: string) {
     updatePolygonesPanel();
 }
 
+function getPolygonFeatures(group) {
+    return (group.features || []).filter(f => f.geometry && f.geometry.type === 'Polygon');
+}
+
+function groupHasPolygon(group) {
+    return getPolygonFeatures(group).length > 0;
+}
+
+function getMapCommentModel(mapCommentId: string) {
+    const w = (window as any).W;
+    return w?.model?.mapComments?.getObjectById?.(mapCommentId) ?? null;
+}
+
+function clearMapCommentEndDate(mapCommentId: string) {
+    const modelComment = getMapCommentModel(mapCommentId);
+    if (!modelComment) {
+        console.warn("[Roadwork] Could not resolve internal map comment; keeping far-future endDate fallback");
+        return;
+    }
+    const w = (window as any).W;
+    const UpdateObject = (window as any).require?.("Waze/Action/UpdateObject");
+    if (!w?.model?.actionManager?.add || !UpdateObject) {
+        console.warn("[Roadwork] UpdateObject/actionManager unavailable; keeping far-future endDate fallback");
+        return;
+    }
+    w.model.actionManager.add(new UpdateObject(modelComment, { endDate: null }));
+}
+
+function createMapCommentFromGroup(group) {
+    const polys = getPolygonFeatures(group);
+    if (polys.length === 0) {
+        setStatus(t("polygones.no_polygon"), "error");
+        return;
+    }
+    if (!wmeSDK?.DataModel?.MapComments) {
+        setStatus(t("polygones.create_failed", { error: "MapComments unavailable" }), "error");
+        return;
+    }
+    try {
+        for (const f of polys) {
+            const created = wmeSDK.DataModel.MapComments.addComment({
+                subject: group.name,
+                body: group.name,
+                geometry: f.geometry,
+                endDate: 4102444800,
+            });
+            // todo : remove that endDate
+            clearMapCommentEndDate(created.id);
+        }
+        setStatus(t("polygones.comment_created", { count: String(polys.length) }), "success");
+    } catch (e) {
+        setStatus(t("polygones.create_failed", { error: (e as any)?.message || String(e) }), "error");
+    }
+}
+
+function createPoiFromGroup(group) {
+    const polys = getPolygonFeatures(group);
+    if (polys.length === 0) {
+        setStatus(t("polygones.no_polygon"), "error");
+        return;
+    }
+    if (!wmeSDK?.DataModel?.Venues) {
+        setStatus(t("polygones.create_failed", { error: "Venues unavailable" }), "error");
+        return;
+    }
+    try {
+        for (const f of polys) {
+            wmeSDK.DataModel.Venues.addVenue({ category: "OTHER", geometry: f.geometry });
+        }
+        setStatus(t("polygones.poi_created", { count: String(polys.length) }), "success");
+    } catch (e) {
+        setStatus(t("polygones.create_failed", { error: (e as any)?.message || String(e) }), "error");
+    }
+}
+
 function centerOnFirstFeature(features) {
     if (features.length === 0 || !wmeSDK?.Map) return;
     const first = features[0];
@@ -3208,6 +3283,22 @@ function updatePolygonesPanel() {
         row.appendChild(toggleCheck);
         row.appendChild(nameInput);
         row.appendChild(countSpan);
+        if (groupHasPolygon(group)) {
+            const commentBtn = document.createElement("button");
+            commentBtn.className = "rw-polygon-group-action";
+            commentBtn.textContent = "\uD83D\uDCAC";
+            commentBtn.title = t("polygones.add_comment");
+            commentBtn.addEventListener("click", () => createMapCommentFromGroup(group));
+
+            const poiBtn = document.createElement("button");
+            poiBtn.className = "rw-polygon-group-action";
+            poiBtn.textContent = "\uD83D\uDCCD";
+            poiBtn.title = t("polygones.add_poi");
+            poiBtn.addEventListener("click", () => createPoiFromGroup(group));
+
+            row.appendChild(commentBtn);
+            row.appendChild(poiBtn);
+        }
         row.appendChild(deleteBtn);
         polygonesPanelBody.appendChild(row);
     }

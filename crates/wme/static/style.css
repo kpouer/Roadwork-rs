@@ -795,6 +795,21 @@
     flex-shrink: 0;
 }
 
+.rw-polygon-group-action {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: 0.5;
+}
+
+.rw-polygon-group-action:hover {
+    opacity: 1;
+}
+
 .rw-polygon-group-delete {
     background: none;
     border: none;
