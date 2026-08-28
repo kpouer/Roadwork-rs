@@ -3293,6 +3293,12 @@ function updatePolygonesPanel() {
         row.appendChild(nameInput);
         row.appendChild(countSpan);
         if (groupHasPolygon(group)) {
+            const centerBtn = document.createElement("button");
+            centerBtn.className = "rw-polygon-group-action";
+            centerBtn.textContent = "\uD83C\uDFAF";
+            centerBtn.title = t("polygones.center");
+            centerBtn.addEventListener("click", () => centerOnFirstFeature(group.features));
+
             const commentBtn = document.createElement("button");
             commentBtn.className = "rw-polygon-group-action";
             commentBtn.textContent = "\uD83D\uDCAC";
@@ -3305,6 +3311,7 @@ function updatePolygonesPanel() {
             poiBtn.title = t("polygones.add_poi");
             poiBtn.addEventListener("click", () => createPoiFromGroup(group));
 
+            row.appendChild(centerBtn);
             row.appendChild(commentBtn);
             row.appendChild(poiBtn);
         }

@@ -105,6 +105,7 @@
   "wkt.name_label": "Titre",
   "wkt.paste_placeholder": "Collez le WKT ici",
 
+  "polygones.center": "Centrer la vue sur le polygone",
   "polygones.add_comment": "Ajouter un commentaire carte",
   "polygones.add_poi": "Ajouter un POI",
   "polygones.comment_created": "Commentaire(s) carte créé(s) : {count}",

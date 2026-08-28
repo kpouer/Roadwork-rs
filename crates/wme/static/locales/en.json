@@ -105,6 +105,7 @@
   "wkt.name_label": "Title",
   "wkt.paste_placeholder": "Paste WKT here",
 
+  "polygones.center": "Center view on polygon",
   "polygones.add_comment": "Add map comment",
   "polygones.add_poi": "Add POI",
   "polygones.comment_created": "Map comment(s) created: {count}",
