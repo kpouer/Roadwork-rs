@@ -1356,21 +1356,36 @@ function parseWkt(str: string) {
             case 'POINT': {
                 const [x, y] = inner.trim().split(/\s+/).map(Number);
                 if (isFinite(x) && isFinite(y)) {
-                    features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'Point', coordinates: [x, y] }, properties: { geomType: 'Point' } });
+                    features.push({
+                        id: `wkt-${idCounter++}`,
+                        type: 'Feature',
+                        geometry: { type: 'Point', coordinates: [x, y] },
+                        properties: { geomType: 'Point' }
+                    });
                 }
                 break;
             }
             case 'LINESTRING': {
                 const coords = parseCoordList(inner);
                 if (coords.length >= 2) {
-                    features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { geomType: 'LineString' } });
+                    features.push({
+                        id: `wkt-${idCounter++}`,
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: coords },
+                        properties: { geomType: 'LineString' }
+                    });
                 }
                 break;
             }
             case 'POLYGON': {
                 const rings = parseRings(inner);
                 if (rings.length > 0 && rings[0].length >= 3) {
-                    features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'Polygon', coordinates: rings }, properties: { geomType: 'Polygon' } });
+                    features.push({
+                        id: `wkt-${idCounter++}`,
+                        type: 'Feature',
+                        geometry: { type: 'Polygon', coordinates: rings },
+                        properties: { geomType: 'Polygon' }
+                    });
                 }
                 break;
             }
@@ -1380,7 +1395,12 @@ function parseWkt(str: string) {
                     : parseCoordList(inner);
                 for (const [x, y] of coords) {
                     if (isFinite(x) && isFinite(y)) {
-                        features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'Point', coordinates: [x, y] }, properties: { geomType: 'Point' } });
+                        features.push({
+                            id: `wkt-${idCounter++}`,
+                            type: 'Feature',
+                            geometry: { type: 'Point', coordinates: [x, y] },
+                            properties: { geomType: 'Point' }
+                        });
                     }
                 }
                 break;
@@ -1390,7 +1410,12 @@ function parseWkt(str: string) {
                 for (const g of groups) {
                     const coords = parseCoordList(g);
                     if (coords.length >= 2) {
-                        features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { geomType: 'LineString' } });
+                        features.push({
+                            id: `wkt-${idCounter++}`,
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: coords },
+                            properties: { geomType: 'LineString' }
+                        });
                     }
                 }
                 break;
@@ -1400,7 +1425,12 @@ function parseWkt(str: string) {
                 for (const g of groups) {
                     const rings = parseRings(g);
                     if (rings.length > 0 && rings[0].length >= 3) {
-                        features.push({ id: `wkt-${idCounter++}`, type: 'Feature', geometry: { type: 'Polygon', coordinates: rings }, properties: { geomType: 'Polygon' } });
+                        features.push({
+                            id: `wkt-${idCounter++}`,
+                            type: 'Feature',
+                            geometry: { type: 'Polygon', coordinates: rings },
+                            properties: { geomType: 'Polygon' }
+                        });
                     }
                 }
                 break;
@@ -3054,7 +3084,7 @@ function createPoiFromGroup(group) {
     }
 }
 
-function centerOnFirstFeature(features) {
+function centerOnFirstFeature(features: any[]) {
     if (features.length === 0 || !wmeSDK?.Map) return;
     const first = features[0];
     if (first.geometry.type === 'Point') {
