@@ -1,3 +1,5 @@
+import {SdkFeature} from "wme-sdk-typings";
+
 type WmeSDK = import("wme-sdk-typings").WmeSDK;
 const { t, getLocale, detectLocale } = (window as any).__rw_i18n;
 
@@ -1341,7 +1343,7 @@ function parseWkt(str: string) {
     str = str.replace(/^(?:--|#).*/gm, '').trim();
     if (!str) return [];
 
-    const features = [];
+    const features: SdkFeature[] = [];
     let idCounter = 0;
     const geomPattern = /(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON)\s*\(/gi;
 
@@ -1361,7 +1363,7 @@ function parseWkt(str: string) {
                         type: 'Feature',
                         geometry: { type: 'Point', coordinates: [x, y] },
                         properties: { geomType: 'Point' }
-                    });
+                    } as SdkFeature);
                 }
                 break;
             }
@@ -1373,7 +1375,7 @@ function parseWkt(str: string) {
                         type: 'Feature',
                         geometry: { type: 'LineString', coordinates: coords },
                         properties: { geomType: 'LineString' }
-                    });
+                    } as SdkFeature);
                 }
                 break;
             }
@@ -1385,7 +1387,7 @@ function parseWkt(str: string) {
                         type: 'Feature',
                         geometry: { type: 'Polygon', coordinates: rings },
                         properties: { geomType: 'Polygon' }
-                    });
+                    } as SdkFeature);
                 }
                 break;
             }
@@ -1400,7 +1402,7 @@ function parseWkt(str: string) {
                             type: 'Feature',
                             geometry: { type: 'Point', coordinates: [x, y] },
                             properties: { geomType: 'Point' }
-                        });
+                        } as SdkFeature);
                     }
                 }
                 break;
@@ -1415,7 +1417,7 @@ function parseWkt(str: string) {
                             type: 'Feature',
                             geometry: { type: 'LineString', coordinates: coords },
                             properties: { geomType: 'LineString' }
-                        });
+                        } as SdkFeature);
                     }
                 }
                 break;
@@ -1430,7 +1432,7 @@ function parseWkt(str: string) {
                             type: 'Feature',
                             geometry: { type: 'Polygon', coordinates: rings },
                             properties: { geomType: 'Polygon' }
-                        });
+                        } as SdkFeature);
                     }
                 }
                 break;
@@ -1439,30 +1441,6 @@ function parseWkt(str: string) {
     }
 
     return features;
-}
-
-function buildPopupContent(rw) {
-    const start = formatTimestamp(rw.start);
-    const end = formatTimestamp(rw.end);
-    const road = rw.road || "";
-    const desc = rw.opendata?.description || "";
-    const impact = rw.impact_circulation_detail || "";
-    const status = rw.sync_data?.status || "New";
-
-    let html = `<div style="font-size:13px;max-width:280px;">`;
-    html += `<strong style="color:${STATUS_COLORS[status] || "#333"};">[${status}]</strong> `;
-    if (road) {
-        html += `<strong>${road}</strong><br/>`;
-    }
-    html += `<span style="color:#666;">${start} — ${end}</span><br/>`;
-    if (desc) {
-        html += `<p style="margin:4px 0;">${desc}</p>`;
-    }
-    if (impact) {
-        html += `<p style="margin:4px 0;color:#b45309;">${t("detail.impact_label")}: ${impact}</p>`;
-    }
-    html += `</div>`;
-    return html;
 }
 
 let detailOverlayEl: HTMLDivElement | null = null;
@@ -2965,9 +2943,10 @@ let polygonesToggleBtn: HTMLButtonElement | null = null;
 let polygonesPanelBody: HTMLDivElement | null = null;
 let polygonesDropzoneEl: HTMLDivElement | null = null;
 
-function addPolygonGroup(name: string, features) {
+function addPolygonGroup(name: string, features: SdkFeature[]) {
     const gid = "group_" + nextGroupId;
-    const prefixed = features.map(f => ({ ...f, id: gid + "-" + f.id }));
+    const prefixed = features
+        .map(f => ({ ...f, id: gid + "-" + f.id }));
     polygonGroups[gid] = { id: gid, name, features: prefixed, visible: true };
     nextGroupId++;
     savePolygonGroups();
@@ -3084,7 +3063,7 @@ function createPoiFromGroup(group) {
     }
 }
 
-function centerOnFirstFeature(features: any[]) {
+function centerOnFirstFeature(features: SdkFeature[]) {
     if (features.length === 0 || !wmeSDK?.Map) return;
     const first = features[0];
     if (first.geometry.type === 'Point') {
