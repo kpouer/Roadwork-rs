@@ -1337,7 +1337,7 @@ function parseRings(str: string) {
     });
 }
 
-function parseWkt(str) {
+function parseWkt(str: string) {
     str = str.replace(/^(?:--|#).*/gm, '').trim();
     if (!str) return [];
 
@@ -3378,7 +3378,7 @@ function setupPolygonesDragDrop() {
         }
         const reader = new FileReader();
         reader.onload = (evt) => {
-            const text = evt.target.result;
+            const text = evt.target.result as string;
             const features = parseWkt(text);
             if (features.length === 0) {
                 alert(t("import.no_valid_geometry"));
