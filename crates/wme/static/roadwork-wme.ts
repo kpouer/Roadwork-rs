@@ -758,6 +758,15 @@ function setFloatingPanelVisible(visible: boolean) {
     if (floatingToggleBtn) {
         floatingToggleBtn.style.display = visible ? "none" : "block";
     }
+    if (visible) {
+        try {
+            wmeSDK?.LayerSwitcher.setLayerCheckboxChecked({ name: getLayerName('New'), isChecked: true });
+        } catch (_) {}
+        try {
+            wmeSDK?.LayerSwitcher.setClosuresLayerCheckboxChecked({ isChecked: true });
+        } catch (_) {}
+        renderRoadworksToMap(currentRoadworks);
+    }
 }
 
 function openOpendataHelper() {
