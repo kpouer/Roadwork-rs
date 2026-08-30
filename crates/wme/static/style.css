@@ -561,6 +561,16 @@
     word-wrap: break-word;
 }
 
+.rw-detail-actions {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.rw-detail-actions .roadwork-btn {
+    width: 100%;
+}
+
 .rw-status-dropdown {
     position: relative;
     display: inline-block;
@@ -621,20 +631,6 @@
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
-}
-
-.rw-detail-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0,0,0,0.15);
-    z-index: 100001;
-}
-
-.rw-detail-overlay.rw-hidden {
-    display: none;
 }
 
 .roadwork-wkt-section {

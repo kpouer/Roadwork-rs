@@ -451,6 +451,87 @@ function changeRoadworkStatus(rwId: string, newStatus: string) {
     showDetailPanel(rw);
 }
 
+async function applyClosureToSelectedSegments() {
+    if (!wmeSDK) return;
+    if (!selectedRoadworkId) {
+        setStatus(t("status.closure.no_dates"), "error");
+        return;
+    }
+    const rw = currentRoadworks[selectedRoadworkId] || roadworksPagination.allItems[selectedRoadworkId];
+    if (!rw) {
+        setStatus(t("status.closure.no_dates"), "error");
+        return;
+    }
+    if (!rw.start || !rw.end) {
+        setStatus(t("status.closure.no_dates"), "error");
+        return;
+    }
+
+    let selection;
+    try {
+        selection = wmeSDK.Editing.getSelection();
+    } catch (e) {
+        setStatus(t("status.closure.errors", { errors: String(e) }), "error");
+        return;
+    }
+    if (!selection || selection.objectType !== "segment" || !Array.isArray(selection.ids) || selection.ids.length === 0) {
+        setStatus(t("status.closure.no_segments"), "error");
+        return;
+    }
+
+    const description: string = rw.opendata?.description || rw.road || "";
+    let created = 0;
+    const errors: string[] = [];
+    for (const segmentId of selection.ids) {
+        let segment;
+        try {
+            segment = wmeSDK.DataModel.Segments.getById({ segmentId });
+        } catch (e) {
+            errors.push(`#${segmentId}: ${String(e)}`);
+            continue;
+        }
+        if (!segment) {
+            errors.push(`#${segmentId}: not found`);
+            continue;
+        }
+        if (!segment.isDrivable) continue;
+
+        const directions: boolean[] = [];
+        if (segment.isTwoWay || segment.isAtoB) directions.push(true);
+        if (segment.isTwoWay || segment.isBtoA) directions.push(false);
+
+        for (const isForward of directions) {
+            try {
+                wmeSDK.DataModel.RoadClosures.addClosure({
+                    segmentId,
+                    description,
+                    startDate: rw.start,
+                    endDate: rw.end,
+                    isForward,
+                    fromNodeClosed: true,
+                    isPermanent: true,
+                    trafficEventId: null,
+                });
+                created++;
+            } catch (e) {
+                errors.push(`#${segmentId} ${isForward ? "fwd" : "rev"}: ${String(e)}`);
+            }
+        }
+    }
+
+    if (errors.length > 0) {
+        const type = created > 0 ? "error" : "error";
+        setStatus(
+            created > 0
+                ? t("status.closure.partial", { count: String(created), errors: errors.join("; ") })
+                : t("status.closure.errors", { errors: errors.join("; ") }),
+            type,
+        );
+    } else {
+        setStatus(t("status.closure.done", { count: String(created) }), "success");
+    }
+}
+
 function loadServicesCache() {
     try {
         console.info("[Roadwork] loadServicesCache");
@@ -1464,14 +1545,7 @@ function parseWkt(str: string) {
     return features;
 }
 
-let detailOverlayEl: HTMLDivElement | null = null;
-
 function createDetailPanel() {
-    detailOverlayEl = document.createElement("div");
-    detailOverlayEl.className = "rw-detail-overlay rw-hidden";
-    detailOverlayEl.addEventListener("click", () => deselectRoadwork());
-    document.body.appendChild(detailOverlayEl);
-
     detailPanelEl = document.createElement("div");
     detailPanelEl.className = "rw-detail-panel rw-hidden";
 
@@ -1626,8 +1700,21 @@ function showDetailPanel(rw) {
         addField(t("detail.impact"), val);
     }
 
+    {
+        const actions = document.createElement("div");
+        actions.className = "rw-detail-actions";
+        const closureBtn = document.createElement("button");
+        closureBtn.className = "roadwork-btn";
+        closureBtn.textContent = t("btn.apply_closure");
+        closureBtn.title = t("btn.apply_closure_title");
+        closureBtn.addEventListener("click", () => {
+            void applyClosureToSelectedSegments();
+        });
+        actions.appendChild(closureBtn);
+        body.appendChild(actions);
+    }
+
     const wasHidden = detailPanelEl.classList.contains("rw-hidden");
-    detailOverlayEl.classList.remove("rw-hidden");
     detailPanelEl.classList.remove("rw-hidden");
     if (wasHidden) {
         detailPanelEl.style.left = "";
@@ -1643,9 +1730,6 @@ function showDetailPanel(rw) {
 function hideDetailPanel() {
     if (detailPanelEl) {
         detailPanelEl.classList.add("rw-hidden");
-    }
-    if (detailOverlayEl) {
-        detailOverlayEl.classList.add("rw-hidden");
     }
 }
 

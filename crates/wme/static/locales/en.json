@@ -46,6 +46,8 @@
   "btn.delete_opendata_title": "Delete the selected source",
   "btn.create_opendata_title": "Open opendata service creation assistant",
   "btn.refresh_opendata_title": "Reload data for the selected source",
+  "btn.apply_closure": "Apply closure",
+  "btn.apply_closure_title": "Create a closure on all currently selected segments using this work's dates",
 
   "status.loading": "Loading...",
   "status.loading_opendata": "Loading opendata...",
@@ -61,6 +63,12 @@
   "status.copied": "Copied to clipboard",
   "status.copy_failed": "Copy failed",
   "status.no_descriptor": "No descriptor for {name}",
+
+  "status.closure.done": "Closures applied on {count} segment(s)",
+  "status.closure.partial": "Closures applied on {count} segment(s), errors: {errors}",
+  "status.closure.errors": "Closure failed: {errors}",
+  "status.closure.no_segments": "No segments selected - select segments on the map first",
+  "status.closure.no_dates": "This work has no start/end dates",
 
   "progress.saving_descriptor": "Saving descriptor…",
   "progress.syncing_engine": "Syncing to extension engine…",
