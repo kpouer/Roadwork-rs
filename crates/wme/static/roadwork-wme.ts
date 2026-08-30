@@ -423,9 +423,22 @@ function createPaginationRow(p: PaginationState, onUpdate: () => void, extraBefo
 }
 
 function changeRoadworkStatus(rwId: string, newStatus: string) {
-    const rw = currentRoadworks[rwId];
+    // The detail panel may show a roadwork that is only present in one of the
+    // two data sources (currentRoadworks = visible/bbox set vs
+    // roadworksPagination.allItems = full list). Resolve from either so the
+    // change always lands somewhere.
+    const rw = currentRoadworks[rwId] || roadworksPagination.allItems[rwId];
     if (!rw) return;
 
+    for (const source of [currentRoadworks, roadworksPagination.allItems]) {
+        const sibling = source[rwId];
+        if (sibling && sibling !== rw) {
+            sibling.sync_data = sibling.sync_data || {};
+            sibling.sync_data.status = newStatus;
+        } else if (!sibling) {
+            source[rwId] = rw;
+        }
+    }
     rw.sync_data = rw.sync_data || {};
     rw.sync_data.status = newStatus;
 
