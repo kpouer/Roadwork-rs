@@ -1,5 +1,4 @@
-import {SdkFeature} from "wme-sdk-typings";
-
+type SdkFeature = import("wme-sdk-typings").SdkFeature;
 type WmeSDK = import("wme-sdk-typings").WmeSDK;
 const { t, getLocale, detectLocale } = (window as any).__rw_i18n;
 
