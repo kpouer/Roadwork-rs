@@ -2324,9 +2324,9 @@ interface SaveDescriptorResult {
 }
 
 async function saveOpendataDescriptorFromHelper(
-    name,
+    name: string,
     descriptor,
-    oldName,
+    oldName: string,
     data,
 ): Promise<SaveDescriptorResult> {
     if (!name || !descriptor) {
