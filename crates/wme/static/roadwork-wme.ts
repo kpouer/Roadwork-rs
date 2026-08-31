@@ -1451,6 +1451,15 @@ function parseRings(str: string) {
     });
 }
 
+function buildSdkFeature(idCounter: number, type: string, coordinates: any) {
+    return {
+        id: `wkt-${idCounter}`,
+        type: 'Feature',
+        geometry: { type, coordinates },
+        properties: { geomType: type }
+    } as SdkFeature;
+}
+
 function parseWkt(str: string) {
     str = str.replace(/^(?:--|#).*/gm, '').trim();
     if (!str) return [];
@@ -1470,36 +1479,21 @@ function parseWkt(str: string) {
             case 'POINT': {
                 const [x, y] = inner.trim().split(/\s+/).map(Number);
                 if (isFinite(x) && isFinite(y)) {
-                    features.push({
-                        id: `wkt-${idCounter++}`,
-                        type: 'Feature',
-                        geometry: { type: 'Point', coordinates: [x, y] },
-                        properties: { geomType: 'Point' }
-                    } as SdkFeature);
+                    features.push(buildSdkFeature(idCounter++, 'Point', [x, y]));
                 }
                 break;
             }
             case 'LINESTRING': {
                 const coords = parseCoordList(inner);
                 if (coords.length >= 2) {
-                    features.push({
-                        id: `wkt-${idCounter++}`,
-                        type: 'Feature',
-                        geometry: { type: 'LineString', coordinates: coords },
-                        properties: { geomType: 'LineString' }
-                    } as SdkFeature);
+                    features.push(buildSdkFeature(idCounter++, 'LineString', coords));
                 }
                 break;
             }
             case 'POLYGON': {
                 const rings = parseRings(inner);
                 if (rings.length > 0 && rings[0].length >= 3) {
-                    features.push({
-                        id: `wkt-${idCounter++}`,
-                        type: 'Feature',
-                        geometry: { type: 'Polygon', coordinates: rings },
-                        properties: { geomType: 'Polygon' }
-                    } as SdkFeature);
+                    features.push(buildSdkFeature(idCounter++, 'Polygon', rings));
                 }
                 break;
             }
@@ -1509,12 +1503,7 @@ function parseWkt(str: string) {
                     : parseCoordList(inner);
                 for (const [x, y] of coords) {
                     if (isFinite(x) && isFinite(y)) {
-                        features.push({
-                            id: `wkt-${idCounter++}`,
-                            type: 'Feature',
-                            geometry: { type: 'Point', coordinates: [x, y] },
-                            properties: { geomType: 'Point' }
-                        } as SdkFeature);
+                        features.push(buildSdkFeature(idCounter++, 'Point', [x, y]));
                     }
                 }
                 break;
@@ -1524,12 +1513,7 @@ function parseWkt(str: string) {
                 for (const g of groups) {
                     const coords = parseCoordList(g);
                     if (coords.length >= 2) {
-                        features.push({
-                            id: `wkt-${idCounter++}`,
-                            type: 'Feature',
-                            geometry: { type: 'LineString', coordinates: coords },
-                            properties: { geomType: 'LineString' }
-                        } as SdkFeature);
+                        features.push(buildSdkFeature(idCounter++, 'LineString', coords));
                     }
                 }
                 break;
@@ -1539,12 +1523,7 @@ function parseWkt(str: string) {
                 for (const g of groups) {
                     const rings = parseRings(g);
                     if (rings.length > 0 && rings[0].length >= 3) {
-                        features.push({
-                            id: `wkt-${idCounter++}`,
-                            type: 'Feature',
-                            geometry: { type: 'Polygon', coordinates: rings },
-                            properties: { geomType: 'Polygon' }
-                        } as SdkFeature);
+                        features.push(buildSdkFeature(idCounter++, 'Polygon', rings));
                     }
                 }
                 break;
