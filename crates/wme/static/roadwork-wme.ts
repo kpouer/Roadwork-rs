@@ -871,7 +871,7 @@ function editRoadworkService() {
         openHelper("roadwork", false, name, remote[1]);
         return;
     }
-    openHelper("builtin", false, name);
+    openHelper("roadwork", false, name);
 }
 
 function editOpendataService(name: string) {
@@ -996,6 +996,8 @@ function openHelper(helper: string, create: boolean = false, service?: string, d
     }, 1000);
 }
 
+const ZOOM_LEVEL = 16;
+
 function createFloatingPanel() {
     floatingPanelEl = document.createElement("div");
     floatingPanelEl.className = "roadwork-floating-panel";
@@ -1081,7 +1083,7 @@ function createFloatingPanel() {
         if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
             wmeSDK.Map.setMapCenter({
                 lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
-                zoomLevel: 12,
+                zoomLevel: ZOOM_LEVEL,
             });
         }
     });
@@ -1329,7 +1331,7 @@ function updateFloatingTable() {
                 renderRoadworksToMap(currentRoadworks);
             }
             if (rw.opendata?.latitude && rw.opendata?.longitude && wmeSDK?.Map?.setMapCenter) {
-                wmeSDK.Map.setMapCenter({lonLat: {lon: rw.opendata?.longitude, lat: rw.opendata?.latitude}});
+                wmeSDK.Map.setMapCenter({lonLat: {lon: rw.opendata?.longitude, lat: rw.opendata?.latitude}, zoomLevel: ZOOM_LEVEL});
             }
         });
 
@@ -2616,59 +2618,6 @@ async function deleteSelectedRoadworkService() {
     }
 }
 
-function showOpendataExport(name: string) {
-    const services = getOpendataServices();
-    const svc = services[name];
-    if (!svc) return;
-    const overlay = document.createElement("div");
-    overlay.className = "rw-opendata-export-overlay";
-
-    const box = document.createElement("div");
-    box.className = "rw-opendata-export-box";
-
-    const header = document.createElement("div");
-    header.className = "rw-opendata-export-header";
-    const title = document.createElement("h4");
-    title.textContent = t("opendata.title", { name });
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "roadwork-btn roadwork-btn-icon";
-    closeBtn.textContent = "\u00d7";
-    closeBtn.addEventListener("click", () => overlay.remove());
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-    box.appendChild(header);
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "rw-opendata-export-textarea";
-    textarea.value = svc.descriptor;
-    textarea.readOnly = true;
-    box.appendChild(textarea);
-
-    const actions = document.createElement("div");
-    actions.className = "rw-opendata-export-actions";
-    const copyBtn = document.createElement("button");
-    copyBtn.className = "roadwork-btn roadwork-btn-secondary";
-    copyBtn.textContent = t("btn.copy");
-    copyBtn.addEventListener("click", () => {
-        textarea.select();
-        try {
-            navigator.clipboard.writeText(svc.descriptor)
-                .then(() => setStatus(t("status.copied"), "success"))
-                .catch(() => setStatus(t("status.copy_failed"), "error"));
-        } catch (_) {
-            document.execCommand("copy");
-        }
-    });
-    actions.appendChild(copyBtn);
-    box.appendChild(actions);
-
-    overlay.appendChild(box);
-    overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.remove();
-    });
-    document.body.appendChild(overlay);
-}
-
 function populateServiceSelect(selectEl, services) {
     selectEl.replaceChildren();
     for (const svc of services) {
@@ -2729,7 +2678,7 @@ async function switchToService(newService: string) {
     if (svcInfo?.center && wmeSDK?.Map?.setMapCenter) {
         wmeSDK.Map.setMapCenter({
             lonLat: { lon: svcInfo.center.lon, lat: svcInfo.center.lat },
-            zoomLevel: 12,
+            zoomLevel: ZOOM_LEVEL,
         });
     }
 }
@@ -2737,12 +2686,12 @@ async function switchToService(newService: string) {
 function centerOnOpendataItem(od) {
     if (!wmeSDK?.Map) return;
     if (od.latitude && od.longitude) {
-        wmeSDK.Map.setMapCenter({lonLat: {lon: od.longitude, lat: od.latitude}});
+        wmeSDK.Map.setMapCenter({lonLat: {lon: od.longitude, lat: od.latitude}, zoomLevel: ZOOM_LEVEL});
     } else if (od.polygons && od.polygons.length > 0) {
         const polygon = od.polygons[0];
         const mid = Math.floor(polygon.xpoints.length / 2);
         if (polygon.xpoints[mid] !== undefined) {
-            wmeSDK.Map.setMapCenter({lonLat: {lon: polygon.xpoints[mid], lat: polygon.ypoints[mid]}});
+            wmeSDK.Map.setMapCenter({lonLat: {lon: polygon.xpoints[mid], lat: polygon.ypoints[mid]}, zoomLevel: ZOOM_LEVEL});
         }
     }
 }
@@ -3173,13 +3122,13 @@ function centerOnFirstFeature(features: SdkFeature[]) {
     const first = features[0];
     if (first.geometry.type === 'Point') {
         const [lon, lat] = first.geometry.coordinates;
-        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}, zoomLevel: ZOOM_LEVEL});
     } else {
         const coords = first.geometry.type === 'Polygon' ? first.geometry.coordinates[0] : first.geometry.coordinates;
         if (coords && coords.length > 0) {
             const mid = Math.floor(coords.length / 2);
             const [lon, lat] = coords[mid];
-            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}, zoomLevel: ZOOM_LEVEL});
         }
     }
 }
@@ -4458,12 +4407,12 @@ async function init() {
                 const item = entry?.item;
                 if (item && wmeSDK?.Map) {
                     if (item.latitude && item.longitude) {
-                        wmeSDK.Map.setMapCenter({lonLat: {lon: item.longitude, lat: item.latitude}});
+                        wmeSDK.Map.setMapCenter({lonLat: {lon: item.longitude, lat: item.latitude}, zoomLevel: ZOOM_LEVEL});
                     } else if (item.polygons && item.polygons.length > 0) {
                         const polygon = item.polygons[0];
                         const mid = Math.floor(polygon.xpoints.length / 2);
                         if (polygon.xpoints[mid] !== undefined) {
-                            wmeSDK.Map.setMapCenter({lonLat: {lon: polygon.xpoints[mid], lat: polygon.ypoints[mid]}});
+                            wmeSDK.Map.setMapCenter({lonLat: {lon: polygon.xpoints[mid], lat: polygon.ypoints[mid]}, zoomLevel: ZOOM_LEVEL});
                         }
                     }
                 }
@@ -4487,20 +4436,20 @@ async function init() {
                     const geom = feature.geometry;
                     if (geom.type === 'Point') {
                         const [lon, lat] = geom.coordinates;
-                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+                        wmeSDK.Map.setMapCenter({lonLat: {lon, lat}, zoomLevel: ZOOM_LEVEL});
                     } else if (geom.type === 'Polygon') {
                         const coords = geom.coordinates[0];
                         if (coords && coords.length > 0) {
                             const mid = Math.floor(coords.length / 2);
                             const [lon, lat] = coords[mid];
-                            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+                            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}, zoomLevel: ZOOM_LEVEL});
                         }
                     } else if (geom.type === 'LineString') {
                         const coords = geom.coordinates;
                         if (coords && coords.length > 0) {
                             const mid = Math.floor(coords.length / 2);
                             const [lon, lat] = coords[mid];
-                            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}});
+                            wmeSDK.Map.setMapCenter({lonLat: {lon, lat}, zoomLevel: ZOOM_LEVEL});
                         }
                     }
                 }
