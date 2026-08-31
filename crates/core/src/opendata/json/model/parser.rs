@@ -1,5 +1,5 @@
 use crate::opendata::json::model::date_result::DateResult;
-use chrono::{DateTime, NaiveDate, TimeZone};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,12 @@ impl Parser {
     fn parse_date(&self, date_string: &str, locale: Tz) -> Option<i64> {
         match &self.format {
             Some(format) => {
+                // Try full datetime first (handles formats with %H, %M, %S, etc.)
+                if let Ok(naive_datetime) = NaiveDateTime::parse_from_str(date_string, format) {
+                    let datetime = locale.from_local_datetime(&naive_datetime).single()?;
+                    return Some(datetime.timestamp_millis());
+                }
+                // Fall back to date-only (handles formats without time components)
                 let naive_date = NaiveDate::parse_from_str(date_string, format).ok()?;
                 let naive_datetime = naive_date.and_hms_opt(0, 0, 0)?;
                 let datetime = locale.from_local_datetime(&naive_datetime).single()?;
