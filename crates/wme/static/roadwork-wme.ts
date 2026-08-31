@@ -1273,8 +1273,8 @@ function updateFloatingTable() {
             switch (col) {
                 case 0: return (rw.sync_data?.status || "New");
                 case 1: return (rw.road || "");
-                case 2: return rw.start != null ? rw.start : Infinity;
-                case 3: return rw.end != null ? rw.end : Infinity;
+                case 2: return rw.start == null ? Infinity : rw.start;
+                case 3: return rw.end == null ? Infinity : rw.end;
                 case 4: return (rw.opendata?.description || "");
                 case 5: return (rw.impact_circulation_detail || "");
                 default: return "";
@@ -2380,16 +2380,6 @@ function renderOpendataToMap() {
     } catch (e) {
         console.warn("[Roadwork] Failed to add Opendata features:", e);
     }
-}
-
-function setOpendataServiceVisible(name: string, visible: boolean) {
-    const services = getOpendataServices();
-    if (!services[name]) return;
-    services[name].visible = visible;
-    rpcCall("set_opendata_source_flags", [name, services[name].enabled !== false, visible]).catch((e) => {
-        console.warn(`[Roadwork] Failed to update opendata flags for ${name}:`, e);
-    });
-    renderOpendataToMap();
 }
 
 async function refreshOpendataService(name: string) {
