@@ -1114,6 +1114,14 @@ function createFloatingPanel() {
     controls.appendChild(deleteBtn);
     deleteRoadworkBtnEl = deleteBtn;
 
+    const aboutBtn = document.createElement("button");
+    aboutBtn.textContent = "?";
+    aboutBtn.title = t("btn.about_source_title");
+    aboutBtn.addEventListener("click", () => {
+        void showCurrentRoadworkSourceAbout();
+    });
+    controls.appendChild(aboutBtn);
+
     const statusDiv = document.createElement("div");
     statusDiv.id = "rw-status";
     statusDiv.className = "roadwork-status rw-floating-status";
@@ -2630,6 +2638,43 @@ function updateDeleteRoadworkBtnState() {
     deleteRoadworkBtnEl.title = deletable
         ? t("btn.delete_roadwork_title")
         : t("status.not_deletable");
+}
+
+async function showCurrentRoadworkSourceAbout() {
+    const name = serviceSelectEl?.value || settings.service;
+    openSourceDetail();
+    let info: SourceInfo[];
+    try {
+        info = await rpcCall("get_sources_info") as SourceInfo[];
+    } catch (e) {
+        console.warn("[Roadwork] Failed to load source info:", e);
+        return;
+    }
+    const s = info.find((x) => x.name === name);
+    if (!s) return;
+
+    const local = loadLocalDescriptors();
+    const customOrigins = loadCustomOriginsCache() || {};
+    const customUrls = Array.isArray(settings.customSources) ? settings.customSources : [];
+    const isLocal = Object.prototype.hasOwnProperty.call(local, s.name);
+    let descriptorUrl: string | undefined;
+    for (const url of customUrls) {
+        if (customOrigins[s.name] === url) {
+            descriptorUrl = url;
+            break;
+        }
+    }
+    openSourceDetail({
+        sourceName: s.name,
+        displayName: s.source_name || s.name,
+        country: s.country || undefined,
+        producer: s.producer || undefined,
+        licenceName: s.licence_name || undefined,
+        licenceUrl: s.licence_url || undefined,
+        sourceUrl: s.source_url || undefined,
+        descriptorUrl: !isLocal && !descriptorUrl ? s.descriptor_url || undefined : descriptorUrl,
+        isLocal,
+    });
 }
 
 async function switchToService(newService: string) {

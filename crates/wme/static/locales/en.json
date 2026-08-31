@@ -44,6 +44,7 @@
   "btn.edit_opendata_title": "Open assistant to edit the selected source",
   "btn.edit_roadwork_title": "Edit this roadwork source descriptor (embedded sources are read-only)",
   "btn.delete_opendata_title": "Delete the selected source",
+  "btn.about_source_title": "About the selected source",
   "btn.create_opendata_title": "Open opendata service creation assistant",
   "btn.refresh_opendata_title": "Reload data for the selected source",
   "btn.apply_closure": "Apply closure",
