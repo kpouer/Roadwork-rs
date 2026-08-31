@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-27T19:55:52.590475+00:00",
-  "count": 8,
+  "generatedAt": "2026-08-31T20:37:16.587844+00:00",
+  "count": 9,
   "files": [
     {
       "key": "Belgium-Liege",
@@ -20,6 +20,15 @@
       "size": 1524,
       "modified": "2026-08-20T20:56:45.856257418+00:00",
       "sha256": "4a73cc2d1013ae4a85978a17a3d27800c777026e5ba93efcd8d91004cfb5c537"
+    },
+    {
+      "key": "France-72-Sarthe",
+      "path": "France/France-72-Sarthe.json",
+      "country": "France",
+      "name": "Sarthe (72)",
+      "size": 1257,
+      "modified": "2026-08-31T20:36:41.052+00:00",
+      "sha256": "c4e0d19a83ed1d36b0496325c621b1ec3c6104bbc523bca2a13015544e973275"
     },
     {
       "key": "France-Bordeaux",
