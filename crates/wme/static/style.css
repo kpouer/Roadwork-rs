@@ -1267,9 +1267,67 @@
     width: 520px;
 }
 
+.rw-about-header-btns {
+    display: flex;
+    gap: 4px;
+}
+
 .rw-sources-section {
     margin-bottom: 14px;
 }
+
+.rw-sources-origin-header-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rw-sources-origin-header-wrap > h4.rw-sources-origin-header {
+    margin: 6px 0 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #888;
+    cursor: help;
+}
+
+.rw-sources-index-link {
+    font-size: 10px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 500;
+    color: #1a73e8;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.rw-sources-index-link:hover {
+    text-decoration: underline;
+}
+
+.rw-sources-updated {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: #fff3cd;
+    color: #8a6d1a;
+    font-size: 10px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.rw-sources-updated-banner {
+    margin-bottom: 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
 
 .rw-sources-section > h4 {
     margin: 12px 0 8px;

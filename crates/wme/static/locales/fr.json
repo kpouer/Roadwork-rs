@@ -174,5 +174,10 @@
   "sources.detail_title": "Détails de la source",
   "sources.info": "Infos sur cette source",
   "sources.no_info": "Aucune information disponible pour cette source.",
-  "sources.descriptor_url": "URL du descripteur"
+  "sources.descriptor_url": "URL du descripteur",
+  "sources.refresh": "Recharger les index et vérifier les mises à jour",
+  "sources.refreshing": "Actualisation...",
+  "sources.index_url": "Ouvrir l'index",
+  "sources.updated": "Mis à jour",
+  "sources.updated_banner": "{count} source(s) mise(s) à jour."
 }

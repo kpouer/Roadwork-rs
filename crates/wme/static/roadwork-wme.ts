@@ -557,16 +557,28 @@ function saveServicesCache(services) {
     }
 }
 
+// Names of the services that were newly added or updated by the most recent
+// `sync_index` (see `fetchServices`). Cleared on every sync; used by the
+// "Data sources" panel to badge the services that changed.
+let lastUpdatedSources: Set<string> = new Set();
+
 async function fetchServices(forceRefresh = false) {
     if (!forceRefresh) {
         const cached = loadServicesCache();
-        if (cached) return cached;
+        if (cached) {
+            lastUpdatedSources = new Set();
+            return cached;
+        }
         console.info("[Roadwork] fetchServices no cache, will refresh");
     }
+    lastUpdatedSources = new Set();
     try {
         const knownModified = loadKnownModified();
         const result = await rpcCall("sync_index", [knownModified]);
         if (result && Array.isArray(result.services)) {
+            if (result.new_or_updated && Array.isArray(result.new_or_updated)) {
+                lastUpdatedSources = new Set(result.new_or_updated);
+            }
             if (result.known_modified && typeof result.known_modified === "object") {
                 saveKnownModified(result.known_modified);
             }
@@ -3806,6 +3818,7 @@ interface SourceRow {
     originLabel: string;
     originTooltip?: string;
     detail?: SourceDetail;
+    updated?: boolean;
 }
 
 interface SourceColumn {
@@ -3839,15 +3852,28 @@ function buildSourcesWindow() {
     const title = document.createElement("h4");
     title.textContent = t("sources.title");
 
+    const headerBtns = document.createElement("div");
+    headerBtns.className = "rw-about-header-btns";
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.textContent = "\u21bb";
+    refreshBtn.title = t("sources.refresh");
+    refreshBtn.addEventListener("click", () => {
+        void refreshSourcesWindow(body, refreshBtn);
+    });
+    headerBtns.appendChild(refreshBtn);
+
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "\u00d7";
     closeBtn.title = t("btn.close");
     closeBtn.addEventListener("click", () => {
         sourcesWindowEl.classList.add("rw-hidden");
     });
+    headerBtns.appendChild(closeBtn);
 
     header.appendChild(title);
-    header.appendChild(closeBtn);
+    header.appendChild(headerBtns);
 
     const body = document.createElement("div");
     body.className = "rw-about-body";
@@ -3881,6 +3907,22 @@ function buildSourcesWindow() {
     void populateSourcesWindow(body);
 }
 
+async function refreshSourcesWindow(body: HTMLDivElement, refreshBtn: HTMLButtonElement) {
+    const originalLabel = refreshBtn.textContent ?? "";
+    refreshBtn.textContent = t("sources.refreshing");
+    refreshBtn.disabled = true;
+    try {
+        await fetchServices(true);
+        body.innerHTML = "";
+        await populateSourcesWindow(body);
+    } catch (e) {
+        console.warn("[Roadwork] Failed to refresh sources:", e);
+    } finally {
+        refreshBtn.textContent = originalLabel;
+        refreshBtn.disabled = false;
+    }
+}
+
 function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initialSort?: Array<keyof SourceRow>): HTMLElement {
     const initialKeys = (initialSort || columns.map((c) => c.key)).slice();
     const dirs: number[] = initialKeys.map(() => 1);
@@ -3897,6 +3939,13 @@ function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initia
                     td.title = row.originTooltip;
                 }
                 td.textContent = col.key === "country" && !row.country ? "—" : row[col.key] as string;
+                if (row.updated && col.key === "name") {
+                    const badge = document.createElement("span");
+                    badge.className = "rw-sources-updated";
+                    badge.textContent = t("sources.updated");
+                    badge.title = t("sources.updated");
+                    td.appendChild(badge);
+                }
                 tr.appendChild(td);
             }
             const infoTd = document.createElement("td");
@@ -3959,6 +4008,9 @@ function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initia
 const ORIGIN_OFFICIAL = "__official";
 const ORIGIN_LOCAL = "__local";
 
+// Remote index URL of the built-in (Official) roadwork descriptors.
+const OFFICIAL_INDEX_URL = "https://raw.githubusercontent.com/kpouer/Roadwork-rs/refs/heads/main/opendata/roadwork/index.json";
+
 // Builds a human-readable label, an optional tooltip (full URL) and a sort
 // token for a roadwork source origin. Custom index URLs sort after the
 // built-in "Official" and "Local" origins.
@@ -4000,13 +4052,8 @@ async function populateSourcesWindow(body: HTMLDivElement) {
     }
     body.removeChild(loading);
 
-    // Roadwork sources: one flat sortable table with an Origin column.
-    const rwSection = document.createElement("div");
-    rwSection.className = "rw-sources-section";
-    const rwTitle = document.createElement("h4");
-    rwTitle.textContent = t("sources.roadworks");
-    rwSection.appendChild(rwTitle);
-
+    // Roadwork sources: one table per origin (the website whose index contained
+    // the descriptor), grouped in a predictable order.
     const knownNames = new Set(info.map((s) => s.name));
     const local = loadLocalDescriptors();
     const customOrigins = loadCustomOriginsCache() || {};
@@ -4040,12 +4087,13 @@ async function populateSourcesWindow(body: HTMLDivElement) {
     const rwRows: SourceRow[] = info.map((s) => {
         const origin = originByKey[s.name] || "__official";
         const { label, tooltip, token } = originInfo(origin);
-        return {
+        const row: SourceRow = {
             name: s.source_name || s.name,
             country: s.country || "",
             origin: token,
             originLabel: label,
             originTooltip: tooltip,
+            updated: lastUpdatedSources.has(s.name) || lastUpdatedSources.has(s.source_name || s.name),
             detail: {
                 sourceName: s.name,
                 displayName: s.source_name || s.name,
@@ -4058,20 +4106,94 @@ async function populateSourcesWindow(body: HTMLDivElement) {
                 isLocal: origin === "__local",
             },
         };
+        return row;
     });
 
     const rwColumns: SourceColumn[] = [
         { key: "name", label: t("sources.name") },
         { key: "country", label: t("sources.country") },
-        { key: "originLabel", sortKey: "origin", label: t("sources.origin") },
     ];
+
+    // Updated sources summary banner.
+    const updatedCount = rwRows.filter((r) => r.updated).length;
+    if (updatedCount > 0) {
+        const banner = document.createElement("div");
+        banner.className = "rw-sources-updated-banner";
+        banner.textContent = t("sources.updated_banner", { count: updatedCount });
+        body.appendChild(banner);
+    }
+
+    // Group rows by their resolved origin, in a stable order: official, local,
+    // then custom index URLs alphabetically.
+    const official = rwRows.filter((r) => r.origin === "\u0000official");
+    const localRows = rwRows.filter((r) => r.origin === "\u0001local");
+    const customOriginsOrder = Array.from(
+        new Set(
+            rwRows
+                .filter((r) => r.origin.startsWith("\u0002"))
+                .map((r) => r.originTooltip || "")
+                .filter((u) => u.length > 0)
+        )
+    ).sort();
+
+    const buildOriginGroup = (rows: SourceRow[], originLabel: string, tooltip?: string, indexUrl?: string) => {
+        const group = document.createElement("div");
+        group.className = "rw-sources-section";
+        const headerWrap = document.createElement("div");
+        headerWrap.className = "rw-sources-origin-header-wrap";
+        const header = document.createElement("h4");
+        header.className = "rw-sources-origin-header";
+        header.textContent = originLabel;
+        if (tooltip) {
+            header.title = tooltip;
+        }
+        headerWrap.appendChild(header);
+        if (indexUrl) {
+            const link = document.createElement("a");
+            link.href = indexUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.className = "rw-sources-index-link";
+            link.textContent = t("sources.index_url");
+            link.title = indexUrl;
+            headerWrap.appendChild(link);
+        }
+        group.appendChild(headerWrap);
+        if (rows.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "rw-sources-empty";
+            empty.textContent = t("sources.none");
+            group.appendChild(empty);
+        } else {
+            group.appendChild(buildSourcesTableFor(rows, rwColumns, ["name"]));
+        }
+        return group;
+    };
+
+    const rwSection = document.createElement("div");
+    rwSection.className = "rw-sources-section";
+    const rwTitle = document.createElement("h4");
+    rwTitle.textContent = t("sources.roadworks");
+    rwSection.appendChild(rwTitle);
+
+    const originGroups: HTMLElement[] = [];
+    originGroups.push(buildOriginGroup(official, t("sources.official"), undefined, OFFICIAL_INDEX_URL));
+    originGroups.push(buildOriginGroup(localRows, t("sources.local")));
+    for (const url of customOriginsOrder) {
+        const { label, tooltip } = originInfo(url);
+        originGroups.push(buildOriginGroup(rwRows.filter((r) => r.originTooltip === url), label, tooltip));
+    }
     if (rwRows.length === 0) {
         const empty = document.createElement("div");
         empty.className = "rw-sources-empty";
         empty.textContent = t("sources.none");
         rwSection.appendChild(empty);
     } else {
-        rwSection.appendChild(buildSourcesTableFor(rwRows, rwColumns, ["origin", "country", "name"]));
+        for (const group of originGroups) {
+            if (group.querySelector("table") !== null) {
+                rwSection.appendChild(group);
+            }
+        }
     }
     body.appendChild(rwSection);
 
