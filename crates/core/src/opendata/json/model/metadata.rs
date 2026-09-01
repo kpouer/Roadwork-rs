@@ -8,6 +8,11 @@ use std::str::FromStr;
 pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
+    /// Stable identity of the source, decoupled from the file path. If absent,
+    /// the descriptor key falls back to the file path without the `.json`
+    /// extension. A non-empty id is typically a UUID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub center: LatLng,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
@@ -29,6 +34,26 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    /// Returns the stable key of this source: `category.id` when present and
+    /// non-empty, otherwise the given fallback (the file path without the
+    /// `.json` extension).
+    pub fn effective_key(&self, fallback: &str) -> String {
+        self.id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| fallback.to_owned())
+    }
+
+    /// Human-readable display label: `<country> - <name>` (just `name` when
+    /// the country is missing).
+    pub fn label(&self) -> String {
+        match (&self.country, self.name.as_str()) {
+            (Some(country), name) if !country.trim().is_empty() => format!("{country} - {name}"),
+            (_, name) => name.to_string(),
+        }
+    }
+
     pub fn get_locale(&self) -> Tz {
         self.locale
             .as_ref()

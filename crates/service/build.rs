@@ -40,9 +40,8 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let mut content = String::from("pub const DESCRIPTORS: &[(&str, &str)] = &[\n");
     for file in &files {
-        let key = file.trim_end_matches(".json");
         content.push_str(&format!(
-            "    (\"{key}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../opendata/roadwork/{file}\"))),\n"
+            "    (\"{file}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../opendata/roadwork/{file}\"))),\n"
         ));
     }
     content.push_str("];\n");

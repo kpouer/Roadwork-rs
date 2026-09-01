@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 struct DescriptorMetadata {
     country: Option<String>,
     name: String,
+    id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,7 +91,13 @@ fn walk_json(dir: &Path, base: &Path, entries: &mut Vec<IndexEntry>) {
                 .unwrap()
                 .to_string_lossy()
                 .into_owned();
-            let key = name.trim_end_matches(".json").to_string();
+            let key = descriptor
+                .metadata
+                .id
+                .as_deref()
+                .filter(|id| !id.trim().is_empty())
+                .map(str::to_owned)
+                .unwrap_or_else(|| rel.trim_end_matches(".json").to_string());
             let meta = fs::metadata(&path).expect("Failed to get metadata");
 
             entries.push(IndexEntry {

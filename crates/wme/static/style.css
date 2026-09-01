@@ -1302,6 +1302,26 @@
     white-space: nowrap;
 }
 
+.rw-sources-refresh-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 0 6px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #555;
+    line-height: 1.4;
+}
+
+.rw-sources-refresh-btn:hover {
+    background: #eee;
+}
+
+.rw-sources-refresh-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
 .rw-sources-index-link:hover {
     text-decoration: underline;
 }

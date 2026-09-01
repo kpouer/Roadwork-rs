@@ -1,7 +1,7 @@
 use crate::opendata::json::model::lat_lng::LatLng;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_OPENDATA_SERVICE: &str = "France-Paris";
+const DEFAULT_OPENDATA_SERVICE: &str = "France/France-Paris";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {

@@ -141,7 +141,7 @@ const STATUS_COLORS = {
 };
 
 const DEFAULTS = {
-    service: "France-Paris",
+    service: "France/France-Paris",
     logLevel: "info",
     customSources: [],
 };
@@ -562,11 +562,36 @@ function saveServicesCache(services) {
 // "Data sources" panel to badge the services that changed.
 let lastUpdatedSources: Set<string> = new Set();
 
+// Migrates the persisted `settings.service` to a descriptor key currently in
+// `services`. Older builds stored the index basename (e.g. `France-Paris`),
+// while descriptors are now keyed by their `metadata.id` (e.g.
+// `France/France-Paris`). No-op when the stored value already resolves.
+function migrateServiceSelection(services: Array<any>) {
+    if (!settings.service) return;
+    if (services.some((s) => s.name === settings.service)) return;
+    const legacy = settings.service.includes("/")
+        ? settings.service.slice(settings.service.lastIndexOf("/") + 1)
+        : settings.service;
+    if (!legacy) return;
+    const match = services.find((s) => {
+        const stem = s.name.includes("/")
+            ? s.name.slice(s.name.lastIndexOf("/") + 1)
+            : s.name;
+        return stem === legacy;
+    });
+    if (match) {
+        console.info(`[Roadwork] Migrating service selection ${settings.service} -> ${match.name}`);
+        settings.service = match.name;
+        saveSettings();
+    }
+}
+
 async function fetchServices(forceRefresh = false) {
     if (!forceRefresh) {
         const cached = loadServicesCache();
         if (cached) {
             lastUpdatedSources = new Set();
+            migrateServiceSelection(cached);
             return cached;
         }
         console.info("[Roadwork] fetchServices no cache, will refresh");
@@ -583,6 +608,7 @@ async function fetchServices(forceRefresh = false) {
                 saveKnownModified(result.known_modified);
             }
             saveServicesCache(result.services);
+            migrateServiceSelection(result.services);
             return result.services;
         }
         return [];
@@ -746,6 +772,41 @@ async function syncCustomDescriptorsToWasm(forceRefresh = false) {
     }
     pairs = pairs.concat(localPairs);
     await rpcCall("set_custom_descriptors", [pairs]);
+    try {
+        localStorage.removeItem(SERVICES_CACHE_KEY);
+    } catch (_) {}
+}
+
+async function refreshCustomIndex(url: string) {
+    const pairs = loadCustomDescriptorsCache() || [];
+    const origins = loadCustomOriginsCache() || {};
+    const kept = pairs.filter((p) => origins[p[0]] !== url);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const index = await resp.json();
+    if (!index || !Array.isArray(index.files)) throw new Error("Invalid index.json");
+    const baseDir = url.substring(0, url.lastIndexOf("/") + 1);
+    for (const file of index.files) {
+        const path = file.path;
+        if (!path || path.includes("..") || path.startsWith("/")) {
+            console.warn(`[Roadwork] Skipping invalid path ${path} in ${url}`);
+            continue;
+        }
+        const name = file.key || path.replace(/\.json$/i, "");
+        const descUrl = baseDir + path;
+        try {
+            const resp2 = await fetch(descUrl);
+            if (!resp2.ok) throw new Error(`HTTP ${resp2.status}`);
+            const json = await resp2.text();
+            kept.push([name, json]);
+            origins[name] = url;
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to fetch descriptor ${descUrl}: ${e}`);
+        }
+    }
+    saveCustomDescriptorsCache(kept);
+    saveCustomOriginsCache(origins);
+    await syncCustomDescriptorsToWasm(false);
     try {
         localStorage.removeItem(SERVICES_CACHE_KEY);
     } catch (_) {}
@@ -2612,7 +2673,7 @@ function populateServiceSelect(selectEl, services) {
     for (const svc of services) {
         const opt = document.createElement("option");
         opt.value = svc.name;
-        opt.textContent = svc.name;
+        opt.textContent = svc.label || svc.name;
         if (svc.name === settings.service) {
             opt.selected = true;
         }
@@ -3938,7 +3999,8 @@ function buildSourcesTableFor(rows: SourceRow[], columns: SourceColumn[], initia
                     td.classList.add("rw-sources-origin");
                     td.title = row.originTooltip;
                 }
-                td.textContent = col.key === "country" && !row.country ? "—" : row[col.key] as string;
+                const emptyMap: Record<string, boolean> = { country: !row.country };
+                td.textContent = emptyMap[col.key] && col.key !== "name" ? "—" : row[col.key] as string;
                 if (row.updated && col.key === "name") {
                     const badge = document.createElement("span");
                     badge.className = "rw-sources-updated";
@@ -4136,7 +4198,32 @@ async function populateSourcesWindow(body: HTMLDivElement) {
         )
     ).sort();
 
-    const buildOriginGroup = (rows: SourceRow[], originLabel: string, tooltip?: string, indexUrl?: string) => {
+    const reRenderSources = async () => {
+        body.innerHTML = "";
+        await populateSourcesWindow(body);
+    };
+
+    const runIndexRefresh = (refresh: () => Promise<void>,
+                             refreshBtn: HTMLButtonElement) => {
+        const originalLabel = refreshBtn.textContent ?? "";
+        refreshBtn.textContent = t("sources.refreshing");
+        refreshBtn.disabled = true;
+        void refresh()
+            .then(reRenderSources)
+            .catch((e) => {
+                console.warn("[Roadwork] Failed to refresh index:", e);
+            })
+            .finally(() => {
+                refreshBtn.textContent = originalLabel;
+                refreshBtn.disabled = false;
+            });
+    };
+
+    const buildOriginGroup = (rows: SourceRow[],
+                              originLabel: string,
+                              tooltip?: string,
+                              indexUrl?: string,
+                              onRefresh?: () => Promise<void>) => {
         const group = document.createElement("div");
         group.className = "rw-sources-section";
         const headerWrap = document.createElement("div");
@@ -4158,6 +4245,17 @@ async function populateSourcesWindow(body: HTMLDivElement) {
             link.title = indexUrl;
             headerWrap.appendChild(link);
         }
+        if (onRefresh) {
+            const refreshBtn = document.createElement("button");
+            refreshBtn.type = "button";
+            refreshBtn.className = "rw-sources-refresh-btn";
+            refreshBtn.textContent = "\u21bb";
+            refreshBtn.title = t("sources.refresh");
+            refreshBtn.addEventListener("click", () => {
+                runIndexRefresh(onRefresh, refreshBtn);
+            });
+            headerWrap.appendChild(refreshBtn);
+        }
         group.appendChild(headerWrap);
         if (rows.length === 0) {
             const empty = document.createElement("div");
@@ -4177,11 +4275,11 @@ async function populateSourcesWindow(body: HTMLDivElement) {
     rwSection.appendChild(rwTitle);
 
     const originGroups: HTMLElement[] = [];
-    originGroups.push(buildOriginGroup(official, t("sources.official"), undefined, OFFICIAL_INDEX_URL));
+    originGroups.push(buildOriginGroup(official, t("sources.official"), undefined, OFFICIAL_INDEX_URL, () => fetchServices(true)));
     originGroups.push(buildOriginGroup(localRows, t("sources.local")));
     for (const url of customOriginsOrder) {
         const { label, tooltip } = originInfo(url);
-        originGroups.push(buildOriginGroup(rwRows.filter((r) => r.originTooltip === url), label, tooltip));
+        originGroups.push(buildOriginGroup(rwRows.filter((r) => r.originTooltip === url), label, tooltip, url, () => refreshCustomIndex(url)));
     }
     if (rwRows.length === 0) {
         const empty = document.createElement("div");

@@ -643,11 +643,12 @@ impl RoadworkApp {
                     .show_ui(ui, |ui| {
                         for service in &self.services {
                             let service_name = service.name.clone();
+                            let label = service.label.clone();
                             if ui
                                 .selectable_value(
                                     &mut self.selected_service,
                                     service.name.clone(),
-                                    service.name.clone(),
+                                    label,
                                 )
                                 .changed()
                             {

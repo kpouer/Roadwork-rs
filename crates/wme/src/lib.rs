@@ -43,6 +43,9 @@ thread_local! {
         RefCell::new(HashMap::new());
     static INDEX_DESCRIPTORS: RefCell<HashMap<String, ServiceDescriptor>> =
         RefCell::new(HashMap::new());
+    /// Relative file path (with `.json`) of each index descriptor, keyed by key,
+    /// kept so source URLs can be built from the physical file location.
+    static INDEX_PATHS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 }
 
 /// Maximum age of a cached roadworks snapshot before it is re-fetched (24h).
@@ -144,6 +147,13 @@ pub async fn sync_index(known_modified: JsValue) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&format!("Failed to fetch index: {e}")))?;
 
+    INDEX_PATHS.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        for entry in &index.files {
+            cell.insert(entry.key.clone(), entry.path.clone());
+        }
+    });
+
     let mut new_or_updated = Vec::new();
 
     for entry in &index.files {
@@ -192,6 +202,7 @@ pub async fn sync_index(known_modified: JsValue) -> Result<JsValue, JsValue> {
         .into_iter()
         .map(|(name, desc)| ServiceInfo {
             name,
+            label: desc.metadata.label(),
             center: desc.metadata.center,
         })
         .collect();
@@ -236,6 +247,7 @@ pub fn get_services() -> JsValue {
         .into_iter()
         .map(|(name, desc)| ServiceInfo {
             name,
+            label: desc.metadata.label(),
             center: desc.metadata.center,
         })
         .collect();
@@ -247,7 +259,8 @@ pub fn get_services() -> JsValue {
 /// extension About window.
 #[derive(Debug, Clone, Serialize)]
 pub struct SourceInfo {
-    /// Service key of the embedded descriptor (e.g. `France-Paris`).
+    /// Service key of the descriptor (the metadata `id`, or the file path
+    /// without the `.json` extension).
     pub name: String,
     pub country: Option<String>,
     pub source_name: String,
@@ -263,22 +276,27 @@ pub struct SourceInfo {
 #[wasm_bindgen]
 pub fn get_sources_info() -> JsValue {
     info!("[wasm] get_sources_info");
+    let builtin_paths = roadwork_service::builtin_paths();
     let mut sources: Vec<SourceInfo> = all_descriptors()
         .into_iter()
-        .map(|(name, desc)| SourceInfo {
-            name: name.clone(),
-            country: desc.metadata.country,
-            source_name: desc.metadata.name,
-            producer: desc.metadata.producer,
-            licence_name: desc.metadata.licence_name,
-            licence_url: desc.metadata.licence_url,
-            source_url: desc.metadata.source_url,
-            // Built-in descriptors live under the GitHub base URL with the
-            // descriptor key (file path without the `.json` extension).
-            descriptor_url: Some(format!(
-                "{}{name}.json",
-                roadwork_service::DESCRIPTORS_BASE_URL
-            )),
+        .map(|(name, desc)| {
+            // The descriptor source URL points at the physical file: the index
+            // `path` for remotely fetched descriptors, the embedded relative
+            // path for built-ins. Unknown paths (e.g. local/custom) yield None.
+            let rel_path = INDEX_PATHS
+                .with(|cell| cell.borrow().get(&name).cloned())
+                .or_else(|| builtin_paths.get(&name).cloned());
+            SourceInfo {
+                name,
+                country: desc.metadata.country,
+                source_name: desc.metadata.name,
+                producer: desc.metadata.producer,
+                licence_name: desc.metadata.licence_name,
+                licence_url: desc.metadata.licence_url,
+                source_url: desc.metadata.source_url,
+                descriptor_url: rel_path
+                    .map(|path| format!("{}{path}", roadwork_service::DESCRIPTORS_BASE_URL)),
+            }
         })
         .collect();
     sources.sort_by(|a, b| {

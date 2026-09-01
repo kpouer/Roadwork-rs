@@ -73,16 +73,34 @@ pub async fn fetch_descriptor(path: &str) -> Result<ServiceDescriptor, ServiceEr
 
 include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
 
+/// Returns the relative file path of every built-in descriptor, keyed by its
+/// resolved key (used to build source URLs).
+pub fn builtin_paths() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for (path, json) in DESCRIPTORS {
+        if let Ok(descriptor) = serde_json::from_str::<ServiceDescriptor>(json) {
+            let key = descriptor
+                .metadata
+                .effective_key(path.trim_end_matches(".json"));
+            map.insert(key, path.to_string());
+        }
+    }
+    map
+}
+
 /// Loads the built-in opendata descriptors embedded at compile time.
 pub fn load_descriptors() -> HashMap<String, ServiceDescriptor> {
     let mut map = HashMap::new();
-    for (name, json) in DESCRIPTORS {
+    for (path, json) in DESCRIPTORS {
         match serde_json::from_str::<ServiceDescriptor>(json) {
             Ok(descriptor) => {
-                map.insert(name.to_string(), descriptor);
+                let key = descriptor
+                    .metadata
+                    .effective_key(path.trim_end_matches(".json"));
+                map.insert(key, descriptor);
             }
             Err(e) => {
-                log::error!("Failed to parse descriptor {name}: {e}");
+                log::error!("Failed to parse descriptor {path}: {e}");
             }
         }
     }
@@ -95,6 +113,7 @@ pub fn get_services() -> Vec<ServiceInfo> {
         .into_iter()
         .map(|(name, desc)| ServiceInfo {
             name,
+            label: desc.metadata.label(),
             center: desc.metadata.center,
         })
         .collect();
