@@ -4,6 +4,10 @@ use chrono_tz::Tz;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+fn is_false(v: &bool) -> bool {
+    !v
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Parser {
     pub matcher: String,
@@ -13,9 +17,11 @@ pub struct Parser {
     pub format: Option<String>,
     #[serde(default)]
     #[serde(rename = "addYear")]
+    #[serde(skip_serializing_if = "is_false")]
     pub add_year: bool,
     #[serde(default)]
     #[serde(rename = "resetHour")]
+    #[serde(skip_serializing_if = "is_false")]
     pub reset_hour: bool,
 }
 
