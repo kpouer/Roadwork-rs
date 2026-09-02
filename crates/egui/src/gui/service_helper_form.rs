@@ -7,6 +7,7 @@ use roadwork_core::opendata::json::model::date_parser::DateParser;
 use roadwork_core::opendata::json::model::lat_lng::LatLng;
 use roadwork_core::opendata::json::model::parser::Parser;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
+use std::collections::HashSet;
 
 pub(crate) const LABEL_WIDTH: f32 = 150.0;
 
@@ -46,6 +47,7 @@ pub(crate) struct FieldsValues {
 #[derive(Default, Clone)]
 pub struct PathCandidates {
     pub scalars: Vec<(String, String)>,
+    pub strings: Vec<(String, String)>,
     pub latitudes: Vec<(String, String)>,
     pub longitudes: Vec<(String, String)>,
     pub arrays: Vec<(String, usize)>,
@@ -55,6 +57,49 @@ pub(crate) struct Wand<'a> {
     pub(crate) scalars: &'a [(String, String)],
     pub(crate) arrays: Option<&'a [(String, usize)]>,
     pub(crate) hint: &'static str,
+    pub(crate) used: &'a HashSet<String>,
+}
+
+fn paths_in_use(descriptor: &ServiceDescriptor) -> HashSet<String> {
+    let mut set = HashSet::new();
+    if !descriptor.data_array.is_empty() {
+        set.insert(
+            descriptor
+                .data_array
+                .strip_suffix("[*]")
+                .unwrap_or(&descriptor.data_array)
+                .to_string(),
+        );
+    }
+    for path in [
+        &descriptor.id,
+        &descriptor.reference,
+        &descriptor.latitude,
+        &descriptor.longitude,
+        &descriptor.polygon,
+        &descriptor.road,
+        &descriptor.description,
+        &descriptor.location_details,
+        &descriptor.impact_circulation_detail,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !path.is_empty() {
+            set.insert(path.clone());
+        }
+    }
+    if let Some(date) = &descriptor.from
+        && !date.path.is_empty()
+    {
+        set.insert(date.path.clone());
+    }
+    if let Some(date) = &descriptor.to
+        && !date.path.is_empty()
+    {
+        set.insert(date.path.clone());
+    }
+    set
 }
 
 impl FieldsValidation {
@@ -90,25 +135,36 @@ pub(crate) fn show(
     path_candidates: &PathCandidates,
     data_type: DataType,
 ) -> bool {
+    let used = paths_in_use(descriptor);
     let scalar_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: None,
         hint: "Fetch the JSON first and make sure data_array points to the array of roadworks.",
+        used: &used,
+    };
+    let string_wand = Wand {
+        scalars: &path_candidates.strings,
+        arrays: None,
+        hint: "Fetch the JSON first and make sure data_array points to the array of roadworks. Only string fields are listed.",
+        used: &used,
     };
     let latitude_wand = Wand {
         scalars: &path_candidates.latitudes,
         arrays: None,
         hint: "Fetch the JSON first and make sure data_array points to the array of roadworks. Only numeric fields between -90 and 90 are listed.",
+        used: &used,
     };
     let longitude_wand = Wand {
         scalars: &path_candidates.longitudes,
         arrays: None,
         hint: "Fetch the JSON first and make sure data_array points to the array of roadworks. Only numeric fields between -180 and 180 are listed.",
+        used: &used,
     };
     let polygon_wand = Wand {
         scalars: &path_candidates.scalars,
         arrays: Some(&path_candidates.arrays),
         hint: scalar_wand.hint,
+        used: &used,
     };
 
     let mut changed = MetadataForm::new(&mut descriptor.metadata, data_type).show(
@@ -125,6 +181,7 @@ pub(crate) fn show(
         validation.data_array,
         values.data_array.as_deref(),
         array_paths,
+        &used,
     );
     changed |= validated(
         ui,
@@ -204,7 +261,7 @@ pub(crate) fn show(
                     "road",
                     &mut descriptor.road,
                     tooltip,
-                    Some(&scalar_wand),
+                    Some(&string_wand),
                 )
             },
             values.road.as_deref(),
@@ -219,7 +276,7 @@ pub(crate) fn show(
                     "location_details",
                     &mut descriptor.location_details,
                     tooltip,
-                    Some(&scalar_wand),
+                    Some(&string_wand),
                 )
             },
             values.location_details.as_deref(),
@@ -234,7 +291,7 @@ pub(crate) fn show(
                     "impact_circulation_detail",
                     &mut descriptor.impact_circulation_detail,
                     tooltip,
-                    Some(&scalar_wand),
+                    Some(&string_wand),
                 )
             },
             values.impact_circulation_detail.as_deref(),
@@ -250,7 +307,7 @@ pub(crate) fn show(
                 "description",
                 &mut descriptor.description,
                 tooltip,
-                Some(&scalar_wand),
+                Some(&string_wand),
             )
         },
         values.description.as_deref(),
@@ -292,6 +349,7 @@ pub(crate) fn roadwork_array_row(
     valid: bool,
     tooltip: Option<&str>,
     array_paths: &[(String, usize)],
+    used: &HashSet<String>,
 ) -> bool {
     validated(
         ui,
@@ -325,12 +383,25 @@ pub(crate) fn roadwork_array_row(
                     if array_paths.is_empty() {
                         ui.label("No array found in the fetched JSON. Fetch the JSON first.");
                     } else {
+                        let own = value.strip_suffix("[*]").map(|path| path.to_string());
                         egui::ScrollArea::vertical()
                             .id_salt("wand_arrays_scroll")
                             .max_height(300.0)
                             .show(ui, |ui| {
                                 for (path, count) in array_paths {
-                                    if ui.button(format!("{path} ({count} items)")).clicked() {
+                                    let text = format!("{path} ({count} items)");
+                                    let current = own.as_deref() == Some(path.as_str());
+                                    let used = !current && used.contains(path);
+                                    let button = match (current, used) {
+                                        (true, _) => egui::Button::new(
+                                            RichText::new(text).color(ui.visuals().hyperlink_color),
+                                        ),
+                                        (false, true) => {
+                                            egui::Button::new(RichText::new(text).weak())
+                                        }
+                                        _ => egui::Button::new(text),
+                                    };
+                                    if ui.add(button).clicked() {
                                         *value = format!("{path}[*]");
                                         changed = true;
                                     }
@@ -379,6 +450,7 @@ pub(crate) fn wand_button(
     field_label: &str,
     wand: &Wand,
     picked: &mut Option<String>,
+    current: Option<&str>,
 ) {
     let button = ui
         .add(egui::Button::new("✨"))
@@ -394,16 +466,26 @@ pub(crate) fn wand_button(
             .id_salt(format!("wand_{field_label}_scroll"))
             .max_height(300.0)
             .show(ui, |ui| {
-                for (path, sample) in wand.scalars {
-                    if ui.button(format!("{path} — {sample}")).clicked() {
+                let mut show = |path: &String, text: String, picked: &mut Option<String>| {
+                    let current = current == Some(path.as_str());
+                    let used = !current && wand.used.contains(path);
+                    let button = match (current, used) {
+                        (true, _) => egui::Button::new(
+                            RichText::new(text).color(ui.visuals().hyperlink_color),
+                        ),
+                        (false, true) => egui::Button::new(RichText::new(text).weak()),
+                        _ => egui::Button::new(text),
+                    };
+                    if ui.add(button).clicked() {
                         *picked = Some(path.clone());
                     }
+                };
+                for (path, sample) in wand.scalars {
+                    show(path, format!("{path} — {sample}"), picked);
                 }
                 if let Some(arrays) = wand.arrays {
                     for (path, count) in arrays {
-                        if ui.button(format!("{path} ({count} items)")).clicked() {
-                            *picked = Some(path.clone());
-                        }
+                        show(path, format!("{path} ({count} items)"), picked);
                     }
                 }
             });
@@ -435,7 +517,7 @@ pub(crate) fn text_row(
         let mut changed = response.changed();
         if let Some(wand) = wand {
             let mut picked = None;
-            wand_button(ui, label, wand, &mut picked);
+            wand_button(ui, label, wand, &mut picked, Some(value.as_str()));
             if let Some(path) = picked {
                 *value = path;
                 changed = true;
@@ -484,7 +566,7 @@ pub(crate) fn optional_text_row(
         }
         if let Some(wand) = wand {
             let mut picked = None;
-            wand_button(ui, label, wand, &mut picked);
+            wand_button(ui, label, wand, &mut picked, value.as_deref());
             if let Some(path) = picked {
                 *value = Some(path);
                 changed = true;
@@ -570,7 +652,7 @@ fn date_section(
                     let mut changed = response.changed();
                     if let Some(wand) = wand {
                         let mut picked = None;
-                        wand_button(ui, "path", wand, &mut picked);
+                        wand_button(ui, "path", wand, &mut picked, Some(&date.path));
                         if let Some(path) = picked {
                             date.path = path;
                             if date.parsers.is_empty()

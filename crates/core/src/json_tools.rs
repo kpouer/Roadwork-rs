@@ -172,6 +172,15 @@ pub fn element_number_paths_between(element: &Value, min: f64, max: f64) -> Vec<
     numbers
 }
 
+pub fn element_string_paths(element: &Value) -> Vec<(String, String)> {
+    let mut strings = Vec::new();
+    collect_scalar_leaves(element, "$", &mut strings, &|value| {
+        matches!(value, Value::String(_))
+    });
+    strings.sort();
+    strings
+}
+
 pub fn is_number_between(value: &Value, min: f64, max: f64) -> bool {
     value
         .as_f64()

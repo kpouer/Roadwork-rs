@@ -1861,6 +1861,7 @@ impl ServiceHelperDialog {
         };
         PathCandidates {
             scalars: roadwork_core::json_tools::element_scalar_paths(&element),
+            strings: roadwork_core::json_tools::element_string_paths(&element),
             latitudes: roadwork_core::json_tools::element_number_paths_between(
                 &element,
                 roadwork_core::json_tools::LATITUDE_RANGE.0,
