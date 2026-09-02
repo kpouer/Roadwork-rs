@@ -175,6 +175,9 @@ struct ExplorerState {
     selection: Option<Selection>,
     columns: Vec<ColumnInfo>,
     rows: Vec<Vec<Cell>>,
+    full_columns: Vec<ColumnInfo>,
+    full_rows: Vec<Vec<Cell>>,
+    selected_row: Option<usize>,
     total: i64,
     page: i64,
     db_size: Option<i64>,
@@ -317,6 +320,7 @@ impl DbExplorerDialog {
                 self.show_content(ui, ctx, false);
             });
 
+        self.show_row_detail(ctx);
         if self.pending_delete.is_some() {
             self.show_delete_confirm(ctx);
         }
@@ -340,6 +344,7 @@ impl DbExplorerDialog {
             self.load_overview(&ctx);
         }
         self.show_content(ui, &ctx, true);
+        self.show_row_detail(&ctx);
         if self.pending_delete.is_some() {
             self.show_delete_confirm(&ctx);
         }
@@ -403,6 +408,7 @@ impl DbExplorerDialog {
                 st.total = 0;
                 st.notice = None;
                 st.error = None;
+                st.selected_row = None;
                 st.selection = st.default_selection();
                 mode_changed = true;
             }
@@ -483,6 +489,7 @@ impl DbExplorerDialog {
                 st.page = 0;
                 st.error = None;
                 st.notice = None;
+                st.selected_row = None;
             }
             self.load_data(ctx, &sel);
         }
@@ -729,6 +736,7 @@ impl DbExplorerDialog {
                 }
                 None => {}
             }
+            self.state.lock().unwrap().selected_row = None;
             let selection = { self.state.lock().unwrap().selection.clone() };
             if let Some(sel) = selection {
                 self.load_data(ctx, &sel);
@@ -736,9 +744,14 @@ impl DbExplorerDialog {
             return;
         }
 
-        let (selection, columns, rows) = {
+        let (selection, columns, rows, st_view_mode) = {
             let st = self.state.lock().unwrap();
-            (st.selection.clone(), st.columns.clone(), st.rows.clone())
+            (
+                st.selection.clone(),
+                st.columns.clone(),
+                st.rows.clone(),
+                st.view_mode,
+            )
         };
         let Some(selection) = selection else {
             return;
@@ -746,15 +759,21 @@ impl DbExplorerDialog {
         if columns.is_empty() {
             return;
         }
-        // Row-level deletion only makes sense for raw tables, not for the
+        // Row-level actions only make sense for raw tables, not for the
         // cached data of a service (sources are deleted from the top list).
         let show_delete = selection.service.is_none();
+        // In raw-table mode a button opens the detail panel for the row.
+        let show_details = st_view_mode == ViewMode::Tables;
+        let mut detail_row: Option<usize> = None;
 
         let mut table = egui_extras::TableBuilder::new(ui)
             .striped(true)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         if show_delete {
             table = table.column(egui_extras::Column::initial(90.0).clip(true));
+        }
+        if show_details {
+            table = table.column(egui_extras::Column::initial(70.0).clip(true));
         }
         table = table.column(
             egui_extras::Column::initial(180.0)
@@ -778,6 +797,11 @@ impl DbExplorerDialog {
                         ui.strong("Actions");
                     });
                 }
+                if show_details {
+                    header.col(|ui| {
+                        ui.strong("Détails");
+                    });
+                }
                 for column in &columns {
                     header.col(|ui| {
                         if column.primary_key {
@@ -798,14 +822,80 @@ impl DbExplorerDialog {
                             }
                         });
                     }
-                    for (index, cell) in rows[index].iter().enumerate() {
+                    if show_details {
                         row.col(|ui| {
-                            let text = format_cell(&columns[index].name, cell);
+                            if ui.small_button("Voir").clicked() {
+                                detail_row = Some(index);
+                            }
+                        });
+                    }
+                    for (col_idx, cell) in rows[index].iter().enumerate() {
+                        row.col(|ui| {
+                            let text = format_cell(&columns[col_idx].name, cell);
                             ui.add(egui::Label::new(truncate(&text, 120)).truncate());
                         });
                     }
                 });
             });
+        if let Some(idx) = detail_row {
+            self.state.lock().unwrap().selected_row = Some(idx);
+        }
+    }
+
+    fn show_row_detail(&mut self, ctx: &Context) {
+        let row_idx = match self.state.lock().unwrap().selected_row {
+            Some(idx) => idx,
+            None => return,
+        };
+        let (columns, rows, table_name) = {
+            let st = self.state.lock().unwrap();
+            (
+                st.full_columns.clone(),
+                st.full_rows.clone(),
+                st.selection.as_ref().map(|s| s.table.clone()),
+            )
+        };
+        let table_name = table_name.unwrap_or_default();
+        let Some(row) = rows.get(row_idx) else {
+            self.state.lock().unwrap().selected_row = None;
+            return;
+        };
+        let mut open = true;
+        egui::Window::new("Détail de la ligne")
+            .id(egui::Id::new(("db_row_detail", table_name, row_idx)))
+            .open(&mut open)
+            .resizable(true)
+            .default_width(460.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::Grid::new("row_detail_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            for (col, cell) in columns.iter().zip(row.iter()) {
+                                let text = format_cell(&col.name, cell);
+                                ui.label(RichText::new(&col.name).strong());
+                                if text.contains('\n') {
+                                    let mut value = text;
+                                    let rows = value.lines().count().clamp(2, 12);
+                                    let text_edit = egui::TextEdit::multiline(&mut value)
+                                        .desired_width(300.0)
+                                        .desired_rows(rows)
+                                        .font(egui::TextStyle::Monospace);
+                                    ui.add(text_edit);
+                                } else {
+                                    ui.add(
+                                        egui::Label::new(text).wrap_mode(egui::TextWrapMode::Wrap),
+                                    );
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+            });
+        if !open {
+            self.state.lock().unwrap().selected_row = None;
+        }
     }
 
     fn show_delete_confirm(&mut self, ctx: &Context) {
@@ -992,12 +1082,15 @@ impl DbExplorerDialog {
                         if data.rows.is_empty() && data.total > 0 && st.page > 0 {
                             st.page -= 1;
                         }
+                        st.full_columns = data.columns.clone();
+                        st.full_rows = data.rows.clone();
                         let (columns, rows) = visible_columns(&table, data.columns, data.rows);
                         st.columns = columns;
                         st.rows = rows;
                         st.total = data.total;
                         st.error = None;
                         st.notice = None;
+                        st.selected_row = None;
                     }
                     Err(e) => {
                         st.error = Some(e);
