@@ -126,8 +126,8 @@
   "pagination.prev": "Previous page",
   "pagination.next": "Next page",
   "pagination.visible": "Visible on screen",
-  "pagination.hide_finished": "Hide finished",
-  "pagination.hide_finished_title": "Hide finished works",
+  "pagination.only_new": "Only new",
+  "pagination.only_new_title": "Show only new roadworks",
 
   "confirm.clear_storage": "Clear all local storage for the Roadwork extension?",
   "confirm.delete_polygones": "Delete all polygons?",

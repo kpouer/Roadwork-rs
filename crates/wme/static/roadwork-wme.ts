@@ -196,7 +196,7 @@ let polygonGroups: any = {};
 let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
 let detailPanelEl: HTMLDivElement | null = null;
-let hideFinished = false;
+let showOnlyNew = false;
 let sortColumn = -1;
 let sortDirection = 'asc';
 let dataPanelEl: HTMLDivElement | null = null;
@@ -310,10 +310,10 @@ function applyStatusOverrides() {
     }
 }
 
-function loadHideFinished() {
+function loadShowOnlyNew() {
     try {
-        const v = localStorage.getItem(HIDE_FINISHED_KEY);
-        if (v !== null) hideFinished = JSON.parse(v);
+        const v = localStorage.getItem(SHOW_ONLY_NEW_KEY);
+        if (v !== null) showOnlyNew = JSON.parse(v);
     } catch (_) {}
 }
 
@@ -886,7 +886,7 @@ function updateLastRefreshDisplay() {
 
 const LAST_REFRESH_KEY = "roadwork-wme-last-refresh";
 const PANEL_STORAGE_KEY = "roadwork-wme-panel-visible";
-const HIDE_FINISHED_KEY = "roadwork-wme-hide-finished";
+const SHOW_ONLY_NEW_KEY = "roadwork-wme-show-only-new";
 const PANEL_SIZE_KEY = "roadwork-wme-panel-size";
 const SORT_STATE_KEY = "roadwork-wme-sort-state";
 const TOOLBAR_POSITION_KEY = "roadwork-wme-toolbar-position";
@@ -1211,17 +1211,17 @@ function createFloatingPanel() {
 
     const filterLabel = document.createElement("label");
     filterLabel.className = "rw-visible-label";
-    filterLabel.title = t("pagination.hide_finished_title");
+    filterLabel.title = t("pagination.only_new_title");
     const filterCheck = document.createElement("input");
     filterCheck.type = "checkbox";
-    filterCheck.checked = hideFinished;
+    filterCheck.checked = showOnlyNew;
     filterCheck.addEventListener("change", () => {
-        hideFinished = filterCheck.checked;
-        localStorage.setItem(HIDE_FINISHED_KEY, JSON.stringify(hideFinished));
+        showOnlyNew = filterCheck.checked;
+        localStorage.setItem(SHOW_ONLY_NEW_KEY, JSON.stringify(showOnlyNew));
         updateFloatingTable();
     });
     const filterText = document.createElement("span");
-    filterText.textContent = t("pagination.hide_finished");
+    filterText.textContent = t("pagination.only_new");
     filterLabel.appendChild(filterCheck);
     filterLabel.appendChild(filterText);
 
@@ -1345,8 +1345,8 @@ function updateFloatingTable() {
     const source = roadworksPagination.onlyVisible ? currentRoadworks : roadworksPagination.allItems;
     let entries = Object.entries(source as Record<string, any>);
 
-    if (hideFinished) {
-        entries = entries.filter(([, rw]) => (rw.sync_data?.status || "New") !== "Finished");
+    if (showOnlyNew) {
+        entries = entries.filter(([, rw]) => (rw.sync_data?.status || "New") === "New");
     }
 
     if (sortColumn >= 0) {
@@ -4354,7 +4354,7 @@ async function init() {
     await applyLogLevel(settings.logLevel);
 
     loadSettings();
-    loadHideFinished();
+    loadShowOnlyNew();
     loadSortState();
     loadDataSource();
     loadPaginationSettings();

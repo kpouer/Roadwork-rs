@@ -126,8 +126,8 @@
   "pagination.prev": "Page précédente",
   "pagination.next": "Page suivante",
   "pagination.visible": "Visible à l'écran",
-  "pagination.hide_finished": "Masquer les chantiers finis",
-  "pagination.hide_finished_title": "Masquer les chantiers terminés",
+  "pagination.only_new": "Nouveaux uniquement",
+  "pagination.only_new_title": "Afficher uniquement les chantiers nouveaux",
 
   "confirm.clear_storage": "Vider tout le stockage local de l'extension Roadwork ?",
   "confirm.delete_polygones": "Supprimer tous les polygones ?",
