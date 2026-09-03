@@ -192,7 +192,7 @@ let floatingToggleBtn: HTMLButtonElement | null = null;
 let floatingTitleEl: HTMLHeadElement | null = null;
 let serviceSelectEl: HTMLSelectElement | null = null;
 let selectedRoadworkId: string | null = null;
-let polygonGroups: any = {};
+let polygonGroups: Record<string, PolygonGroup> = {};
 let nextGroupId = 0;
 const WKT_LAYER = "Roadwork - WKT";
 let detailPanelEl: HTMLDivElement | null = null;
@@ -280,7 +280,7 @@ async function loadPolygonGroups() {
         const parsed = await rpcCall("get_polygon_groups");
         if (parsed && typeof parsed === "object" && parsed.groups) {
             nextGroupId = parsed.nextId || 0;
-            return parsed.groups;
+            return parsed.groups as Record<string, PolygonGroup>;
         }
     } catch (_) {}
     return {};
@@ -1816,7 +1816,7 @@ function renderAllGroupsToMap() {
         wmeSDK.Map.removeAllFeaturesFromLayer({layerName: WKT_LAYER});
     } catch (_) {}
     const allFeatures = [];
-    for (const group of Object.values(polygonGroups as Record<string, any>)) {
+    for (const group of Object.values(polygonGroups)) {
         if (!group.visible) continue;
         for (const feature of group.features) {
             allFeatures.push(feature);
@@ -3086,7 +3086,7 @@ let polygonesDropzoneEl: HTMLDivElement | null = null;
 
 function addPolygonGroup(name: string, features: SdkFeature[]) {
     const gid = "group_" + nextGroupId;
-    const prefixed = features
+    const prefixed: SdkFeature[] = features
         .map(f => ({ ...f, id: gid + "-" + f.id }));
     polygonGroups[gid] = { id: gid, name, features: prefixed, visible: true };
     nextGroupId++;
@@ -3384,7 +3384,7 @@ function createPolygonesUI() {
 function updatePolygonesPanel() {
     if (!polygonesPanelBody) return;
     polygonesPanelBody.replaceChildren();
-    const entries = Object.values(polygonGroups as Record<string, any>);
+    const entries = Object.values(polygonGroups);
     if (entries.length === 0) {
         const empty = document.createElement("div");
         empty.className = "rw-polygones-empty";
@@ -3421,9 +3421,9 @@ function updatePolygonesPanel() {
 
         const countSpan = document.createElement("span");
         countSpan.className = "rw-polygon-group-count";
-        const geomCounts = {};
+        const geomCounts: Record<string, number> = {};
         for (const f of group.features) {
-            const t = f.properties.geomType;
+            const t = f.properties.geomType as string;
             geomCounts[t] = (geomCounts[t] || 0) + 1;
         }
         const parts = Object.entries(geomCounts).map(([t, c]) => `${c} ${t}`);
@@ -3886,6 +3886,13 @@ interface SourceColumn {
     key: keyof SourceRow;
     label: string;
     sortKey?: keyof SourceRow;
+}
+
+interface PolygonGroup {
+    id: string;
+    name: string;
+    features: SdkFeature[];
+    visible: boolean;
 }
 
 function sortValue(row: SourceRow, key: keyof SourceRow): string {
@@ -4661,8 +4668,8 @@ async function init() {
             }
 
             if (evt.layerName === WKT_LAYER) {
-                let feature = null;
-    for (const group of Object.values(polygonGroups as Record<string, any>)) {
+                let feature: SdkFeature = null;
+                for (const group of Object.values(polygonGroups)) {
                     feature = group.features.find(f => f.id === featureId);
                     if (feature) break;
                 }
