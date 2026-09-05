@@ -3604,15 +3604,16 @@ async function buildPanel(tabPane: Element) {
     versionLine.textContent = t("panel.version");
     panelEl.appendChild(versionLine);
 
-    const launchBtn = document.createElement("button");
-    launchBtn.className = "roadwork-btn";
-    launchBtn.textContent = t("btn.launch");
-    launchBtn.title = t("btn.launch_title");
-    launchBtn.addEventListener("click", () => {
-        console.log("[Roadwork] launching app overlay");
-        window.postMessage({ type: "ROADWORK_OPEN_APP" }, "*");
-    });
-    panelEl.appendChild(launchBtn);
+    // disable app launch
+    // const launchBtn = document.createElement("button");
+    // launchBtn.className = "roadwork-btn";
+    // launchBtn.textContent = t("btn.launch");
+    // launchBtn.title = t("btn.launch_title");
+    // launchBtn.addEventListener("click", () => {
+    //     console.log("[Roadwork] launching app overlay");
+    //     window.postMessage({ type: "ROADWORK_OPEN_APP" }, "*");
+    // });
+    // panelEl.appendChild(launchBtn);
 
     const exploreBtn = document.createElement("button");
     exploreBtn.className = "roadwork-btn";
