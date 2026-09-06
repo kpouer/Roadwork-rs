@@ -799,26 +799,55 @@ impl ServiceHelperDialog {
                 self.validate_all(toasts);
             }
             ui.separator();
-            let can_save = {
+            let (can_save, save_requirement) = {
                 let has_data = !self.raw_json.trim().is_empty() || self.parsed_opendata.is_some();
                 let validation = self.field_validation();
-                let all_fields_valid = validation.data_array
-                    && validation.id
-                    && validation.latitude
-                    && validation.longitude
-                    && validation.polygon
-                    && validation.road
-                    && validation.description
-                    && validation.location_details
-                    && validation.impact_circulation_detail
-                    && validation.from_path
-                    && validation.to_path
-                    && validation.dates_parse_ok;
-                !self.is_builtin()
-                    && !self.descriptor_json.trim().is_empty()
-                    && has_data
-                    && self.has_name()
-                    && all_fields_valid
+                let mut missing: Vec<String> = Vec::new();
+                if self.is_builtin() {
+                    missing.push("Built-in services are read-only".to_string());
+                }
+                if self.descriptor_json.trim().is_empty() {
+                    missing.push("A service descriptor is required".to_string());
+                }
+                if !has_data {
+                    missing.push(
+                        "Imported data is required — fetch the JSON or drop a file".to_string(),
+                    );
+                }
+                if !self.has_name() {
+                    missing.push("A service name is required".to_string());
+                }
+                for (valid, text) in [
+                    (
+                        validation.data_array,
+                        "data_array path must point to an array",
+                    ),
+                    (validation.id, "The id path is invalid"),
+                    (validation.latitude, "The latitude path is invalid"),
+                    (validation.longitude, "The longitude path is invalid"),
+                    (validation.polygon, "The polygon path is invalid"),
+                    (validation.road, "The road path is invalid"),
+                    (validation.description, "The description path is invalid"),
+                    (
+                        validation.location_details,
+                        "The location_details path is invalid",
+                    ),
+                    (
+                        validation.impact_circulation_detail,
+                        "The impact_circulation_detail path is invalid",
+                    ),
+                    (validation.from_path, "The from-date path is invalid"),
+                    (validation.to_path, "The to-date path is invalid"),
+                    (
+                        validation.dates_parse_ok,
+                        "A date parser cannot parse the value",
+                    ),
+                ] {
+                    if !valid {
+                        missing.push(text.to_string());
+                    }
+                }
+                (missing.is_empty(), missing.first().cloned())
             };
             if ui
                 .add_enabled(can_save, egui::Button::new("Save to extension"))
@@ -829,11 +858,9 @@ impl ServiceHelperDialog {
                     "Save the descriptor and the data into the Roadwork WME extension \
                      and enable the service"
                 })
-                .on_disabled_hover_text(if self.is_builtin() {
-                    "Built-in services are read-only"
-                } else {
-                    "A service name and imported data are required"
-                })
+                .on_disabled_hover_text(
+                    save_requirement.unwrap_or_else(|| "Cannot save yet".to_string()),
+                )
                 .clicked()
             {
                 crate::roadwork_app::start_save_progress();
@@ -1927,14 +1954,14 @@ impl ServiceHelperDialog {
                 .map(|date| {
                     !date.path.is_empty() && ods.path_points_to_scalar_in(&element, &date.path)
                 })
-                .unwrap_or(false),
+                .unwrap_or(true),
             to_path: descriptor
                 .to
                 .as_ref()
                 .map(|date| {
                     !date.path.is_empty() && ods.path_points_to_scalar_in(&element, &date.path)
                 })
-                .unwrap_or(false),
+                .unwrap_or(true),
             dates_parse_ok,
         }
     }
