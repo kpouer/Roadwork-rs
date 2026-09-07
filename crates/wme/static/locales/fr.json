@@ -21,6 +21,9 @@
   "panel.version": "v__VERSION__ — built __BUILD_DATE__",
   "panel.build": "build __BUILD_DATE__",
 
+  "zone.searching": "Localisation de la zone…",
+  "zone.error": "Zone introuvable",
+
   "btn.refresh": "Raffraichir",
   "btn.reset": "Reinitialiser",
   "btn.center": "Centrer",

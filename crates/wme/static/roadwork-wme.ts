@@ -2094,8 +2094,10 @@ async function refreshViewport() {
         renderOpendataToMap();
         updateFloatingTable();
         updateDataPanel();
+        hideZoneBar();
         return;
     }
+    updateZoneBar();
     try {
         const bboxRoadworks = await queryRoadworksInViewport(bounds);
         if (Object.keys(bboxRoadworks).length > 0 || Object.keys(currentRoadworks).length === 0) {
@@ -3290,6 +3292,115 @@ function showWktCreateDialog() {
     });
     document.body.appendChild(overlay);
     nameInput.focus();
+}
+
+// ——— Map location zone bar ———
+const ZONE_EPSILON = 0.001;
+let zoneBarEl: HTMLDivElement | null = null;
+let lastZoneCenter: { lat: number; lon: number } | null = null;
+let zoneResolveInFlight = false;
+
+function hideZoneBar() {
+    if (zoneBarEl) {
+        zoneBarEl.classList.add("rw-hidden");
+        zoneBarEl.textContent = "";
+    }
+}
+
+function renderZoneBar(result: any) {
+    if (!zoneBarEl) return;
+    if (
+        !result ||
+        !result.country ||
+        !Array.isArray(result.chain) ||
+        result.chain.length === 0
+    ) {
+        console.info("[Roadwork] zone: no zone found for current position", result ?? null);
+        hideZoneBar();
+        return;
+    }
+    console.info("[Roadwork] zone:", result.country, result.chain
+        .map((el: any) => `${el.name}${el.code ? ` (${el.code})` : ""}`)
+        .join(" › "));
+    zoneBarEl.textContent = "";
+    zoneBarEl.classList.remove("rw-hidden");
+    const append = (text: string) => {
+        const span = document.createElement("span");
+        span.textContent = text;
+        zoneBarEl!.appendChild(span);
+    };
+    append(result.country as string);
+    for (const el of result.chain as Array<{ level: string; name: string; code: string | null }>) {
+        append(" ›");
+        append(`${el.name}${el.code ? ` (${el.code})` : ""}`);
+    }
+}
+
+async function updateZoneBar() {
+    if (!zoneBarEl || zoneResolveInFlight) return;
+    const bounds = getViewportBounds();
+    if (!bounds) {
+        hideZoneBar();
+        return;
+    }
+    const lat = (bounds.latMin + bounds.latMax) / 2;
+    const lon = (bounds.lonMin + bounds.lonMax) / 2;
+    if (
+        lastZoneCenter &&
+        Math.abs(lastZoneCenter.lat - lat) < ZONE_EPSILON &&
+        Math.abs(lastZoneCenter.lon - lon) < ZONE_EPSILON
+    ) {
+        return;
+    }
+    zoneResolveInFlight = true;
+    zoneBarEl.textContent = t("zone.searching");
+    zoneBarEl.classList.remove("rw-hidden");
+    try {
+        const result = await rpcCall("resolve_country_zone", [
+            lat,
+            lon,
+            bounds.latMin,
+            bounds.lonMin,
+            bounds.latMax,
+            bounds.lonMax,
+        ]);
+        lastZoneCenter = { lat, lon };
+        renderZoneBar(result);
+    } catch (e) {
+        console.warn("[Roadwork] Failed to resolve zone:", e);
+        zoneBarEl.textContent = t("zone.error");
+        zoneBarEl.classList.remove("rw-hidden");
+    } finally {
+        zoneResolveInFlight = false;
+    }
+}
+
+function createZoneUI() {
+    if (zoneBarEl) return;
+    zoneBarEl = document.createElement("div");
+    zoneBarEl.className = "rw-zone-bar rw-hidden";
+    document.body.appendChild(zoneBarEl);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    zoneBarEl.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        const rect = zoneBarEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        zoneBarEl!.style.left = e.clientX - dragOffsetX + "px";
+        zoneBarEl!.style.top = e.clientY - dragOffsetY + "px";
+        zoneBarEl!.style.right = "auto";
+        zoneBarEl!.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
 }
 
 function createPolygonesUI() {
@@ -4613,6 +4724,7 @@ async function init() {
     setupPolygonesDragDrop();
     createDataPanel();
     setupDataDragDrop();
+    createZoneUI();
     if (hasRestored) {
         updatePolygonesPanel();
     }

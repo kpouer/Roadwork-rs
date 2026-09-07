@@ -1,0 +1,38 @@
+{
+  "name": "France",
+  "isoCode": "FR",
+  "levels": [
+    {
+      "name": "région",
+      "url": "https://geo.api.gouv.fr/regions",
+      "codeParam": "code",
+      "dataArray": "$[*]",
+      "namePath": "$.nom",
+      "codePath": "$.code"
+    },
+    {
+      "name": "département",
+      "url": "https://geo.api.gouv.fr/departements",
+      "codeParam": "code",
+      "parentCodes": { "région": "$.codeRegion" },
+      "dataArray": "$[*]",
+      "namePath": "$.nom",
+      "codePath": "$.code"
+    },
+    {
+      "name": "commune",
+      "url": "https://geo.api.gouv.fr/communes?fields=nom,code,codeDepartement,codeRegion&format=geojson&geometry=contour",
+      "latParam": "lat",
+      "lonParam": "lon",
+      "parentParams": { "département": "codeDepartement" },
+      "parentCodes": {
+        "département": "$.properties.codeDepartement",
+        "région": "$.properties.codeRegion"
+      },
+      "dataArray": "$.features[*]",
+      "namePath": "$.properties.nom",
+      "codePath": "$.properties.code",
+      "polygonPath": "$.geometry"
+    }
+  ]
+}

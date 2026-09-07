@@ -12,6 +12,7 @@ declare global {
         (init_input: unknown): Promise<unknown>;
         open_store(): Promise<unknown>;
         get_services(): unknown;
+        resolve_country_zone(lat: unknown, lon: unknown, latMin: unknown, lonMin: unknown, latMax: unknown, lonMax: unknown): Promise<unknown>;
         get_sources_info(): unknown;
         get_roadworks(descriptor: unknown, forceRefresh: unknown): Promise<unknown>;
         get_roadworks_cached(service: unknown): Promise<unknown>;

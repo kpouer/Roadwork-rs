@@ -1,3 +1,4 @@
+pub mod country;
 pub mod http_service;
 pub mod json_tools;
 pub mod model;

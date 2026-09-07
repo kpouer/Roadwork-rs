@@ -14,6 +14,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
+use roadwork_core::country::model::CountryElement;
+use roadwork_core::country::{CountryLevel, CountryManager, Query};
 use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
@@ -122,6 +124,136 @@ pub fn set_custom_descriptors(pairs: JsValue) -> Result<(), JsValue> {
         *cell.borrow_mut() = map;
     });
     Ok(())
+}
+
+/// One element of the resolved administrative chain.
+#[derive(Serialize)]
+struct ZoneElement {
+    level: String,
+    name: String,
+    code: Option<String>,
+}
+
+/// Resolution of the current map location into an administrative chain,
+/// ordered from the largest level down to the smallest.
+#[derive(Serialize)]
+struct ZoneResolution {
+    country: String,
+    chain: Vec<ZoneElement>,
+}
+
+/// Converts a raw level element into the serializable chain entry.
+fn zone_element(level: &CountryLevel, element: CountryElement) -> ZoneElement {
+    ZoneElement {
+        level: level.name.clone(),
+        name: element.name,
+        code: element.code,
+    }
+}
+
+/// Walks the levels of every embedded country and finds which zone contains
+/// the location. `None` when the point lies outside every country.
+///
+/// The deepest level supporting an API point search (`latParam`/`lonParam`)
+/// anchors the resolution; ancestors are then climbed by code using the
+/// `parentCodes` carried by the resolved element and each level's `codeParam`.
+async fn resolve_country_zone_result(
+    manager: &CountryManager,
+    lat: f64,
+    lon: f64,
+    lat_min: f64,
+    lon_min: f64,
+    lat_max: f64,
+    lon_max: f64,
+) -> Result<Option<ZoneResolution>, JsValue> {
+    let _ = (lat_min, lon_min, lat_max, lon_max);
+    for country in manager.countries() {
+        // Anchor: deepest point-searchable level returning a result.
+        let mut anchor: Option<(usize, CountryElement)> = None;
+        for i in (0..country.levels.len()).rev() {
+            let level = &country.levels[i];
+            if level.lat_param.is_none() || level.lon_param.is_none() {
+                continue;
+            }
+            let elements = manager
+                .query(level, Query::Point { lat, lon })
+                .await
+                .map_err(js_err)?;
+            if let Some(element) = elements.into_iter().next() {
+                anchor = Some((i, element));
+                break;
+            }
+        }
+        let Some((mut idx, mut current)) = anchor else {
+            continue;
+        };
+
+        // Climb to the ancestors using codes carried by the resolved element.
+        let mut resolved = vec![(idx, current.clone())];
+        loop {
+            let mut next: Option<(usize, CountryElement)> = None;
+            for j in (0..idx).rev() {
+                let level = &country.levels[j];
+                if level.code_param.is_none() {
+                    continue;
+                }
+                let Some(code) = current.parent_codes.get(&level.name) else {
+                    continue;
+                };
+                let elements = manager
+                    .query(level, Query::Code(code.clone()))
+                    .await
+                    .map_err(js_err)?;
+                if let Some(element) = elements.into_iter().next() {
+                    next = Some((j, element));
+                    break;
+                }
+            }
+            let Some((j, element)) = next else {
+                break;
+            };
+            resolved.push((j, element.clone()));
+            idx = j;
+            current = element;
+        }
+
+        if resolved.is_empty() {
+            continue;
+        }
+        resolved.sort_by_key(|(i, _)| *i);
+        let chain = resolved
+            .into_iter()
+            .map(|(i, element)| zone_element(&country.levels[i], element))
+            .collect();
+        return Ok(Some(ZoneResolution {
+            country: country.name.clone(),
+            chain,
+        }));
+    }
+    Ok(None)
+}
+
+/// Resolves the map location (viewport rectangle + center point) into the
+/// administrative chain of the enclosing country, from the largest level down
+/// to the smallest. Returns `null` when the point lies outside every embedded
+/// country.
+#[wasm_bindgen]
+pub async fn resolve_country_zone(
+    lat: f64,
+    lon: f64,
+    lat_min: f64,
+    lon_min: f64,
+    lat_max: f64,
+    lon_max: f64,
+) -> Result<JsValue, JsValue> {
+    info!("[wasm] resolve_country_zone {lat},{lon}");
+    let manager = CountryManager::load();
+    match resolve_country_zone_result(&manager, lat, lon, lat_min, lon_min, lat_max, lon_max)
+        .await?
+    {
+        Some(resolution) => serialize_data(&resolution),
+        None => Ok(JsValue::NULL),
+    }
 }
 
 /// Result of [`sync_index`]: the full services list, which keys are new or updated,
