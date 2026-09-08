@@ -23,6 +23,12 @@
 
   "zone.searching": "Locating zone…",
   "zone.error": "Zone not found",
+  "zone.show_polygon": "Show polygon",
+  "zone.hide_polygon": "Hide polygon",
+  "zone.children": "Children",
+  "zone.loading": "Loading…",
+  "zone.no_children": "No children",
+  "zone.center_child": "Center the map on this element",
 
   "btn.refresh": "Refresh",
   "btn.reset": "Reset",

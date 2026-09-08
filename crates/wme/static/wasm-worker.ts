@@ -31,6 +31,8 @@ scope.onmessage = async (e: MessageEvent) => {
             result = wasm_bindgen.get_services();
         } else if (method === 'resolve_country_zone') {
             result = await wasm_bindgen.resolve_country_zone(args[0], args[1], args[2], args[3], args[4], args[5]);
+        } else if (method === 'get_country_children') {
+            result = await wasm_bindgen.get_country_children(args[0], args[1], args[2]);
         } else if (method === 'get_sources_info') {
             result = wasm_bindgen.get_sources_info();
         } else if (method === 'get_roadworks') {

@@ -2,6 +2,7 @@ use crate::country::model::{Country, CountryElement, CountryLevel, PolygonEncodi
 use crate::http_service::HttpService;
 use crate::json_tools::JsonTools;
 use crate::model::wkt::polygon::Polygon;
+use crate::opendata::json::model::lat_lng::LatLng;
 use jsonpath_rust::JsonPath;
 use jsonpath_rust::parser::errors::JsonPathError;
 use log::info;
@@ -120,6 +121,12 @@ impl CountryManager {
                 && let Some(geometry) = found.first()
             {
                 element.polygons = parse_geojson_geometry(geometry);
+            }
+            if let Some(center_path) = level.center_path.as_deref().filter(|p| !p.is_empty())
+                && let Ok(found) = node.query(center_path)
+                && let Some(value) = found.first()
+            {
+                element.center = parse_center(value);
             }
             if let Some(parent_codes) = level.parent_codes.as_ref() {
                 for (parent_level, path) in parent_codes {
@@ -259,6 +266,29 @@ fn parse_geojson_geometry(geometry: &Value) -> Vec<Polygon> {
 
 fn coords_array(geometry: &Value) -> Option<&Vec<Value>> {
     geometry.get("coordinates").and_then(Value::as_array)
+}
+
+/// Extracts a representative point from a JsonPath result: either a
+/// `[lon, lat]` array or a GeoJSON `Point` object.
+fn parse_center(value: &Value) -> Option<LatLng> {
+    match value {
+        Value::Array(coords) if coords.len() >= 2 => Some(LatLng {
+            lon: coords[0].as_f64()?,
+            lat: coords[1].as_f64()?,
+        }),
+        Value::Object(_) if value.get("type").and_then(Value::as_str) == Some("Point") => {
+            let coords = value.get("coordinates").and_then(Value::as_array)?;
+            if coords.len() >= 2 {
+                Some(LatLng {
+                    lon: coords[0].as_f64()?,
+                    lat: coords[1].as_f64()?,
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 fn ring_to_polygon(ring: &Value) -> Result<Polygon, ()> {

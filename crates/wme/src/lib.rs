@@ -15,10 +15,11 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use roadwork_core::country::model::CountryElement;
-use roadwork_core::country::{CountryLevel, CountryManager, Query};
+use roadwork_core::country::{CountryError, CountryLevel, CountryManager, Query};
 use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
+use roadwork_core::model::wkt::polygon::Polygon;
 use roadwork_core::opendata::json::model::service_descriptor::ServiceDescriptor;
 use roadwork_core::opendata::json::opendata_service::OpendataService;
 
@@ -132,6 +133,8 @@ struct ZoneElement {
     level: String,
     name: String,
     code: Option<String>,
+    polygons: Vec<Polygon>,
+    center: Option<roadwork_core::opendata::json::model::lat_lng::LatLng>,
 }
 
 /// Resolution of the current map location into an administrative chain,
@@ -148,6 +151,8 @@ fn zone_element(level: &CountryLevel, element: CountryElement) -> ZoneElement {
         level: level.name.clone(),
         name: element.name,
         code: element.code,
+        polygons: element.polygons,
+        center: element.center,
     }
 }
 
@@ -254,6 +259,42 @@ pub async fn resolve_country_zone(
         Some(resolution) => serialize_data(&resolution),
         None => Ok(JsValue::NULL),
     }
+}
+
+/// The children of a level element: the country's next level down, filtered by
+/// the element's code (via the child level's `parentParams`). Returns an empty
+/// array when the element has no child level or the child level does not
+/// declare a `parentParams` entry for the parent.
+#[wasm_bindgen]
+pub async fn get_country_children(
+    country_name: &str,
+    level_name: &str,
+    code: &str,
+) -> Result<JsValue, JsValue> {
+    info!("[wasm] get_country_children {country_name} {level_name} {code}");
+    let manager = CountryManager::load();
+    let Some(country) = manager.get(country_name) else {
+        return Err(js_err("Country not found"));
+    };
+    let Some(idx) = country.levels.iter().position(|l| l.name == level_name) else {
+        return Err(js_err("Level not found"));
+    };
+    let Some(next) = country.levels.get(idx + 1) else {
+        return serialize_data(&Vec::<ZoneElement>::new());
+    };
+    let children = match manager
+        .query_children(next, &country.levels[idx].name, code)
+        .await
+    {
+        Ok(children) => children,
+        Err(CountryError::UnknownParent(..)) => Vec::new(),
+        Err(e) => return Err(js_err(e)),
+    };
+    let elements: Vec<ZoneElement> = children
+        .into_iter()
+        .map(|element| zone_element(next, element))
+        .collect();
+    serialize_data(&elements)
 }
 
 /// Result of [`sync_index`]: the full services list, which keys are new or updated,

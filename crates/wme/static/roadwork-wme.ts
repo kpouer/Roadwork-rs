@@ -3296,14 +3296,145 @@ function showWktCreateDialog() {
 
 // ——— Map location zone bar ———
 const ZONE_EPSILON = 0.001;
+const ZONE_LAYER = "Roadwork - Zone";
+const ZONE_FILL = "#1a73e8";
+const ZONE_STROKE = "#0d5bd6";
 let zoneBarEl: HTMLDivElement | null = null;
 let lastZoneCenter: { lat: number; lon: number } | null = null;
 let zoneResolveInFlight = false;
+let zoneMenuEl: HTMLDivElement | null = null;
+let zoneMenuAnchor: HTMLElement | null = null;
+let zoneVisible: Record<string, { polygons: Array<{ xpoints: number[]; ypoints: number[] }> }> = {};
+let zoneLayerReady = false;
+let zoneIdCounter = 0;
 
 function hideZoneBar() {
     if (zoneBarEl) {
         zoneBarEl.classList.add("rw-hidden");
         zoneBarEl.textContent = "";
+    }
+    closeZoneMenu();
+}
+
+function closeZoneMenu() {
+    if (zoneMenuEl) {
+        zoneMenuEl.remove();
+        zoneMenuEl = null;
+    }
+    zoneMenuAnchor = null;
+}
+
+function zoneKey(country: string, level: string, code: string | null) {
+    return `${country}/${level}/${code ?? "?"}`;
+}
+
+/// Center point of an element: explicit `center` when present, otherwise the
+/// middle point of its first polygon ring.
+function zoneItemCenter(el: any): { lon: number; lat: number } | null {
+    if (
+        el &&
+        el.center &&
+        isFinite(el.center.lat) &&
+        isFinite(el.center.lon) &&
+        (el.center.lat !== 0 || el.center.lon !== 0)
+    ) {
+        return { lon: el.center.lon, lat: el.center.lat };
+    }
+    const poly = (Array.isArray(el?.polygons) && el.polygons[0]) || null;
+    if (
+        poly &&
+        Array.isArray(poly.xpoints) &&
+        Array.isArray(poly.ypoints) &&
+        poly.xpoints.length >= 3
+    ) {
+        const mid = Math.floor(poly.xpoints.length / 2);
+        return { lon: poly.xpoints[mid], lat: poly.ypoints[mid] };
+    }
+    return null;
+}
+
+function polygonToRing(poly: any): Array<[number, number]> | null {
+    if (
+        !poly ||
+        !Array.isArray(poly.xpoints) ||
+        !Array.isArray(poly.ypoints) ||
+        poly.xpoints.length < 3
+    ) {
+        return null;
+    }
+    const ring: Array<[number, number]> = [];
+    for (let i = 0; i < poly.xpoints.length; i++) {
+        ring.push([poly.xpoints[i], poly.ypoints[i]]);
+    }
+    if (ring[ring.length - 1][0] !== ring[0][0] || ring[ring.length - 1][1] !== ring[0][1]) {
+        ring.push([...ring[0]]);
+    }
+    return ring;
+}
+
+function ensureZoneLayer() {
+    if (zoneLayerReady) return;
+    zoneLayerReady = true;
+    try {
+        wmeSDK.Map.addLayer({
+            layerName: ZONE_LAYER,
+            styleRules: [
+                {
+                    predicate: () => true,
+                    style: {
+                        fillColor: ZONE_FILL,
+                        fillOpacity: 0.25,
+                        strokeColor: ZONE_STROKE,
+                        strokeOpacity: 0.9,
+                        strokeWidth: 2,
+                    },
+                },
+            ],
+        });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add zone layer:", e);
+    }
+    try {
+        wmeSDK.Events.trackLayerEvents({ layerName: ZONE_LAYER });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to track zone layer events:", e);
+    }
+    try {
+        wmeSDK.LayerSwitcher.addLayerCheckbox({ name: ZONE_LAYER, isChecked: true });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add zone layer checkbox:", e);
+    }
+}
+
+function renderZonePolygons() {
+    if (!wmeSDK?.Map) return;
+    try {
+        wmeSDK.Map.removeAllFeaturesFromLayer({ layerName: ZONE_LAYER });
+    } catch (_) {}
+    const features: SdkFeature[] = [];
+    for (const entry of Object.values(zoneVisible)) {
+        for (const poly of entry.polygons || []) {
+            const ring = polygonToRing(poly);
+            if (!ring) continue;
+            features.push({
+                id: `zone-${zoneIdCounter++}`,
+                type: "Feature",
+                geometry: { type: "Polygon", coordinates: [ring] },
+                properties: { geomType: "Polygon" },
+            });
+        }
+    }
+    if (features.length === 0) {
+        return;
+    }
+    try {
+        const checked = wmeSDK.LayerSwitcher.isLayerCheckboxChecked({ name: ZONE_LAYER });
+        if (!checked) return;
+    } catch (_) {}
+    try {
+        wmeSDK.Map.addFeaturesToLayer({ features, layerName: ZONE_LAYER });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add zone features:", e);
     }
 }
 
@@ -3322,6 +3453,7 @@ function renderZoneBar(result: any) {
     console.info("[Roadwork] zone:", result.country, result.chain
         .map((el: any) => `${el.name}${el.code ? ` (${el.code})` : ""}`)
         .join(" › "));
+    closeZoneMenu();
     zoneBarEl.textContent = "";
     zoneBarEl.classList.remove("rw-hidden");
     const append = (text: string) => {
@@ -3329,10 +3461,120 @@ function renderZoneBar(result: any) {
         span.textContent = text;
         zoneBarEl!.appendChild(span);
     };
-    append(result.country as string);
-    for (const el of result.chain as Array<{ level: string; name: string; code: string | null }>) {
+    const country = result.country as string;
+    append(country);
+    for (const el of result.chain as Array<any>) {
         append(" ›");
-        append(`${el.name}${el.code ? ` (${el.code})` : ""}`);
+        const seg = document.createElement("button");
+        seg.type = "button";
+        seg.className = "rw-zone-segment";
+        seg.title = el.level;
+        seg.textContent = `${el.name}${el.code ? ` (${el.code})` : ""}`;
+        seg.dataset.country = country;
+        seg.dataset.level = el.level;
+        seg.dataset.code = el.code || "";
+        seg.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (zoneMenuAnchor === seg) {
+                closeZoneMenu();
+                return;
+            }
+            openZoneMenu(seg, country, el);
+        });
+        zoneBarEl.appendChild(seg);
+    }
+}
+
+function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
+    console.info("[Roadwork] zone menu:", item.level, item.name);
+    closeZoneMenu();
+    zoneMenuAnchor = anchor;
+    zoneMenuEl = document.createElement("div");
+    zoneMenuEl.className = "rw-zone-menu rw-hidden";
+
+    const title = document.createElement("div");
+    title.className = "rw-zone-menu-title";
+    title.textContent = `${item.level} · ${item.name}${item.code ? ` (${item.code})` : ""}`;
+    zoneMenuEl.appendChild(title);
+
+    const hasPoly = Array.isArray(item.polygons) && item.polygons.length > 0;
+    const key = zoneKey(country, item.level, item.code);
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "rw-zone-menu-toggle";
+    toggleBtn.disabled = !hasPoly;
+    const setToggleLabel = () => {
+        toggleBtn.textContent = t(zoneVisible[key] ? "zone.hide_polygon" : "zone.show_polygon");
+    };
+    setToggleLabel();
+    toggleBtn.addEventListener("click", () => {
+        if (!hasPoly) return;
+        if (zoneVisible[key]) {
+            delete zoneVisible[key];
+        } else {
+            zoneVisible[key] = { polygons: item.polygons || [] };
+        }
+        setToggleLabel();
+        renderZonePolygons();
+    });
+    zoneMenuEl.appendChild(toggleBtn);
+
+    const childrenTitle = document.createElement("div");
+    childrenTitle.className = "rw-zone-menu-children-title";
+    childrenTitle.textContent = t("zone.children");
+    zoneMenuEl.appendChild(childrenTitle);
+    const childrenBox = document.createElement("div");
+    childrenBox.className = "rw-zone-menu-children";
+    childrenBox.textContent = t("zone.loading");
+    zoneMenuEl.appendChild(childrenBox);
+    void loadZoneChildren(country, item, childrenBox);
+
+    document.body.appendChild(zoneMenuEl);
+    const rect = anchor.getBoundingClientRect();
+    zoneMenuEl.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - 260))}px`;
+    zoneMenuEl.style.top = `${rect.bottom + 4}px`;
+    requestAnimationFrame(() => {
+        if (zoneMenuEl) zoneMenuEl.classList.remove("rw-hidden");
+    });
+}
+
+async function loadZoneChildren(country: string, item: any, box: HTMLDivElement) {
+    if (!item.code) {
+        box.textContent = t("zone.no_children");
+        return;
+    }
+    try {
+        const children = await rpcCall("get_country_children", [country, item.level, item.code]);
+        if (!Array.isArray(children) || children.length === 0) {
+            box.textContent = t("zone.no_children");
+            return;
+        }
+        box.textContent = "";
+        for (const child of children) {
+            const center = zoneItemCenter(child);
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "rw-zone-menu-child";
+            row.textContent = `${child.name}${child.code ? ` (${child.code})` : ""}`;
+            row.title = center ? t("zone.center_child") : child.level;
+            if (center) {
+                row.addEventListener("click", () => {
+                    closeZoneMenu();
+                    wmeSDK?.Map?.setMapCenter({
+                        lonLat: { lon: center.lon, lat: center.lat },
+                        zoomLevel: ZOOM_LEVEL,
+                    });
+                });
+            } else {
+                row.classList.add("rw-zone-menu-child-disabled");
+                row.disabled = true;
+            }
+            box.appendChild(row);
+        }
+    } catch (e) {
+        console.warn("[Roadwork] Failed to load zone children:", e);
+        box.textContent = t("zone.error");
     }
 }
 
@@ -3353,6 +3595,7 @@ async function updateZoneBar() {
         return;
     }
     zoneResolveInFlight = true;
+    closeZoneMenu();
     zoneBarEl.textContent = t("zone.searching");
     zoneBarEl.classList.remove("rw-hidden");
     try {
@@ -3381,12 +3624,28 @@ function createZoneUI() {
     zoneBarEl.className = "rw-zone-bar rw-hidden";
     document.body.appendChild(zoneBarEl);
 
+    document.addEventListener("mousedown", (e) => {
+        if (!zoneMenuEl) return;
+        if (
+            zoneMenuAnchor &&
+            (e.target === zoneMenuAnchor || zoneMenuAnchor.contains(e.target as Node))
+        ) {
+            return;
+        }
+        if (zoneMenuEl.contains(e.target as Node)) return;
+        closeZoneMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeZoneMenu();
+    });
+
     let isDragging = false;
     let dragOffsetX = 0;
     let dragOffsetY = 0;
     zoneBarEl.addEventListener("mousedown", (e) => {
+        if ((e.target as HTMLElement).closest(".rw-zone-segment")) return;
         isDragging = true;
-        const rect = zoneBarEl.getBoundingClientRect();
+        const rect = zoneBarEl!.getBoundingClientRect();
         dragOffsetX = e.clientX - rect.left;
         dragOffsetY = e.clientY - rect.top;
         e.preventDefault();
@@ -3401,6 +3660,7 @@ function createZoneUI() {
     document.addEventListener("mouseup", () => {
         isDragging = false;
     });
+    ensureZoneLayer();
 }
 
 function createPolygonesUI() {

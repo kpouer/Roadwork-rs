@@ -4,20 +4,25 @@
   "levels": [
     {
       "name": "région",
-      "url": "https://geo.api.gouv.fr/regions",
+      "url": "https://geo.api.gouv.fr/regions?fields=nom,code&geometry=geojson",
       "codeParam": "code",
       "dataArray": "$[*]",
       "namePath": "$.nom",
-      "codePath": "$.code"
+      "codePath": "$.code",
+      "polygonPath": "$.geometry",
+      "centerPath": "$.geometry.coordinates"
     },
     {
       "name": "département",
-      "url": "https://geo.api.gouv.fr/departements",
+      "url": "https://geo.api.gouv.fr/departements?fields=nom,code,codeRegion&geometry=geojson",
       "codeParam": "code",
+      "parentParams": { "région": "codeRegion" },
       "parentCodes": { "région": "$.codeRegion" },
       "dataArray": "$[*]",
       "namePath": "$.nom",
-      "codePath": "$.code"
+      "codePath": "$.code",
+      "polygonPath": "$.geometry",
+      "centerPath": "$.geometry.coordinates"
     },
     {
       "name": "commune",

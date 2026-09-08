@@ -1,4 +1,5 @@
 use crate::model::wkt::polygon::Polygon;
+use crate::opendata::json::model::lat_lng::LatLng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -53,6 +54,11 @@ pub struct CountryLevel {
     /// JsonPath to the element polygon (its `coordinates` array).
     #[serde(rename = "polygonPath", skip_serializing_if = "Option::is_none")]
     pub polygon_path: Option<String>,
+    /// JsonPath to a representative point of the element (`[lon, lat]` array
+    /// or GeoJSON `Point` object). Optional: lets the UI center the map on an
+    /// element that carries no polygon (e.g. a département centroid).
+    #[serde(rename = "centerPath", skip_serializing_if = "Option::is_none")]
+    pub center_path: Option<String>,
     /// Query parameter used to search by exact code (e.g. `code` on
     /// geo.api.gouv.fr). Optional: levels that can be resolved from a parent's
     /// code define it.
@@ -90,6 +96,9 @@ pub struct CountryElement {
     pub name: String,
     pub code: Option<String>,
     pub polygons: Vec<Polygon>,
+    /// Representative point for centering the map on the element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center: Option<LatLng>,
     /// Parent level name → the parent's code, extracted from the element
     /// JSON via the level's `parentCodes` paths. Not serialized (client reads
     /// the resolved chain, not raw elements).
