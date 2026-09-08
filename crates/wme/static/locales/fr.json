@@ -29,6 +29,7 @@
   "zone.loading": "Chargement…",
   "zone.no_children": "Aucun enfant",
   "zone.center_child": "Centrer la carte sur cet élément",
+  "zone.search_placeholder": "Filtrer…",
 
   "btn.refresh": "Raffraichir",
   "btn.reset": "Reinitialiser",

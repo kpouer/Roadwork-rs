@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use roadwork_core::country::model::CountryElement;
-use roadwork_core::country::{CountryError, CountryLevel, CountryManager, Query};
+use roadwork_core::country::{Country, CountryError, CountryLevel, CountryManager, Query};
 use roadwork_core::model::opendata_data::OpendataData;
 use roadwork_core::model::roadwork_data::RoadworkData;
 use roadwork_core::model::service_info::ServiceInfo;
@@ -135,6 +135,7 @@ struct ZoneElement {
     code: Option<String>,
     polygons: Vec<Polygon>,
     center: Option<roadwork_core::opendata::json::model::lat_lng::LatLng>,
+    has_children: bool,
 }
 
 /// Resolution of the current map location into an administrative chain,
@@ -146,14 +147,25 @@ struct ZoneResolution {
 }
 
 /// Converts a raw level element into the serializable chain entry.
-fn zone_element(level: &CountryLevel, element: CountryElement) -> ZoneElement {
+fn zone_element(level: &CountryLevel, element: CountryElement, has_children: bool) -> ZoneElement {
     ZoneElement {
         level: level.name.clone(),
         name: element.name,
         code: element.code,
         polygons: element.polygons,
         center: element.center,
+        has_children,
     }
+}
+
+/// Whether the level at `idx` has a child level: a deeper level exists and it
+/// declares a `parentParams` entry for the current level name.
+fn level_has_children(country: &Country, idx: usize) -> bool {
+    country
+        .levels
+        .get(idx + 1)
+        .and_then(|next| next.parent_params.as_ref())
+        .is_some_and(|params| params.contains_key(&country.levels[idx].name))
 }
 
 /// Walks the levels of every embedded country and finds which zone contains
@@ -228,7 +240,9 @@ async fn resolve_country_zone_result(
         resolved.sort_by_key(|(i, _)| *i);
         let chain = resolved
             .into_iter()
-            .map(|(i, element)| zone_element(&country.levels[i], element))
+            .map(|(i, element)| {
+                zone_element(&country.levels[i], element, level_has_children(country, i))
+            })
             .collect();
         return Ok(Some(ZoneResolution {
             country: country.name.clone(),
@@ -292,7 +306,7 @@ pub async fn get_country_children(
     };
     let elements: Vec<ZoneElement> = children
         .into_iter()
-        .map(|element| zone_element(next, element))
+        .map(|element| zone_element(next, element, level_has_children(country, idx + 1)))
         .collect();
     serialize_data(&elements)
 }

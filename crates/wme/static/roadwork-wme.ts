@@ -3473,6 +3473,12 @@ function renderZoneBar(result: any) {
         seg.dataset.country = country;
         seg.dataset.level = el.level;
         seg.dataset.code = el.code || "";
+        const hasPoly = Array.isArray(el.polygons) && el.polygons.length > 0;
+        if (!hasPoly && !el.hasChildren) {
+            seg.disabled = true;
+            zoneBarEl.appendChild(seg);
+            continue;
+        }
         seg.addEventListener("mousedown", (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -3520,15 +3526,31 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
     });
     zoneMenuEl.appendChild(toggleBtn);
 
+    if (!item.hasChildren) {
+        document.body.appendChild(zoneMenuEl);
+        const rect = anchor.getBoundingClientRect();
+        zoneMenuEl.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - 260))}px`;
+        zoneMenuEl.style.top = `${rect.bottom + 4}px`;
+        requestAnimationFrame(() => {
+            if (zoneMenuEl) zoneMenuEl.classList.remove("rw-hidden");
+        });
+        return;
+    }
+
     const childrenTitle = document.createElement("div");
     childrenTitle.className = "rw-zone-menu-children-title";
     childrenTitle.textContent = t("zone.children");
     zoneMenuEl.appendChild(childrenTitle);
+    const searchEl = document.createElement("input");
+    searchEl.type = "text";
+    searchEl.className = "rw-zone-menu-search";
+    searchEl.placeholder = t("zone.search_placeholder");
+    zoneMenuEl.appendChild(searchEl);
     const childrenBox = document.createElement("div");
     childrenBox.className = "rw-zone-menu-children";
     childrenBox.textContent = t("zone.loading");
     zoneMenuEl.appendChild(childrenBox);
-    void loadZoneChildren(country, item, childrenBox);
+    void loadZoneChildren(country, item, childrenBox, searchEl);
 
     document.body.appendChild(zoneMenuEl);
     const rect = anchor.getBoundingClientRect();
@@ -3539,11 +3561,20 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
     });
 }
 
-async function loadZoneChildren(country: string, item: any, box: HTMLDivElement) {
+async function loadZoneChildren(country: string, item: any, box: HTMLDivElement, searchEl: HTMLInputElement) {
     if (!item.code) {
         box.textContent = t("zone.no_children");
         return;
     }
+    const rows: Array<HTMLButtonElement> = [];
+    const applyFilter = () => {
+        const q = searchEl.value.trim().toLowerCase();
+        for (const row of rows) {
+            const hidden = q !== "" && !row.textContent!.toLowerCase().includes(q);
+            row.style.display = hidden ? "none" : "";
+        }
+    };
+    searchEl.addEventListener("input", applyFilter);
     try {
         const children = await rpcCall("get_country_children", [country, item.level, item.code]);
         if (!Array.isArray(children) || children.length === 0) {
@@ -3551,6 +3582,8 @@ async function loadZoneChildren(country: string, item: any, box: HTMLDivElement)
             return;
         }
         box.textContent = "";
+        searchEl.disabled = false;
+        searchEl.focus();
         for (const child of children) {
             const center = zoneItemCenter(child);
             const row = document.createElement("button");
@@ -3570,8 +3603,10 @@ async function loadZoneChildren(country: string, item: any, box: HTMLDivElement)
                 row.classList.add("rw-zone-menu-child-disabled");
                 row.disabled = true;
             }
+            rows.push(row);
             box.appendChild(row);
         }
+        applyFilter();
     } catch (e) {
         console.warn("[Roadwork] Failed to load zone children:", e);
         box.textContent = t("zone.error");

@@ -1570,6 +1570,27 @@
     color: #9aa3b2;
 }
 
+.rw-zone-menu-search {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #eef2f7;
+    font: inherit;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    outline: none;
+}
+
+.rw-zone-menu-search::placeholder {
+    color: #9aa3b2;
+}
+
+.rw-zone-menu-search:focus {
+    border-color: #9dc3ff;
+}
+
 .rw-zone-menu-children {
     max-height: 220px;
     overflow: auto;

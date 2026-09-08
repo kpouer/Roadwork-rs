@@ -29,6 +29,7 @@
   "zone.loading": "Loading…",
   "zone.no_children": "No children",
   "zone.center_child": "Center the map on this element",
+  "zone.search_placeholder": "Filter…",
 
   "btn.refresh": "Refresh",
   "btn.reset": "Reset",
