@@ -1573,9 +1573,9 @@
 .rw-zone-menu-search {
     width: 100%;
     box-sizing: border-box;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    color: #eef2f7;
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    color: #ffffff;
     font: inherit;
     border-radius: 8px;
     padding: 6px 10px;
@@ -1584,11 +1584,7 @@
 }
 
 .rw-zone-menu-search::placeholder {
-    color: #9aa3b2;
-}
-
-.rw-zone-menu-search:focus {
-    border-color: #9dc3ff;
+    color: #d7dce4;
 }
 
 .rw-zone-menu-children {

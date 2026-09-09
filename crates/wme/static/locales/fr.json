@@ -25,7 +25,6 @@
   "zone.error": "Zone introuvable",
   "zone.show_polygon": "Afficher le polygone",
   "zone.hide_polygon": "Masquer le polygone",
-  "zone.children": "Enfants",
   "zone.loading": "Chargement…",
   "zone.no_children": "Aucun enfant",
   "zone.center_child": "Centrer la carte sur cet élément",

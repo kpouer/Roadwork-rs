@@ -3505,26 +3505,26 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
     zoneMenuEl.appendChild(title);
 
     const hasPoly = Array.isArray(item.polygons) && item.polygons.length > 0;
-    const key = zoneKey(country, item.level, item.code);
-    const toggleBtn = document.createElement("button");
-    toggleBtn.type = "button";
-    toggleBtn.className = "rw-zone-menu-toggle";
-    toggleBtn.disabled = !hasPoly;
-    const setToggleLabel = () => {
-        toggleBtn.textContent = t(zoneVisible[key] ? "zone.hide_polygon" : "zone.show_polygon");
-    };
-    setToggleLabel();
-    toggleBtn.addEventListener("click", () => {
-        if (!hasPoly) return;
-        if (zoneVisible[key]) {
-            delete zoneVisible[key];
-        } else {
-            zoneVisible[key] = { polygons: item.polygons || [] };
-        }
+    if (hasPoly) {
+        const key = zoneKey(country, item.level, item.code);
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "rw-zone-menu-toggle";
+        const setToggleLabel = () => {
+            toggleBtn.textContent = t(zoneVisible[key] ? "zone.hide_polygon" : "zone.show_polygon");
+        };
         setToggleLabel();
-        renderZonePolygons();
-    });
-    zoneMenuEl.appendChild(toggleBtn);
+        toggleBtn.addEventListener("click", () => {
+            if (zoneVisible[key]) {
+                delete zoneVisible[key];
+            } else {
+                zoneVisible[key] = { polygons: item.polygons || [] };
+            }
+            setToggleLabel();
+            renderZonePolygons();
+        });
+        zoneMenuEl.appendChild(toggleBtn);
+    }
 
     if (!item.hasChildren) {
         document.body.appendChild(zoneMenuEl);
@@ -3537,10 +3537,6 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
         return;
     }
 
-    const childrenTitle = document.createElement("div");
-    childrenTitle.className = "rw-zone-menu-children-title";
-    childrenTitle.textContent = t("zone.children");
-    zoneMenuEl.appendChild(childrenTitle);
     const searchEl = document.createElement("input");
     searchEl.type = "text";
     searchEl.className = "rw-zone-menu-search";
