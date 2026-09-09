@@ -135,6 +135,7 @@ struct ZoneElement {
     code: Option<String>,
     polygons: Vec<Polygon>,
     center: Option<roadwork_core::opendata::json::model::lat_lng::LatLng>,
+    #[serde(rename = "hasChildren")]
     has_children: bool,
 }
 
