@@ -145,6 +145,13 @@ struct ZoneElement {
 struct ZoneResolution {
     country: String,
     chain: Vec<ZoneElement>,
+    #[serde(rename = "sourceUrl")]
+    source_url: Option<String>,
+    producer: Option<String>,
+    #[serde(rename = "licenceName")]
+    licence_name: Option<String>,
+    #[serde(rename = "licenceUrl")]
+    licence_url: Option<String>,
 }
 
 /// Converts a raw level element into the serializable chain entry.
@@ -248,6 +255,10 @@ async fn resolve_country_zone_result(
         return Ok(Some(ZoneResolution {
             country: country.name.clone(),
             chain,
+            source_url: country.source_url.clone(),
+            producer: country.producer.clone(),
+            licence_name: country.licence_name.clone(),
+            licence_url: country.licence_url.clone(),
         }));
     }
     Ok(None)

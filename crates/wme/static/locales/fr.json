@@ -23,6 +23,7 @@
 
   "zone.searching": "Localisation de la zone…",
   "zone.error": "Zone introuvable",
+  "zone.source_info": "Source de données de ce pays",
   "zone.show_polygon": "Afficher le polygone",
   "zone.hide_polygon": "Masquer le polygone",
   "zone.loading": "Chargement…",

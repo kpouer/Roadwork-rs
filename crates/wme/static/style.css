@@ -1507,6 +1507,30 @@
     text-underline-offset: 2px;
 }
 
+.rw-zone-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    margin-right: 6px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 50%;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.rw-zone-help:hover {
+    border-color: #9dc3ff;
+    color: #ffffff;
+}
+
 .rw-zone-menu {
     position: fixed;
     z-index: 100002;
@@ -1527,6 +1551,38 @@
 
 .rw-zone-menu.rw-hidden {
     display: none;
+}
+
+.rw-country-info {
+    color: #eef2f7;
+}
+
+.rw-country-info-row {
+    padding: 3px 4px;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    color: #eef2f7;
+}
+
+.rw-country-info-row span {
+    color: inherit;
+    word-break: break-word;
+}
+
+.rw-country-info-label {
+    color: #a7b0bd;
+    flex-shrink: 0;
+}
+
+.rw-country-info a {
+    color: #9dc3ff;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.rw-country-info a:hover {
+    text-decoration: underline;
 }
 
 .rw-zone-menu-title {

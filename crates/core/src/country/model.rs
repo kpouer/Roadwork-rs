@@ -9,6 +9,14 @@ pub struct Country {
     pub name: String,
     #[serde(rename = "isoCode", skip_serializing_if = "Option::is_none")]
     pub iso_code: Option<String>,
+    #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    #[serde(rename = "licenceName", skip_serializing_if = "Option::is_none")]
+    pub licence_name: Option<String>,
+    #[serde(rename = "licenceUrl", skip_serializing_if = "Option::is_none")]
+    pub licence_url: Option<String>,
     pub levels: Vec<CountryLevel>,
 }
 

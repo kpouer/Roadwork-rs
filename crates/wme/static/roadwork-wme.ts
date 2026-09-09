@@ -3304,6 +3304,8 @@ let lastZoneCenter: { lat: number; lon: number } | null = null;
 let zoneResolveInFlight = false;
 let zoneMenuEl: HTMLDivElement | null = null;
 let zoneMenuAnchor: HTMLElement | null = null;
+let countryInfoEl: HTMLDivElement | null = null;
+let countryInfoAnchor: HTMLElement | null = null;
 let zoneVisible: Record<string, { polygons: Array<{ xpoints: number[]; ypoints: number[] }> }> = {};
 let zoneLayerReady = false;
 let zoneIdCounter = 0;
@@ -3314,6 +3316,7 @@ function hideZoneBar() {
         zoneBarEl.textContent = "";
     }
     closeZoneMenu();
+    closeCountryInfo();
 }
 
 function closeZoneMenu() {
@@ -3322,6 +3325,70 @@ function closeZoneMenu() {
         zoneMenuEl = null;
     }
     zoneMenuAnchor = null;
+}
+
+function closeCountryInfo() {
+    if (countryInfoEl) {
+        countryInfoEl.remove();
+        countryInfoEl = null;
+    }
+    countryInfoAnchor = null;
+}
+
+function toggleCountryInfo(anchor: HTMLElement) {
+    if (countryInfoEl && countryInfoAnchor === anchor) {
+        closeCountryInfo();
+        return;
+    }
+    closeCountryInfo();
+    const el = document.createElement("div");
+    el.className = "rw-zone-menu rw-country-info rw-hidden";
+    countryInfoEl = el;
+    countryInfoAnchor = anchor;
+
+    const title = document.createElement("div");
+    title.className = "rw-zone-menu-title";
+    title.textContent = anchor.dataset.country || "";
+    el.appendChild(title);
+
+    const producer = anchor.dataset.producer || "";
+    const licenceName = anchor.dataset.licenceName || "";
+    const licenceUrl = anchor.dataset.licenceUrl || "";
+    const sourceUrl = anchor.dataset.sourceUrl || "";
+
+    const fields: Array<{ label: string; value: string; url?: string }> = [];
+    if (producer) fields.push({ label: t("about.producer"), value: producer });
+    if (licenceName) {
+        fields.push({ label: t("about.licence"), value: licenceName, url: licenceUrl || undefined });
+    }
+    if (sourceUrl) fields.push({ label: t("about.source_page"), value: sourceUrl, url: sourceUrl });
+
+    if (fields.length === 0) {
+        el.textContent = t("sources.no_info");
+    } else {
+        for (const f of fields) {
+            const row = document.createElement("div");
+            row.className = "rw-country-info-row";
+            const label = document.createElement("span");
+            label.className = "rw-country-info-label";
+            label.textContent = f.label;
+            row.appendChild(label);
+            if (f.url) {
+                row.appendChild(buildAboutLink(f.url, f.value));
+            } else {
+                const value = document.createElement("span");
+                value.textContent = f.value;
+                row.appendChild(value);
+            }
+            el.appendChild(row);
+        }
+    }
+
+    document.body.appendChild(el);
+    const rect = anchor.getBoundingClientRect();
+    el.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - 260))}px`;
+    el.style.top = `${rect.bottom + 4}px`;
+    requestAnimationFrame(() => el.classList.remove("rw-hidden"));
 }
 
 function zoneKey(country: string, level: string, code: string | null) {
@@ -3454,6 +3521,7 @@ function renderZoneBar(result: any) {
         .map((el: any) => `${el.name}${el.code ? ` (${el.code})` : ""}`)
         .join(" › "));
     closeZoneMenu();
+    closeCountryInfo();
     zoneBarEl.textContent = "";
     zoneBarEl.classList.remove("rw-hidden");
     const append = (text: string) => {
@@ -3462,6 +3530,27 @@ function renderZoneBar(result: any) {
         zoneBarEl!.appendChild(span);
     };
     const country = result.country as string;
+    if (result.producer || result.sourceUrl || result.licenceName || result.licenceUrl) {
+        const helpBtn = document.createElement("button");
+        helpBtn.type = "button";
+        helpBtn.className = "rw-zone-help";
+        helpBtn.textContent = "?";
+        helpBtn.title = t("zone.source_info");
+        helpBtn.dataset.country = country;
+        helpBtn.dataset.producer = result.producer || "";
+        helpBtn.dataset.sourceUrl = result.sourceUrl || "";
+        helpBtn.dataset.licenceName = result.licenceName || "";
+        helpBtn.dataset.licenceUrl = result.licenceUrl || "";
+        helpBtn.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        helpBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleCountryInfo(helpBtn);
+        });
+        zoneBarEl.appendChild(helpBtn);
+    }
     append(country);
     for (const el of result.chain as Array<any>) {
         append(" ›");
@@ -3656,25 +3745,30 @@ function createZoneUI() {
     document.body.appendChild(zoneBarEl);
 
     document.addEventListener("mousedown", (e) => {
-        if (!zoneMenuEl) return;
+        if (!zoneMenuEl && !countryInfoEl) return;
         if (
             zoneMenuAnchor &&
             (e.target === zoneMenuAnchor || zoneMenuAnchor.contains(e.target as Node))
         ) {
             return;
         }
-        if (zoneMenuEl.contains(e.target as Node)) return;
+        if (zoneMenuEl && zoneMenuEl.contains(e.target as Node)) return;
+        if (countryInfoEl && countryInfoEl.contains(e.target as Node)) return;
         closeZoneMenu();
+        closeCountryInfo();
     });
     document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeZoneMenu();
+        if (e.key === "Escape") {
+            closeZoneMenu();
+            closeCountryInfo();
+        }
     });
 
     let isDragging = false;
     let dragOffsetX = 0;
     let dragOffsetY = 0;
     zoneBarEl.addEventListener("mousedown", (e) => {
-        if ((e.target as HTMLElement).closest(".rw-zone-segment")) return;
+        if ((e.target as HTMLElement).closest(".rw-zone-segment, .rw-zone-help")) return;
         isDragging = true;
         const rect = zoneBarEl!.getBoundingClientRect();
         dragOffsetX = e.clientX - rect.left;

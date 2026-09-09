@@ -1,6 +1,8 @@
 {
   "name": "France",
   "isoCode": "FR",
+  "sourceUrl": "https://geo.api.gouv.fr/",
+  "producer": "Direction interministérielle du numérique (DINUM)",
   "levels": [
     {
       "name": "région",
