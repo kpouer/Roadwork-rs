@@ -1,3 +1,5 @@
+type Segment = import("wme-sdk-typings").Segment;
+type SegmentAddress = import("wme-sdk-typings").SegmentAddress;
 type SdkFeature = import("wme-sdk-typings").SdkFeature;
 type WmeSDK = import("wme-sdk-typings").WmeSDK;
 const { t, getLocale, detectLocale } = (window as any).__rw_i18n;
@@ -1518,7 +1520,7 @@ interface WmeStreetIndex {
 function buildWmeStreetIndex(): WmeStreetIndex {
     const index: WmeStreetIndex = { streets: new Map() };
     if (!wmeSDK?.DataModel?.Segments) return index;
-    let segments;
+    let segments: Segment[];
     try {
         segments = wmeSDK.DataModel.Segments.getAll();
     } catch (_) {
@@ -1526,7 +1528,7 @@ function buildWmeStreetIndex(): WmeStreetIndex {
     }
     if (!Array.isArray(segments)) return index;
     for (const seg of segments) {
-        let addr;
+        let addr: SegmentAddress;
         try {
             addr = wmeSDK.DataModel.Segments.getAddress({ segmentId: seg.id });
         } catch (_) {
@@ -3408,8 +3410,29 @@ const ZONE_EPSILON = 0.001;
 const ZONE_LAYER = "Roadwork - Zone";
 const ZONE_FILL = "#1a73e8";
 const ZONE_STROKE = "#0d5bd6";
-const ADDRESS_LAYER = "Roadwork - Adresses";
+const ADDRESS_EXACT_LAYER = "Addresses exactes";
+const ADDRESS_APPROX_LAYER = "Addresses approximatives";
+const ADDRESS_MISSING_LAYER = "Addresses manquants";
+const ALL_ADDRESS_LAYERS = [
+    ADDRESS_EXACT_LAYER,
+    ADDRESS_APPROX_LAYER,
+    ADDRESS_MISSING_LAYER
+];
 const ADDRESS_ICON = "#0d9488";
+const ADDRESS_LAYER_COLORS: Record<string, string> = {
+    [ADDRESS_EXACT_LAYER]: ADDRESS_MATCH_COLORS.green,
+    [ADDRESS_APPROX_LAYER]: ADDRESS_MATCH_COLORS.yellow,
+    [ADDRESS_MISSING_LAYER]: ADDRESS_MATCH_COLORS.red,
+};
+
+function addressLayerForMatch(match: string): string {
+    switch (match) {
+        case "green": return ADDRESS_EXACT_LAYER;
+        case "yellow": return ADDRESS_APPROX_LAYER;
+        case "red": return ADDRESS_MISSING_LAYER;
+        default: return ADDRESS_MISSING_LAYER;
+    }
+}
 let zoneBarEl: HTMLDivElement | null = null;
 let lastZoneCenter: { lat: number; lon: number } | null = null;
 let zoneResolveInFlight = false;
@@ -3425,6 +3448,7 @@ let currentAddressesCountry: string | null = null;
 let addressLayerReady = false;
 let addressIdCounter = 0;
 let addressFeatureIndex: Record<string, { label: string; lat: number; lon: number; match: string; distance: number | null }> = {};
+let lastRenderedAddresses: Array<{ label: string; lat: number; lon: number }> = [];
 let addressPopupEl: HTMLDivElement | null = null;
 
 function hideZoneBar() {
@@ -3625,68 +3649,74 @@ function renderZonePolygons() {
     }
 }
 
-function buildAddressStyleRules() {
+function buildAddressStyleRules(color: string) {
     return [
         {
             predicate: (props) => props.geomType === "Point",
             style: {
-                icon: "${getIcon}",
+                icon: buildCircleIcon(color, 16),
                 iconWidth: 16,
                 iconHeight: 16,
                 iconOffsetX: -8,
                 iconOffsetY: -8,
                 graphicOpacity: 1,
+                fillColor: color,
+                strokeColor: color,
                 title: "${addressTitle}",
             },
         },
     ];
 }
 
-function ensureAddressLayer() {
+function ensureAddressLayers() {
     if (addressLayerReady) return;
     addressLayerReady = true;
-    try {
-        wmeSDK.Map.addLayer({
-            layerName: ADDRESS_LAYER,
-            styleContext: {
-                addressTitle: ({ feature }) => String(feature?.properties?.label ?? ""),
-                getIcon: ({ feature }) => {
-                    const match = String(feature?.properties?.addrMatch ?? "");
-                    const color = ADDRESS_MATCH_COLORS[match] || ADDRESS_ICON;
-                    return buildCircleIcon(color, 16);
+    for (const layerName of ALL_ADDRESS_LAYERS) {
+        const layerColor = ADDRESS_LAYER_COLORS[layerName] || ADDRESS_ICON;
+        try {
+            wmeSDK.Map.addLayer({
+                layerName,
+                styleContext: {
+                    addressTitle: ({ feature }) => String(feature?.properties?.label ?? ""),
                 },
-            },
-            styleRules: buildAddressStyleRules(),
-        });
-    } catch (e) {
-        console.warn("[Roadwork] Failed to add addresses layer:", e);
-    }
-    try {
-        wmeSDK.Events.trackLayerEvents({ layerName: ADDRESS_LAYER });
-    } catch (e) {
-        console.warn("[Roadwork] Failed to track addresses layer events:", e);
-    }
-    try {
-        wmeSDK.LayerSwitcher.addLayerCheckbox({ name: ADDRESS_LAYER, isChecked: true });
-    } catch (e) {
-        console.warn("[Roadwork] Failed to add addresses layer checkbox:", e);
+                styleRules: buildAddressStyleRules(layerColor),
+            });
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to add addresses layer "${layerName}":`, e);
+        }
+        try {
+            wmeSDK.Events.trackLayerEvents({ layerName });
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to track addresses layer events for "${layerName}":`, e);
+        }
+        try {
+            wmeSDK.LayerSwitcher.addLayerCheckbox({ name: layerName, isChecked: true });
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to add addresses layer checkbox for "${layerName}":`, e);
+        }
     }
 }
 
 function clearAddressLayer() {
     closeAddressPopup();
     if (!wmeSDK?.Map) return;
-    try {
-        wmeSDK.Map.removeAllFeaturesFromLayer({ layerName: ADDRESS_LAYER });
-    } catch (_) {}
+    for (const layerName of ALL_ADDRESS_LAYERS) {
+        try {
+            wmeSDK.Map.removeAllFeaturesFromLayer({ layerName });
+        } catch (_) {}
+    }
 }
 
 async function renderAddresses(addresses: Array<{ label: string; lat: number; lon: number }>) {
     if (!wmeSDK?.Map) return;
+    lastRenderedAddresses = addresses;
     clearAddressLayer();
     addressFeatureIndex = {};
     const streetIndex = buildWmeStreetIndex();
-    const features: SdkFeature[] = [];
+    const featuresByLayer: Record<string, SdkFeature[]> = {};
+    for (const layerName of ALL_ADDRESS_LAYERS) {
+        featuresByLayer[layerName] = [];
+    }
     for (const addr of addresses) {
         if (!isFinite(addr.lat) || !isFinite(addr.lon) || !addr.label) continue;
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -3702,22 +3732,24 @@ async function renderAddresses(addresses: Array<{ label: string; lat: number; lo
         }
         const id = `address-${addressIdCounter++}`;
         addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon, match, distance };
-        features.push({
+        featuresByLayer[addressLayerForMatch(match)]?.push({
             id,
             type: "Feature",
             geometry: { type: "Point", coordinates: [addr.lon, addr.lat] },
             properties: { geomType: "Point", addrMatch: match, label: addr.label },
         });
     }
-    if (features.length === 0) return;
-    try {
-        const checked = wmeSDK.LayerSwitcher.isLayerCheckboxChecked({ name: ADDRESS_LAYER });
-        if (!checked) return;
-    } catch (_) {}
-    try {
-        wmeSDK.Map.addFeaturesToLayer({ features, layerName: ADDRESS_LAYER });
-    } catch (e) {
-        console.warn("[Roadwork] Failed to add address features:", e);
+    for (const [layerName, features] of Object.entries(featuresByLayer)) {
+        if (features.length === 0) continue;
+        try {
+            const checked = wmeSDK.LayerSwitcher.isLayerCheckboxChecked({ name: layerName });
+            if (!checked) continue;
+        } catch (_) {}
+        try {
+            wmeSDK.Map.addFeaturesToLayer({ features, layerName });
+        } catch (e) {
+            console.warn(`[Roadwork] Failed to add address features to "${layerName}":`, e);
+        }
     }
 }
 
@@ -3936,7 +3968,7 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any, showAddre
                 addressesEnabled = false;
                 clearAddressLayer();
             } else {
-                ensureAddressLayer();
+                ensureAddressLayers();
                 addressesEnabled = true;
                 currentAddressesCountry = country;
                 const bounds = getViewportBounds();
@@ -4125,7 +4157,7 @@ function createZoneUI() {
         isDragging = false;
     });
     ensureZoneLayer();
-    ensureAddressLayer();
+    ensureAddressLayers();
 }
 
 function createPolygonesUI() {
@@ -5466,6 +5498,9 @@ async function init() {
             if (evt && evt.name === OPENDATA_LAYER) {
                 renderOpendataToMap();
             }
+            if (evt && evt.name && ALL_ADDRESS_LAYERS.includes(evt.name)) {
+                if (addressesEnabled) renderAddresses(lastRenderedAddresses);
+            }
         },
     });
 
@@ -5497,7 +5532,10 @@ async function init() {
                 }
                 return;
             }
-            if (!evt || !evt.layerName || !evt.layerName.startsWith("Roadwork - ")) {
+            if (!evt || !evt.layerName) {
+                return;
+            }
+            if (!evt.layerName.startsWith("Roadwork - ") && !ALL_ADDRESS_LAYERS.includes(evt.layerName)) {
                 return;
             }
             const featureId = evt.featureId as string;
@@ -5505,7 +5543,7 @@ async function init() {
                 return;
             }
 
-            if (evt.layerName === ADDRESS_LAYER) {
+            if (ALL_ADDRESS_LAYERS.includes(evt.layerName)) {
                 const data = addressFeatureIndex[featureId];
                 if (data) {
                     showAddressPopup(data.label, data.lat, data.lon, data.match, data.distance);
