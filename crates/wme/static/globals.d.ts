@@ -14,6 +14,7 @@ declare global {
         get_services(): unknown;
         resolve_country_zone(lat: unknown, lon: unknown, latMin: unknown, lonMin: unknown, latMax: unknown, lonMax: unknown): Promise<unknown>;
         get_country_children(country: unknown, level: unknown, code: unknown): Promise<unknown>;
+        reverse_geocode(country: unknown, lat: unknown, lon: unknown): Promise<unknown>;
         get_sources_info(): unknown;
         get_roadworks(descriptor: unknown, forceRefresh: unknown): Promise<unknown>;
         get_roadworks_cached(service: unknown): Promise<unknown>;

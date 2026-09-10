@@ -1585,6 +1585,55 @@
     text-decoration: underline;
 }
 
+.rw-address-popup {
+    min-width: 200px;
+    max-width: 300px;
+}
+
+.rw-address-popup .rw-zone-menu-title {
+    padding-right: 22px;
+    white-space: pre-wrap;
+    overflow: visible;
+}
+
+.rw-address-coords-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 3px 4px;
+    color: #eef2f7;
+}
+
+.rw-address-coords-label {
+    color: #a7b0bd;
+    flex-shrink: 0;
+}
+
+.rw-address-coords-value {
+    color: #eef2f7;
+    word-break: break-word;
+    font-family: monospace;
+}
+
+.rw-address-popup-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 15px;
+    line-height: 1;
+    color: #a7b0bd;
+    cursor: pointer;
+}
+
+.rw-address-popup-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
 .rw-zone-menu-title {
     font-weight: 600;
     padding: 2px 4px 8px;

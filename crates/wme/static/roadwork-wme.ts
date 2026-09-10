@@ -3299,6 +3299,8 @@ const ZONE_EPSILON = 0.001;
 const ZONE_LAYER = "Roadwork - Zone";
 const ZONE_FILL = "#1a73e8";
 const ZONE_STROKE = "#0d5bd6";
+const ADDRESS_LAYER = "Roadwork - Adresses";
+const ADDRESS_ICON = "#0d9488";
 let zoneBarEl: HTMLDivElement | null = null;
 let lastZoneCenter: { lat: number; lon: number } | null = null;
 let zoneResolveInFlight = false;
@@ -3309,8 +3311,17 @@ let countryInfoAnchor: HTMLElement | null = null;
 let zoneVisible: Record<string, { polygons: Array<{ xpoints: number[]; ypoints: number[] }> }> = {};
 let zoneLayerReady = false;
 let zoneIdCounter = 0;
+let addressesEnabled = false;
+let currentAddressesCountry: string | null = null;
+let addressLayerReady = false;
+let addressIdCounter = 0;
+let addressFeatureIndex: Record<string, { label: string; lat: number; lon: number }> = {};
+let addressPopupEl: HTMLDivElement | null = null;
 
 function hideZoneBar() {
+    addressesEnabled = false;
+    currentAddressesCountry = null;
+    clearAddressLayer();
     if (zoneBarEl) {
         zoneBarEl.classList.add("rw-hidden");
         zoneBarEl.textContent = "";
@@ -3505,6 +3516,144 @@ function renderZonePolygons() {
     }
 }
 
+function ensureAddressLayer() {
+    if (addressLayerReady) return;
+    addressLayerReady = true;
+    const icon = buildCircleIcon(ADDRESS_ICON);
+    try {
+        wmeSDK.Map.addLayer({
+            layerName: ADDRESS_LAYER,
+            styleRules: [
+                {
+                    predicate: (props) => props.geomType === "Point",
+                    style: {
+                        externalGraphic: icon,
+                        graphicWidth: 14,
+                        graphicHeight: 14,
+                        graphicXOffset: -7,
+                        graphicYOffset: -7,
+                    },
+                },
+            ],
+        });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add addresses layer:", e);
+    }
+    try {
+        wmeSDK.Events.trackLayerEvents({ layerName: ADDRESS_LAYER });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to track addresses layer events:", e);
+    }
+    try {
+        wmeSDK.LayerSwitcher.addLayerCheckbox({ name: ADDRESS_LAYER, isChecked: true });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add addresses layer checkbox:", e);
+    }
+}
+
+function clearAddressLayer() {
+    closeAddressPopup();
+    if (!wmeSDK?.Map) return;
+    try {
+        wmeSDK.Map.removeAllFeaturesFromLayer({ layerName: ADDRESS_LAYER });
+    } catch (_) {}
+}
+
+function renderAddresses(addresses: Array<{ label: string; lat: number; lon: number }>) {
+    if (!wmeSDK?.Map) return;
+    clearAddressLayer();
+    addressFeatureIndex = {};
+    const features: SdkFeature[] = [];
+    for (const addr of addresses) {
+        if (!isFinite(addr.lat) || !isFinite(addr.lon) || !addr.label) continue;
+        const id = `address-${addressIdCounter++}`;
+        addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon };
+        features.push({
+            id,
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [addr.lon, addr.lat] },
+            properties: { geomType: "Point" },
+        });
+    }
+    if (features.length === 0) return;
+    try {
+        const checked = wmeSDK.LayerSwitcher.isLayerCheckboxChecked({ name: ADDRESS_LAYER });
+        if (!checked) return;
+    } catch (_) {}
+    try {
+        wmeSDK.Map.addFeaturesToLayer({ features, layerName: ADDRESS_LAYER });
+    } catch (e) {
+        console.warn("[Roadwork] Failed to add address features:", e);
+    }
+}
+
+async function updateAddresses(country: string, lat: number, lon: number) {
+    if (!addressesEnabled) return;
+    try {
+        const addresses = await rpcCall("reverse_geocode", [country, lat, lon]);
+        if (Array.isArray(addresses)) {
+            renderAddresses(addresses);
+        }
+    } catch (e) {
+        console.warn("[Roadwork] Failed to load addresses:", e);
+        setStatus(t("zone.addresses_error"), "error");
+        addressesEnabled = false;
+        clearAddressLayer();
+    }
+}
+
+function closeAddressPopup() {
+    if (addressPopupEl) {
+        addressPopupEl.remove();
+        addressPopupEl = null;
+    }
+}
+
+function showAddressPopup(label: string, lat: number, lon: number) {
+    closeAddressPopup();
+    if (!wmeSDK?.Map) return;
+    console.log("[Roadwork] address popup:", label, lat, lon);
+    const el = document.createElement("div");
+    el.className = "rw-zone-menu rw-address-popup rw-hidden";
+    addressPopupEl = el;
+
+    const title = document.createElement("div");
+    title.className = "rw-zone-menu-title";
+    title.textContent = label;
+    el.appendChild(title);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "rw-address-popup-close";
+    closeBtn.textContent = "\u00d7";
+    closeBtn.title = t("btn.close");
+    closeBtn.addEventListener("click", closeAddressPopup);
+    el.appendChild(closeBtn);
+
+    document.body.appendChild(el);
+
+    let pixel: { x: number; y: number } | null = null;
+    try {
+        pixel = wmeSDK.Map.getPixelFromLonLat({ lonLat: { lon, lat } });
+    } catch (_) {}
+    el.classList.remove("rw-hidden");
+    requestAnimationFrame(() => {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (!pixel) {
+            el.style.left = `${Math.max(4, (window.innerWidth - w) / 2)}px`;
+            el.style.top = `${Math.max(4, (window.innerHeight - h) / 2)}px`;
+        } else {
+            let left = pixel.x - w / 2;
+            left = Math.max(4, Math.min(left, window.innerWidth - w - 4));
+            let top = pixel.y - h - 12;
+            if (top < 4) top = pixel.y + 12;
+            el.style.left = `${left}px`;
+            el.style.top = `${top}px`;
+        }
+    });
+}
+
 function renderZoneBar(result: any) {
     if (!zoneBarEl) return;
     if (
@@ -3552,7 +3701,15 @@ function renderZoneBar(result: any) {
         zoneBarEl.appendChild(helpBtn);
     }
     append(country);
-    for (const el of result.chain as Array<any>) {
+    const chain = result.chain as Array<any>;
+    currentAddressesCountry = country;
+    if (addressesEnabled && !result.hasAddresses) {
+        addressesEnabled = false;
+        clearAddressLayer();
+    }
+    for (let i = 0; i < chain.length; i++) {
+        const el = chain[i];
+        const isLast = i === chain.length - 1;
         append(" ›");
         const seg = document.createElement("button");
         seg.type = "button";
@@ -3575,13 +3732,13 @@ function renderZoneBar(result: any) {
                 closeZoneMenu();
                 return;
             }
-            openZoneMenu(seg, country, el);
+            openZoneMenu(seg, country, el, result.hasAddresses === true && isLast);
         });
         zoneBarEl.appendChild(seg);
     }
 }
 
-function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
+function openZoneMenu(anchor: HTMLElement, country: string, item: any, showAddresses: boolean) {
     console.info("[Roadwork] zone menu:", item.level, item.name);
     closeZoneMenu();
     zoneMenuAnchor = anchor;
@@ -3611,6 +3768,34 @@ function openZoneMenu(anchor: HTMLElement, country: string, item: any) {
             }
             setToggleLabel();
             renderZonePolygons();
+        });
+        zoneMenuEl.appendChild(toggleBtn);
+    }
+
+    if (showAddresses) {
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "rw-zone-menu-toggle";
+        const setToggleLabel = () => {
+            toggleBtn.textContent = t(addressesEnabled ? "zone.hide_addresses" : "zone.show_addresses");
+        };
+        setToggleLabel();
+        toggleBtn.addEventListener("click", async () => {
+            if (addressesEnabled) {
+                addressesEnabled = false;
+                clearAddressLayer();
+            } else {
+                ensureAddressLayer();
+                addressesEnabled = true;
+                currentAddressesCountry = country;
+                const bounds = getViewportBounds();
+                if (bounds) {
+                    const lat = (bounds.latMin + bounds.latMax) / 2;
+                    const lon = (bounds.lonMin + bounds.lonMax) / 2;
+                    await updateAddresses(country, lat, lon);
+                }
+            }
+            setToggleLabel();
         });
         zoneMenuEl.appendChild(toggleBtn);
     }
@@ -3729,6 +3914,9 @@ async function updateZoneBar() {
         ]);
         lastZoneCenter = { lat, lon };
         renderZoneBar(result);
+        if (addressesEnabled && currentAddressesCountry) {
+            await updateAddresses(currentAddressesCountry, lat, lon);
+        }
     } catch (e) {
         console.warn("[Roadwork] Failed to resolve zone:", e);
         zoneBarEl.textContent = t("zone.error");
@@ -3786,6 +3974,7 @@ function createZoneUI() {
         isDragging = false;
     });
     ensureZoneLayer();
+    ensureAddressLayer();
 }
 
 function createPolygonesUI() {
@@ -5162,6 +5351,14 @@ async function init() {
             }
             const featureId = evt.featureId as string;
             if (!featureId) {
+                return;
+            }
+
+            if (evt.layerName === ADDRESS_LAYER) {
+                const data = addressFeatureIndex[featureId];
+                if (data) {
+                    showAddressPopup(data.label, data.lat, data.lon);
+                }
                 return;
             }
 

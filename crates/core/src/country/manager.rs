@@ -1,4 +1,6 @@
-use crate::country::model::{Country, CountryElement, CountryLevel, PolygonEncoding, Query};
+use crate::country::model::{
+    Address, AddressService, Country, CountryElement, CountryLevel, PolygonEncoding, Query,
+};
 use crate::http_service::HttpService;
 use crate::json_tools::JsonTools;
 use crate::model::wkt::polygon::Polygon;
@@ -101,6 +103,25 @@ impl CountryManager {
         .await
     }
 
+    /// Returns the addresses around `lat`,`lon` from the country's reverse
+    /// geocoding (street number) service. `None` when the country declares no
+    /// such service.
+    pub async fn reverse_geocode(
+        &self,
+        country: &Country,
+        lat: f64,
+        lon: f64,
+    ) -> Result<Option<Vec<Address>>, CountryError> {
+        let Some(service) = country.addresses.as_ref() else {
+            return Ok(None);
+        };
+        let url = build_reverse_url(service, lat, lon)?;
+        info!("reverse_geocode {url}");
+        let json = HttpService.get_url(&url).await?;
+        let value: Value = serde_json::from_str(&json)?;
+        Ok(Some(parse_addresses(service, &value)?))
+    }
+
     fn parse_response(
         &self,
         level: &CountryLevel,
@@ -139,6 +160,56 @@ impl CountryManager {
         }
         Ok(elements)
     }
+}
+
+fn build_reverse_url(service: &AddressService, lat: f64, lon: f64) -> Result<String, CountryError> {
+    let lat_param = service
+        .lat_param
+        .as_deref()
+        .ok_or_else(|| CountryError::ReverseSearchUnsupported("lat".to_string()))?;
+    let lon_param = service
+        .lon_param
+        .as_deref()
+        .ok_or_else(|| CountryError::ReverseSearchUnsupported("lon".to_string()))?;
+    let lat = urlencoding::encode(&format!("{lat}")).into_owned();
+    let lon = urlencoding::encode(&format!("{lon}")).into_owned();
+    let mut url = service.url.clone();
+    url.push_str(&format!(
+        "{}{lat_param}={lat}&{lon_param}={lon}",
+        if url.contains('?') { '&' } else { '?' },
+    ));
+    if let Some(limit_param) = service.limit_param.as_deref()
+        && let Some(limit) = service.limit
+    {
+        url.push_str(&format!("&{limit_param}={limit}"));
+    }
+    Ok(url)
+}
+
+/// Extracts addresses from a reverse geocoding GeoJSON response: for each
+/// element of `dataArray`, the `labelPath` label and the GeoJSON `Point`
+/// geometry (`geometryPath`) giving the coordinates.
+fn parse_addresses(service: &AddressService, value: &Value) -> Result<Vec<Address>, CountryError> {
+    let mut addresses = Vec::new();
+    for node in value.query(&service.data_array)? {
+        let label = node.get_path(&service.label_path).unwrap_or_default();
+        let Some(geometry) = node
+            .query(&service.geometry_path)
+            .ok()
+            .and_then(|found| found.first().copied())
+        else {
+            continue;
+        };
+        let Some(center) = parse_center(geometry) else {
+            continue;
+        };
+        addresses.push(Address {
+            label,
+            lat: center.lat,
+            lon: center.lon,
+        });
+    }
+    Ok(addresses)
 }
 
 fn build_url(level: &CountryLevel, query: &Query) -> Result<String, CountryError> {
@@ -323,6 +394,8 @@ pub enum CountryError {
     PolygonSearchUnsupported(String),
     #[error("Level '{0}' has no point (lat/lon) query parameters")]
     PointSearchUnsupported(String),
+    #[error("Reverse geocoding service has no '{0}' query parameter")]
+    ReverseSearchUnsupported(String),
     #[error("Level '{0}' has no bbox query parameter")]
     BBoxSearchUnsupported(String),
     #[error("Level '{0}' has no '{1}' parent level")]

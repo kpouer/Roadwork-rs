@@ -3,6 +3,16 @@
   "isoCode": "FR",
   "sourceUrl": "https://geo.api.gouv.fr/",
   "producer": "Direction interministérielle du numérique (DINUM)",
+  "addresses": {
+    "url": "https://data.geopf.fr/geocodage/reverse",
+    "latParam": "lat",
+    "lonParam": "lon",
+    "limitParam": "limit",
+    "limit": 20,
+    "dataArray": "$.features[*]",
+    "labelPath": "$.properties.label",
+    "geometryPath": "$.geometry"
+  },
   "levels": [
     {
       "name": "région",

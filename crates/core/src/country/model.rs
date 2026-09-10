@@ -18,6 +18,9 @@ pub struct Country {
     #[serde(rename = "licenceUrl", skip_serializing_if = "Option::is_none")]
     pub licence_url: Option<String>,
     pub levels: Vec<CountryLevel>,
+    /// Optional reverse geocoding (street number) service for this country.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub addresses: Option<AddressService>,
 }
 
 /// One administrative level of a country (région, département, commune, ...).
@@ -96,6 +99,41 @@ pub struct CountryLevel {
 pub enum PolygonEncoding {
     #[default]
     GeoJson,
+}
+
+/// Result element returned by the reverse geocoding (street number) service.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Address {
+    pub label: String,
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Reverse geocoding (street number) service of a country. The addresses
+/// around a given point are retrieved from a REST API and displayed on the map.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct AddressService {
+    pub url: String,
+    /// Query parameter receiving the latitude.
+    #[serde(rename = "latParam", skip_serializing_if = "Option::is_none")]
+    pub lat_param: Option<String>,
+    /// Query parameter receiving the longitude.
+    #[serde(rename = "lonParam", skip_serializing_if = "Option::is_none")]
+    pub lon_param: Option<String>,
+    /// Query parameter receiving the maximum number of results.
+    #[serde(rename = "limitParam", skip_serializing_if = "Option::is_none")]
+    pub limit_param: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// JsonPath targeting the result array in the API response.
+    #[serde(rename = "dataArray")]
+    pub data_array: String,
+    /// JsonPath to the address label.
+    #[serde(rename = "labelPath")]
+    pub label_path: String,
+    /// JsonPath to the GeoJSON `Point` geometry (`[lon, lat]`).
+    #[serde(rename = "geometryPath")]
+    pub geometry_path: String,
 }
 
 /// A result element returned by a level query: a name and an optional polygon.

@@ -152,6 +152,8 @@ struct ZoneResolution {
     licence_name: Option<String>,
     #[serde(rename = "licenceUrl")]
     licence_url: Option<String>,
+    #[serde(rename = "hasAddresses")]
+    has_addresses: bool,
 }
 
 /// Converts a raw level element into the serializable chain entry.
@@ -259,6 +261,7 @@ async fn resolve_country_zone_result(
             producer: country.producer.clone(),
             licence_name: country.licence_name.clone(),
             licence_url: country.licence_url.clone(),
+            has_addresses: country.addresses.is_some(),
         }));
     }
     Ok(None)
@@ -321,6 +324,26 @@ pub async fn get_country_children(
         .map(|element| zone_element(next, element, level_has_children(country, idx + 1)))
         .collect();
     serialize_data(&elements)
+}
+
+/// Returns the street addresses around `lat`,`lon` from the reverse geocoding
+/// API declared by `country_name`. Returns `null` when the country declares no
+/// such service.
+#[wasm_bindgen]
+pub async fn reverse_geocode(country_name: &str, lat: f64, lon: f64) -> Result<JsValue, JsValue> {
+    info!("[wasm] reverse_geocode {country_name} {lat},{lon}");
+    let manager = CountryManager::load();
+    let Some(country) = manager.get(country_name) else {
+        return Err(js_err("Country not found"));
+    };
+    match manager
+        .reverse_geocode(country, lat, lon)
+        .await
+        .map_err(js_err)?
+    {
+        Some(addresses) => serialize_data(&addresses),
+        None => Ok(JsValue::NULL),
+    }
 }
 
 /// Result of [`sync_index`]: the full services list, which keys are new or updated,
