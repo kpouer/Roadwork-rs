@@ -1460,6 +1460,115 @@ function buildMarkerIcon(status, size = 20) {
     return buildCircleIcon(STATUS_COLORS[status] || "#9ca3af", size);
 }
 
+const ADDRESS_MATCH_COLORS = {
+    green: "#22c55e",
+    yellow: "#eab308",
+    red: "#ef4444",
+};
+
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function pointToSegmentMeters(
+    px: number, py: number,
+    ax: number, ay: number,
+    bx: number, by: number,
+): number {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return haversineDistance(py, px, ay, ax);
+    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return haversineDistance(py, px, ay + t * dy, ax + t * dx);
+}
+
+const HOUSE_NUMBER_RE = /^\d+\s*(bis|ter|quater|b|t|q)?[\s.]?/i;
+
+function normalizeStreetName(name: string): string {
+    return name
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(HOUSE_NUMBER_RE, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function extractStreetName(label: string): string {
+    let s = label.replace(HOUSE_NUMBER_RE, "");
+    const commaIdx = s.lastIndexOf(",");
+    if (commaIdx > 0) s = s.substring(0, commaIdx);
+    s = s.replace(/\s*\d{5}\s+\S+\s*$/, "");
+    return normalizeStreetName(s);
+}
+
+interface WmeStreetIndex {
+    streets: Map<string, Array<{ lat: number; lon: number }>>;
+}
+
+function buildWmeStreetIndex(): WmeStreetIndex {
+    const index: WmeStreetIndex = { streets: new Map() };
+    if (!wmeSDK?.DataModel?.Segments) return index;
+    let segments;
+    try {
+        segments = wmeSDK.DataModel.Segments.getAll();
+    } catch (_) {
+        return index;
+    }
+    if (!Array.isArray(segments)) return index;
+    for (const seg of segments) {
+        let addr;
+        try {
+            addr = wmeSDK.DataModel.Segments.getAddress({ segmentId: seg.id });
+        } catch (_) {
+            continue;
+        }
+        const streetName = addr?.street?.name;
+        if (!streetName) continue;
+        const key = normalizeStreetName(streetName);
+        if (!key) continue;
+        const geom = seg.geometry;
+        if (!geom || geom.type !== "LineString" || !Array.isArray(geom.coordinates)) continue;
+        const pts = index.streets.get(key) || [];
+        for (const [lon, lat] of geom.coordinates) {
+            if (isFinite(lat) && isFinite(lon)) {
+                pts.push({ lat, lon });
+            }
+        }
+        if (pts.length > 0) index.streets.set(key, pts);
+    }
+    return index;
+}
+
+function findAddressMatch(
+    streetName: string,
+    lat: number,
+    lon: number,
+    index: WmeStreetIndex,
+): { distance: number | null } {
+    const key = normalizeStreetName(streetName);
+    if (!key) return { distance: null };
+    const pts = index.streets.get(key);
+    if (!pts || pts.length === 0) return { distance: null };
+    let minDist = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[Math.min(i + 1, pts.length - 1)];
+        const d = pointToSegmentMeters(lon, lat, a.lon, a.lat, b.lon, b.lat);
+        if (d < minDist) minDist = d;
+    }
+    return { distance: isFinite(minDist) ? minDist : null };
+}
+
 function formatTimestamp(millis) {
     if (!millis) {
         return "?";
@@ -3315,7 +3424,7 @@ let addressesEnabled = false;
 let currentAddressesCountry: string | null = null;
 let addressLayerReady = false;
 let addressIdCounter = 0;
-let addressFeatureIndex: Record<string, { label: string; lat: number; lon: number }> = {};
+let addressFeatureIndex: Record<string, { label: string; lat: number; lon: number; match: string; distance: number | null }> = {};
 let addressPopupEl: HTMLDivElement | null = null;
 
 function hideZoneBar() {
@@ -3516,25 +3625,38 @@ function renderZonePolygons() {
     }
 }
 
+function buildAddressStyleRules() {
+    return [
+        {
+            predicate: (props) => props.geomType === "Point",
+            style: {
+                icon: "${getIcon}",
+                iconWidth: 16,
+                iconHeight: 16,
+                iconOffsetX: -8,
+                iconOffsetY: -8,
+                graphicOpacity: 1,
+                title: "${addressTitle}",
+            },
+        },
+    ];
+}
+
 function ensureAddressLayer() {
     if (addressLayerReady) return;
     addressLayerReady = true;
-    const icon = buildCircleIcon(ADDRESS_ICON);
     try {
         wmeSDK.Map.addLayer({
             layerName: ADDRESS_LAYER,
-            styleRules: [
-                {
-                    predicate: (props) => props.geomType === "Point",
-                    style: {
-                        externalGraphic: icon,
-                        graphicWidth: 14,
-                        graphicHeight: 14,
-                        graphicXOffset: -7,
-                        graphicYOffset: -7,
-                    },
+            styleContext: {
+                addressTitle: ({ feature }) => String(feature?.properties?.label ?? ""),
+                getIcon: ({ feature }) => {
+                    const match = String(feature?.properties?.addrMatch ?? "");
+                    const color = ADDRESS_MATCH_COLORS[match] || ADDRESS_ICON;
+                    return buildCircleIcon(color, 16);
                 },
-            ],
+            },
+            styleRules: buildAddressStyleRules(),
         });
     } catch (e) {
         console.warn("[Roadwork] Failed to add addresses layer:", e);
@@ -3559,20 +3681,32 @@ function clearAddressLayer() {
     } catch (_) {}
 }
 
-function renderAddresses(addresses: Array<{ label: string; lat: number; lon: number }>) {
+async function renderAddresses(addresses: Array<{ label: string; lat: number; lon: number }>) {
     if (!wmeSDK?.Map) return;
     clearAddressLayer();
     addressFeatureIndex = {};
+    const streetIndex = buildWmeStreetIndex();
     const features: SdkFeature[] = [];
     for (const addr of addresses) {
         if (!isFinite(addr.lat) || !isFinite(addr.lon) || !addr.label) continue;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const streetName = extractStreetName(addr.label);
+        const { distance } = findAddressMatch(streetName, addr.lat, addr.lon, streetIndex);
+        let match: string;
+        if (distance === null || distance > 30) {
+            match = "red";
+        } else if (distance >= 15) {
+            match = "yellow";
+        } else {
+            match = "green";
+        }
         const id = `address-${addressIdCounter++}`;
-        addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon };
+        addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon, match, distance };
         features.push({
             id,
             type: "Feature",
             geometry: { type: "Point", coordinates: [addr.lon, addr.lat] },
-            properties: { geomType: "Point" },
+            properties: { geomType: "Point", addrMatch: match, label: addr.label },
         });
     }
     if (features.length === 0) return;
@@ -3592,7 +3726,7 @@ async function updateAddresses(country: string, lat: number, lon: number) {
     try {
         const addresses = await rpcCall("reverse_geocode", [country, lat, lon]);
         if (Array.isArray(addresses)) {
-            renderAddresses(addresses);
+            await renderAddresses(addresses);
         }
     } catch (e) {
         console.warn("[Roadwork] Failed to load addresses:", e);
@@ -3609,7 +3743,7 @@ function closeAddressPopup() {
     }
 }
 
-function showAddressPopup(label: string, lat: number, lon: number) {
+function showAddressPopup(label: string, lat: number, lon: number, match?: string, distance?: number | null) {
     closeAddressPopup();
     if (!wmeSDK?.Map) return;
     console.log("[Roadwork] address popup:", label, lat, lon);
@@ -3629,6 +3763,23 @@ function showAddressPopup(label: string, lat: number, lon: number) {
     closeBtn.title = t("btn.close");
     closeBtn.addEventListener("click", closeAddressPopup);
     el.appendChild(closeBtn);
+
+    if (match) {
+        const statusRow = document.createElement("div");
+        statusRow.className = "rw-address-match-row";
+        const badge = document.createElement("span");
+        badge.className = "rw-status-badge";
+        badge.style.background = ADDRESS_MATCH_COLORS[match] || ADDRESS_ICON;
+        badge.textContent = t(`address.${match}`);
+        statusRow.appendChild(badge);
+        if (distance !== null && distance !== undefined) {
+            const dist = document.createElement("span");
+            dist.className = "rw-address-distance";
+            dist.textContent = t("address.distance", { meters: String(Math.round(distance)) });
+            statusRow.appendChild(dist);
+        }
+        el.appendChild(statusRow);
+    }
 
     document.body.appendChild(el);
 
@@ -5357,7 +5508,7 @@ async function init() {
             if (evt.layerName === ADDRESS_LAYER) {
                 const data = addressFeatureIndex[featureId];
                 if (data) {
-                    showAddressPopup(data.label, data.lat, data.lon);
+                    showAddressPopup(data.label, data.lat, data.lon, data.match, data.distance);
                 }
                 return;
             }

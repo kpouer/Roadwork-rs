@@ -1634,6 +1634,18 @@
     color: #ffffff;
 }
 
+.rw-address-match-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 3px 4px;
+    margin-bottom: 8px;
+}
+
+.rw-address-distance {
+    color: #a7b0bd;
+}
+
 .rw-zone-menu-title {
     font-weight: 600;
     padding: 2px 4px 8px;
