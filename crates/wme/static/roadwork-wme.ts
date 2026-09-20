@@ -3447,8 +3447,24 @@ let addressesEnabled = false;
 let currentAddressesCountry: string | null = null;
 let addressLayerReady = false;
 let addressIdCounter = 0;
-let addressFeatureIndex: Record<string, { label: string; lat: number; lon: number; match: string; distance: number | null }> = {};
-let lastRenderedAddresses: Array<{ label: string; lat: number; lon: number }> = [];
+
+interface AddressData {
+    label: string;
+    lat: number;
+    lon: number;
+    number?: string | null;
+    street?: string | null;
+    city?: string | null;
+    postcode?: string | null;
+}
+
+interface AddressFeatureData extends AddressData {
+    match: string;
+    distance: number | null;
+}
+
+let addressFeatureIndex: Record<string, AddressFeatureData> = {};
+let lastRenderedAddresses: AddressData[] = [];
 let addressPopupEl: HTMLDivElement | null = null;
 
 function hideZoneBar() {
@@ -3707,7 +3723,7 @@ function clearAddressLayer() {
     }
 }
 
-async function renderAddresses(addresses: Array<{ label: string; lat: number; lon: number }>) {
+async function renderAddresses(addresses: AddressData[]) {
     if (!wmeSDK?.Map) return;
     lastRenderedAddresses = addresses;
     clearAddressLayer();
@@ -3720,7 +3736,7 @@ async function renderAddresses(addresses: Array<{ label: string; lat: number; lo
     for (const addr of addresses) {
         if (!isFinite(addr.lat) || !isFinite(addr.lon) || !addr.label) continue;
         await new Promise((resolve) => setTimeout(resolve, 0));
-        const streetName = extractStreetName(addr.label);
+        const streetName = addr.street ?? extractStreetName(addr.label);
         const { distance } = findAddressMatch(streetName, addr.lat, addr.lon, streetIndex);
         let match: string;
         if (distance === null || distance > 30) {
@@ -3731,7 +3747,7 @@ async function renderAddresses(addresses: Array<{ label: string; lat: number; lo
             match = "green";
         }
         const id = `address-${addressIdCounter++}`;
-        addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon, match, distance };
+        addressFeatureIndex[id] = { label: addr.label, lat: addr.lat, lon: addr.lon, number: addr.number, street: addr.street, city: addr.city, postcode: addr.postcode, match, distance };
         featuresByLayer[addressLayerForMatch(match)]?.push({
             id,
             type: "Feature",
@@ -3775,8 +3791,9 @@ function closeAddressPopup() {
     }
 }
 
-function showAddressPopup(label: string, lat: number, lon: number, match?: string, distance?: number | null) {
+function showAddressPopup(data: AddressFeatureData) {
     closeAddressPopup();
+    const { label, lat, lon, match, distance, number, street, city, postcode } = data;
     if (!wmeSDK?.Map) return;
     console.log("[Roadwork] address popup:", label, lat, lon);
     const el = document.createElement("div");
@@ -3795,6 +3812,28 @@ function showAddressPopup(label: string, lat: number, lon: number, match?: strin
     closeBtn.title = t("btn.close");
     closeBtn.addEventListener("click", closeAddressPopup);
     el.appendChild(closeBtn);
+
+    const streetDisplay = street
+        ? (number ? `${number} ${street}` : street)
+        : (number ?? null);
+    const placeDisplay = city
+        ? (postcode ? `${postcode} ${city}` : city)
+        : (postcode ?? null);
+    if (streetDisplay || placeDisplay) {
+        const details = document.createElement("div");
+        details.className = "rw-address-details";
+        if (streetDisplay) {
+            const streetLine = document.createElement("div");
+            streetLine.textContent = streetDisplay;
+            details.appendChild(streetLine);
+        }
+        if (placeDisplay) {
+            const placeLine = document.createElement("div");
+            placeLine.textContent = placeDisplay;
+            details.appendChild(placeLine);
+        }
+        el.appendChild(details);
+    }
 
     if (match) {
         const statusRow = document.createElement("div");
@@ -5546,7 +5585,7 @@ async function init() {
             if (ALL_ADDRESS_LAYERS.includes(evt.layerName)) {
                 const data = addressFeatureIndex[featureId];
                 if (data) {
-                    showAddressPopup(data.label, data.lat, data.lon, data.match, data.distance);
+                    showAddressPopup(data);
                 }
                 return;
             }

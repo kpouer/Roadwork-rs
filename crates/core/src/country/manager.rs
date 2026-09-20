@@ -207,9 +207,20 @@ fn parse_addresses(service: &AddressService, value: &Value) -> Result<Vec<Addres
             label,
             lat: center.lat,
             lon: center.lon,
+            number: optional_string(node, service.number_path.as_deref()),
+            street: optional_string(node, service.street_path.as_deref()),
+            city: optional_string(node, service.city_path.as_deref()),
+            postcode: optional_string(node, service.postcode_path.as_deref()),
         });
     }
     Ok(addresses)
+}
+
+/// Extracts the string value at `path` from a response node, or `None` when the
+/// path is not configured or the value is missing/null/unparseable.
+fn optional_string(node: &Value, path: Option<&str>) -> Option<String> {
+    path.and_then(|path| node.get_path(path).ok())
+        .filter(|s| !s.is_empty())
 }
 
 fn build_url(level: &CountryLevel, query: &Query) -> Result<String, CountryError> {

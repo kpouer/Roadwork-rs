@@ -102,11 +102,24 @@ pub enum PolygonEncoding {
 }
 
 /// Result element returned by the reverse geocoding (street number) service.
+///
+/// The address components (number, street, city, postcode) are extracted from
+/// the API response via optional JsonPaths on [`AddressService`]. A component
+/// is `None` when the service does not expose it (e.g. a street-level result
+/// without a housenumber).
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Address {
     pub label: String,
     pub lat: f64,
     pub lon: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub street: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub postcode: Option<String>,
 }
 
 /// Reverse geocoding (street number) service of a country. The addresses
@@ -131,6 +144,18 @@ pub struct AddressService {
     /// JsonPath to the address label.
     #[serde(rename = "labelPath")]
     pub label_path: String,
+    /// JsonPath to the house number (e.g. `$.properties.housenumber`).
+    #[serde(rename = "numberPath", skip_serializing_if = "Option::is_none")]
+    pub number_path: Option<String>,
+    /// JsonPath to the street name (e.g. `$.properties.street`).
+    #[serde(rename = "streetPath", skip_serializing_if = "Option::is_none")]
+    pub street_path: Option<String>,
+    /// JsonPath to the city name (e.g. `$.properties.city`).
+    #[serde(rename = "cityPath", skip_serializing_if = "Option::is_none")]
+    pub city_path: Option<String>,
+    /// JsonPath to the postal code (e.g. `$.properties.postcode`).
+    #[serde(rename = "postcodePath", skip_serializing_if = "Option::is_none")]
+    pub postcode_path: Option<String>,
     /// JsonPath to the GeoJSON `Point` geometry (`[lon, lat]`).
     #[serde(rename = "geometryPath")]
     pub geometry_path: String,

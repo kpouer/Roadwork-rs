@@ -11,6 +11,10 @@
     "limit": 20,
     "dataArray": "$.features[*]",
     "labelPath": "$.properties.label",
+    "numberPath": "$.properties.housenumber",
+    "streetPath": "$.properties.street",
+    "cityPath": "$.properties.city",
+    "postcodePath": "$.properties.postcode",
     "geometryPath": "$.geometry"
   },
   "levels": [
